@@ -27,7 +27,7 @@ jobs:
       - name: Run Unit Tests (excluding Integration tests)
         run: |
           for proj in $(find . -name '*.csproj' | grep -v Integration); do
-            dotnet test "$proj" --no-build --verbosity normal
+            dotnet test "$proj" --verbosity normal
           done
     ## SonarCloud
     ## Uncomment to unable SonarCloud scan

@@ -7,9 +7,9 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Infrastructure.Telemetry.Logging;
 
+[ExcludeFromCodeCoverage]
 public static class SerilogLoggingExtensions
 {
-    [ExcludeFromCodeCoverage]
     public static void AddLogging(HostBuilderContext ctx, LoggerConfiguration config)
     {
         var httpAccessor = ctx.Configuration.Get<HttpContextAccessor>();

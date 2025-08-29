@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Common.Exceptions;
 
+[ExcludeFromCodeCoverage]
 public class DomainException : Exception
 {
     public virtual string Title => "Bad Request";

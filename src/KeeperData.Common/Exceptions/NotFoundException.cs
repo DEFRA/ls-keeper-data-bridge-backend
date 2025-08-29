@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Common.Exceptions;
 
+[ExcludeFromCodeCoverage]
 public sealed class NotFoundException : DomainException
 {
     public override string Title => "Not Found";

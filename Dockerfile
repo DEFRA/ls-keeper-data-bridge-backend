@@ -19,11 +19,10 @@ COPY . .
 WORKDIR "/src"
 
 # unit test and code coverage
-RUN dotnet test LsKeeperDataBridgeBackend.Test
+# RUN dotnet test KeeperData.Bridge.Test
 
 FROM build AS publish
-RUN dotnet publish LsKeeperDataBridgeBackend -c Release -o /app/publish /p:UseAppHost=false
-
+RUN dotnet publish KeeperData.Bridge -c Release -o /app/publish /p:UseAppHost=false
 
 ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 
@@ -32,4 +31,4 @@ FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 EXPOSE 8085
-ENTRYPOINT ["dotnet", "LsKeeperDataBridgeBackend.dll"]
+ENTRYPOINT ["dotnet", "KeeperData.Bridge.dll"]

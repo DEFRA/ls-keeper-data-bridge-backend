@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - develop
     types:
       - opened
       - edited
@@ -23,7 +24,11 @@ jobs:
         with:
           dotnet-version: |
             8.0
-      - run: dotnet test
+      - name: Run Unit Tests (excluding Integration tests)
+        run: |
+          for proj in $(find . -name '*.csproj' | grep -v Integration); do
+            dotnet test "$proj" --no-build --verbosity normal
+          done
     ## SonarCloud
     ## Uncomment to unable SonarCloud scan
     ## Requires project to be set up in SonarCloud

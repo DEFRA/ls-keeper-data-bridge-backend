@@ -1,4 +1,5 @@
 version: '3.4'
+name: 'keeperdata.bridge'
 services:
   localstack:
     image: localstack/localstack:3.0.2
@@ -40,33 +41,9 @@ services:
     volumes:
       - mongodb-data:/data
     restart: always
-
-  ################################################################################
-
-  # your-frontend:
-  #   image: defradigital/your-frontend:${YOUR_FRONTEND_VERSION:-latest}
-  #   ports:
-  #     - '3000:3000'
-  #   links:
-  #     - 'localstack:localstack'
-  #     - 'redis:redis'
-  #   depends_on:
-  #     localstack:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_started
-  #   env_file:
-  #     - 'compose/aws.env'
-  #   environment:
-  #     PORT: 3000
-  #     NODE_ENV: development
-  #     REDIS_HOST: redis
-  #     LOCALSTACK_ENDPOINT: http://localstack:4566
-  #     USE_SINGLE_INSTANCE_CACHE: true
-  #   networks:
-  #     - cdp-tenant
-
-  your-backend:
+  
+  keeperdata.bridge:
+    platform: linux
     build: ./
     ports:
       - '8080:8080'
@@ -86,8 +63,6 @@ services:
       MONGO_URI: mongodb://mongodb:27017/
     networks:
       - cdp-tenant
-
-################################################################################
 
 volumes:
   mongodb-data:

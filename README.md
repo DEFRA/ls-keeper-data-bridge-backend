@@ -77,7 +77,7 @@ dotnet test
 
 Run CDP-Deployments application:
 ```bash
-dotnet run --project LsKeeperDataBridgeBackend --launch-profile Development
+dotnet run --project KeeperData.Bridge --launch-profile Development
 ```
 
 ### SonarCloud

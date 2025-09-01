@@ -1,4 +1,9 @@
-﻿**/.dockerignore
+﻿!**/.gitignore
+!.git/config
+!.git/HEAD
+!.git/packed-refs
+!.git/refs/heads/**
+**/.dockerignore
 **/.env
 **/.git
 **/.gitignore
@@ -11,6 +16,7 @@
 **/*.*proj.user
 **/*.dbmdl
 **/*.jfm
+**/.classpath
 **/azds.yaml
 **/bin
 **/charts

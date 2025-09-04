@@ -1,7 +1,7 @@
 services:
   keeperdata.bridge:
     labels:
-      com.microsoft.visual-studio.project-name: "keeperdata.bridge"
+      com.microsoft.visual-studio.project-name: "keeperdata-bridge"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_HTTP_PORTS=8080

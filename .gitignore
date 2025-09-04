@@ -268,3 +268,4 @@ __pycache__/
 library.db
 .envrc
 /localstack_data/cache
+/coverage

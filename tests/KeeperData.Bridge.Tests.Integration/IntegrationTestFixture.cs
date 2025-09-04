@@ -16,7 +16,8 @@ public class IntegrationTestFixture : IDisposable
         HttpClient = new HttpClient(_httpClientHandler)
         {
             // BaseAddress = new Uri("http://localhost:8080"),
-            BaseAddress = new Uri("http://keeperdata-bridge:8080"),
+            // BaseAddress = new Uri("http://keeperdata-bridge:8080"),
+            BaseAddress = new Uri("http://0.0.0.0:8080"),
             Timeout = TimeSpan.FromSeconds(30)
         };
         HttpClient.DefaultRequestHeaders.Add("Accept", "application/json");

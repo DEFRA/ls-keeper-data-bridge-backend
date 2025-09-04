@@ -72,6 +72,8 @@ jobs:
         uses: actions/checkout@v3
         with:
           path: working-dir
+      - name: Make LocalStack init script executable
+        run: chmod +x ./working-dir/compose/start-localstack.sh
       - name: Run docker-compose
         uses: hoverkraft-tech/compose-action@v2.0.1
         with:

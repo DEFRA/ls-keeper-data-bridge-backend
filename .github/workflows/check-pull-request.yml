@@ -27,7 +27,7 @@ jobs:
       - name: Restore
         run: dotnet restore ./working-dir/KeeperData.Bridge.sln
       - name: Build
-        run: dotnet build ./working-dir/KeeperData.Bridge.sln --configuration Release --no-restore
+        run: dotnet build ./working-dir/KeeperData.Bridge.sln --configuration Release --no-restore -warnaserror
       - name: Verify format
         run: dotnet format ./working-dir/KeeperData.Bridge.sln --verify-no-changes --verbosity diagnostic
       - name: Test (unit and component)

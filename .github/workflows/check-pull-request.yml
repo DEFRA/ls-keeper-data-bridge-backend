@@ -20,30 +20,22 @@ jobs:
       - uses: actions/setup-dotnet@v3
         with:
           dotnet-version: '8.0.x'
-      
       - name: Check out code
         uses: actions/checkout@v3
         with:
           path: working-dir
-	  
       - name: Restore
         run: dotnet restore ./working-dir/KeeperData.Bridge.sln
-	
       - name: Build
         run: dotnet build ./working-dir/KeeperData.Bridge.sln --configuration Release --no-restore
-
       - name: Verify format
         run: dotnet format ./working-dir/KeeperData.Bridge.sln --verify-no-changes --verbosity diagnostic
-	
       - name: Test (unit and component)
         run: dotnet test ./working-dir/KeeperData.Bridge.sln --no-build --filter "Category!=Integration" --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true" --collect:"XPlat Code Coverage" --results-directory ./coverage
-
       - name: Install dotnet-coverage
         run: dotnet tool install --global dotnet-coverage        
-        
       - name: Merge coverage reports
         run: dotnet-coverage merge "./coverage/**/*.cobertura.xml" --recursive --output merged.cobertura.xml --output-format cobertura
-  
       - name: Code coverage report
         uses: irongut/CodeCoverageSummary@v1.3.0
         with:
@@ -56,7 +48,6 @@ jobs:
           indicators: true
           output: both
           thresholds: '60 80'
-
       - name: Add Coverage PR Comment
         uses: marocchino/sticky-pull-request-comment@v2
         if: github.event_name == 'pull_request'
@@ -72,20 +63,16 @@ jobs:
       - uses: actions/setup-dotnet@v3
         with:
           dotnet-version: '8.0.x'
-
       - name: Check out code
         uses: actions/checkout@v3
         with:
           path: working-dir
-
       - name: Run docker-compose
         uses: hoverkraft-tech/compose-action@v2.0.1
         with:
           compose-file: "./working-dir/docker-compose-integration-tests.yml"
-
       - name: Make script executable
         run: chmod +x ./working-dir/wait-for-docker-logs.sh
-
       - name: Wait for localstack
         run: ./working-dir/wait-for-docker-logs.sh localstack-emulator "Ready." 60
       - name: Run integration tests

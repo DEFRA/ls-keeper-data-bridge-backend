@@ -43,9 +43,14 @@ public class AppWebApplicationFactory : WebApplicationFactory<Program>
     private void ConfigureS3ClientFactory(IServiceCollection services)
     {
         AmazonS3Mock = new Mock<IAmazonS3>();
+
         AmazonS3Mock
             .Setup(x => x.GetBucketAclAsync(It.IsAny<GetBucketAclRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GetBucketAclResponse { HttpStatusCode = HttpStatusCode.OK });
+
+        AmazonS3Mock
+            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.OK });
 
         var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<IS3ClientFactory>();

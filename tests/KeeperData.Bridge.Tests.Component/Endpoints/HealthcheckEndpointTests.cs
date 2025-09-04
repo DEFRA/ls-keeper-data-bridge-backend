@@ -17,6 +17,10 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
             .Setup(x => x.GetBucketAclAsync(It.IsAny<GetBucketAclRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GetBucketAclResponse { HttpStatusCode = HttpStatusCode.OK });
 
+        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
+            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.OK });
+
         var response = await _appTestFixture.HttpClient.GetAsync("health");
         var responseBody = await response.Content.ReadAsStringAsync();
 
@@ -31,6 +35,10 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
         _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
             .Setup(x => x.GetBucketAclAsync(It.IsAny<GetBucketAclRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GetBucketAclResponse { HttpStatusCode = HttpStatusCode.NotFound });
+
+        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
+            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.NotFound });
 
         var response = await _appTestFixture.HttpClient.GetAsync("health");
         var responseBody = await response.Content.ReadAsStringAsync();
@@ -47,6 +55,10 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
             .Setup(x => x.GetBucketAclAsync(It.IsAny<GetBucketAclRequest>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new AmazonS3Exception("Exception message") { StatusCode = HttpStatusCode.NotFound });
 
+        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
+            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.NotFound });
+
         var response = await _appTestFixture.HttpClient.GetAsync("health");
         var responseBody = await response.Content.ReadAsStringAsync();
 
@@ -60,6 +72,10 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
     {
         _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
             .Setup(x => x.GetBucketAclAsync(It.IsAny<GetBucketAclRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Exception message"));
+
+        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
+            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Exception message"));
 
         var response = await _appTestFixture.HttpClient.GetAsync("health");

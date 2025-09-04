@@ -1,10 +1,12 @@
 using Amazon.S3;
+using Amazon.S3.Model;
 using KeeperData.Infrastructure.Storage.Factories;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Infrastructure.Storage.Setup;
 
-public class AwsS3HealthCheck(IS3ClientFactory s3ClientFactory) : IHealthCheck
+public class AwsS3HealthCheck(IS3ClientFactory s3ClientFactory, ILogger<AwsS3HealthCheck> logger) : IHealthCheck
 {
     private readonly IS3ClientFactory _s3ClientFactory = s3ClientFactory;
 
@@ -22,18 +24,19 @@ public class AwsS3HealthCheck(IS3ClientFactory s3ClientFactory) : IHealthCheck
 
             try
             {
-                var response = await client.GetBucketAclAsync(new Amazon.S3.Model.GetBucketAclRequest
+                var request = new ListObjectsV2Request
                 {
                     BucketName = bucketName
-                }, cancellationToken);
+                };
+
+                var response = await client.ListObjectsV2Async(request, cancellationToken);
 
                 if (response.HttpStatusCode == System.Net.HttpStatusCode.OK)
                 {
                     results[clientName] = new
                     {
                         Bucket = bucketName,
-                        Status = "Healthy",
-                        Owner = response.Owner?.DisplayName ?? "Unknown"
+                        Status = "Healthy"
                     };
                 }
                 else
@@ -48,6 +51,8 @@ public class AwsS3HealthCheck(IS3ClientFactory s3ClientFactory) : IHealthCheck
             }
             catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
+                logger.LogError("AmazonS3Exception recieved when testing {bucketName}, with {message}.", bucketName, ex.Message);
+
                 results[clientName] = new
                 {
                     Bucket = bucketName,
@@ -58,6 +63,8 @@ public class AwsS3HealthCheck(IS3ClientFactory s3ClientFactory) : IHealthCheck
             }
             catch (Exception ex)
             {
+                logger.LogError("Exception recieved when testing {bucketName}, with {message}.", bucketName, ex.Message);
+
                 results[clientName] = new
                 {
                     Bucket = bucketName,

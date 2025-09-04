@@ -43,7 +43,7 @@ services:
     restart: always
   
   keeperdata.bridge:
-    container_name: "keeperdata-bridge"
+    container_name: "keeperdata.bridge"
     platform: linux
     build: ./
     ports:

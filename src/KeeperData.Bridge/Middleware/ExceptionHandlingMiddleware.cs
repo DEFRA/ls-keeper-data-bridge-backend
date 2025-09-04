@@ -57,7 +57,7 @@ public sealed class ExceptionHandlingMiddleware(
             if (statusCode == 500)
             {
                 _logger.LogError(exception, logMessageTemplate, errorId, correlationId, statusCode);
-            }                
+            }
             else
             {
                 _logger.LogInformation(exception, logMessageTemplate, errorId, correlationId, statusCode);

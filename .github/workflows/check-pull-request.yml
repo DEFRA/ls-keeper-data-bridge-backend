@@ -75,7 +75,9 @@ jobs:
       - name: Run docker-compose
         uses: hoverkraft-tech/compose-action@v2.0.1
         with:
-          compose-file: "./working-dir/docker-compose-integration-tests.yml"
+          compose-file: |
+            ./working-dir/docker-compose-integration-tests.yml
+            ./working-dir/docker-compose-integration-tests.override.yml
       - name: Make script executable
         run: chmod +x ./working-dir/wait-for-docker-logs.sh
       - name: Wait for localstack

@@ -42,6 +42,28 @@ services:
       - mongodb-data:/data
     restart: always
 
+  keeperdata.bridge:
+    platform: linux
+    build: ./
+    ports:
+      - '8080:8080'
+    links:
+      - 'localstack:localstack'
+      - 'mongodb:mongodb'
+    depends_on:
+      localstack:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+    env_file:
+      - 'compose/aws.env'
+    environment:
+      PORT: 8080
+      LOCALSTACK_ENDPOINT: http://localstack:4566
+      MONGO_URI: mongodb://mongodb:27017/
+    networks:
+      - cdp-tenant
+
 volumes:
   mongodb-data:
 

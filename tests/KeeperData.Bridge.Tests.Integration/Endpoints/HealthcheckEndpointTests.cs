@@ -3,14 +3,14 @@ using FluentAssertions;
 namespace KeeperData.Bridge.Tests.Integration.Endpoints;
 
 [Trait("Category", "Integration")]
-public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFixture<AppTestFixture>
+public class HealthcheckEndpointTests(IntegrationTestFixture fixture) : IClassFixture<IntegrationTestFixture>
 {
-    private readonly AppTestFixture _appTestFixture = appTestFixture;
+    private readonly HttpClient _httpClient = fixture.HttpClient;
 
     [Fact]
     public async Task GivenValidHealthCheckRequest_ShouldSucceed()
     {
-        var response = await _appTestFixture.HttpClient.GetAsync("health");
+        var response = await _httpClient.GetAsync("health");
         var responseBody = await response.Content.ReadAsStringAsync();
 
         response.EnsureSuccessStatusCode();

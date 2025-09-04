@@ -269,3 +269,4 @@ library.db
 .envrc
 /localstack_data/cache
 /coverage
+/coverage-report

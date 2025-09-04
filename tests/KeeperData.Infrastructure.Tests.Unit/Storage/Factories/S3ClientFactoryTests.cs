@@ -9,7 +9,7 @@ namespace KeeperData.Infrastructure.Tests.Unit.Storage.Factories;
 public class S3ClientFactoryTests
 {
     private readonly S3ClientFactory _clientFactory;
-    private readonly AmazonS3Config _defaultAmazonS3Config = new ();
+    private readonly AmazonS3Config _defaultAmazonS3Config = new();
 
     private const string DefaultBucketName = "test-bucket";
 

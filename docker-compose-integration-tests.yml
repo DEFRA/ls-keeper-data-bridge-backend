@@ -59,8 +59,13 @@ services:
       - 'compose/aws.env'
     environment:
       PORT: 8080
-      LOCALSTACK_ENDPOINT: http://localstack:4566
+      LOCALSTACK_ENDPOINT: http://localstack-emulator:4566
       MONGO_URI: mongodb://mongodb:27017/
+      ASPNETCORE_HTTP_PORTS: 8080
+      LocalStack_ServiceURL: http://localstack-emulator:4566
+      IMB_S3_ACCESS_KEY: test
+      IMB_S3_ACCESS_SECRET: test
+      StorageConfiguration__ExternalStorage__BucketName: test-external-bucket
     networks:
       - cdp-tenant
 

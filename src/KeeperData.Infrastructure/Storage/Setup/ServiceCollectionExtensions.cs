@@ -23,22 +23,21 @@ public static class ServiceCollectionExtensions
         var defaultAmazonS3Config = GetDefaultAmazonS3Config();
         services.AddSingleton(defaultAmazonS3Config);
 
-        services.AddSingleton<IS3ClientFactory>(provider =>
+        var factory = new S3ClientFactory();
+
+        factory.AddClientWithCredentials<ExternalStorageClient>(
+                storageConfiguration.ExternalStorage.BucketName,
+                storageConfiguration.ExternalStorage.AccessKeySecretName,
+                storageConfiguration.ExternalStorage.SecretKeySecretName,
+                defaultAmazonS3Config);
+
+        if (storageConfiguration.ExternalStorage.HealthcheckEnabled)
         {
-            var amazonS3Config = provider.GetRequiredService<AmazonS3Config>();
-            var storageConfig = provider.GetRequiredService<StorageConfiguration>();
-            var externalStorage = storageConfig.ExternalStorage;
+            services.AddHealthChecks()
+                .AddCheck<AwsS3HealthCheck>("aws_s3", tags: ["aws", "s3"]);
+        }
 
-            var factory = new S3ClientFactory();
-
-            factory.AddClientWithCredentials<ExternalStorageClient>(
-                externalStorage.BucketName,
-                externalStorage.AccessKeySecretName,
-                externalStorage.SecretKeySecretName,
-                amazonS3Config);
-
-            return factory;
-        });
+        services.AddSingleton<IS3ClientFactory>(factory);
 
         services.AddTransient<IStorageReader<ExternalStorageClient>, ExternalStorageReader>();
     }

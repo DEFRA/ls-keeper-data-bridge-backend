@@ -10,19 +10,18 @@ namespace KeeperData.Bridge.Setup
         {
             services.AddDefaultAWSOptions(configuration.GetAWSOptions());
 
+            services.ConfigureHealthChecks();
+
             services.AddDatabaseDependencies(configuration);
 
             services.AddMessagingDependencies(configuration);
 
             services.AddStorageDependencies(configuration);
-
-            services.ConfigureHealthChecks();
         }
 
         private static void ConfigureHealthChecks(this IServiceCollection services)
         {
-            services.AddHealthChecks()
-                .AddCheck<AwsS3HealthCheck>("aws_s3", tags: ["aws", "s3"]);
+            services.AddHealthChecks();
         }
     }
 }

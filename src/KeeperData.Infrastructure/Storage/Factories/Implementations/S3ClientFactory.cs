@@ -48,6 +48,8 @@ public class S3ClientFactory : IS3ClientFactory
 
     public IEnumerable<string> GetRegisteredClientNames() => _clients.Keys;
 
+    public bool HasStorageClient(string storageClientName) => _clients.ContainsKey(storageClientName);
+
     public void AddClient<T>(string defaultBucketName, AmazonS3Config amazonS3Config)
         where T : IStorageClient, new()
     {
@@ -83,5 +85,11 @@ public class S3ClientFactory : IS3ClientFactory
         }
     }
 
-    public bool HasStorageClient(string storageClientName) => _clients.ContainsKey(storageClientName);
+    public void RegisterMockClient<T>(string bucketName, IAmazonS3 mockClient)
+        where T : IStorageClient, new()
+    {
+        var instance = new T();
+        var name = instance.ClientName;
+        _clients[name] = (mockClient, bucketName);
+    }
 }

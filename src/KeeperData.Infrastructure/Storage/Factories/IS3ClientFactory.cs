@@ -16,11 +16,14 @@ public interface IS3ClientFactory
 
     IEnumerable<string> GetRegisteredClientNames();
 
+    bool HasStorageClient(string storageClientName);
+
     void AddClient<T>(string defaultBucketName, AmazonS3Config amazonS3Config)
         where T : IStorageClient, new();
 
     void AddClientWithCredentials<T>(string defaultBucketName, string accessKeyRef, string secretKeyRef, AmazonS3Config amazonS3Config)
         where T : IStorageClient, new();
 
-    bool HasStorageClient(string storageClientName);
+    void RegisterMockClient<T>(string bucketName, IAmazonS3 mockClient)
+        where T : IStorageClient, new();
 }

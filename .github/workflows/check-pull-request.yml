@@ -32,14 +32,19 @@ jobs:
         run: dotnet format ./working-dir/KeeperData.Bridge.sln --verify-no-changes --verbosity diagnostic
       - name: Test (unit and component)
         run: dotnet test ./working-dir/KeeperData.Bridge.sln --filter "Category!=Integration" --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true" --collect:"XPlat Code Coverage" --results-directory ./coverage
-      - name: Install dotnet-coverage
-        run: dotnet tool install --global dotnet-coverage        
-      - name: Merge coverage reports
-        run: dotnet-coverage merge "./coverage/**/*.cobertura.xml" --recursive --output merged.cobertura.xml --output-format cobertura
+      - name: Install ReportGenerator
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+      - name: Generate Coverage Summary
+        run: |
+          reportgenerator \
+            -reports:"./coverage/**/coverage.cobertura.xml" \
+            -targetdir:"coverage-report" \
+            -reporttypes:"Cobertura;MarkdownSummary" \
+            -assemblyfilters:+KeeperData.*
       - name: Code coverage report
         uses: irongut/CodeCoverageSummary@v1.3.0
         with:
-          filename: merged.cobertura.xml
+          filename: coverage-report/Cobertura.xml
           badge: true
           fail_below_min: false
           format: markdown

@@ -6,9 +6,9 @@ using System.Text.Json;
 namespace KeeperData.Bridge.Middleware;
 
 public sealed class ExceptionHandlingMiddleware(
-    RequestDelegate next,
-    ILogger<ExceptionHandlingMiddleware> logger,
-    IConfiguration cfg)
+        RequestDelegate next,
+        ILogger<ExceptionHandlingMiddleware> logger,
+        IConfiguration cfg)
 {
     private readonly RequestDelegate _next = next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger = logger;

@@ -1,24 +1,18 @@
 using KeeperData.Common.Exceptions;
+using KeeperData.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
 namespace KeeperData.Bridge.Middleware;
 
-public sealed class ExceptionHandlingMiddleware
-{
-    private readonly RequestDelegate _next;
-    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
-    private readonly string _traceHeader;
-
-    public ExceptionHandlingMiddleware(
+public sealed class ExceptionHandlingMiddleware(
         RequestDelegate next,
         ILogger<ExceptionHandlingMiddleware> logger,
         IConfiguration cfg)
-    {
-        _next = next;
-        _logger = logger;
-        _traceHeader = cfg.GetValue<string>("TraceHeader") ?? "x-correlation-id"; //_traceHeader "x-cdp-request-id"
-    }
+{
+    private readonly RequestDelegate _next = next;
+    private readonly ILogger<ExceptionHandlingMiddleware> _logger = logger;
+    private readonly string _traceHeader = cfg.GetValue<string>("TraceHeader") ?? "x-correlation-id";
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -58,14 +52,19 @@ public sealed class ExceptionHandlingMiddleware
 
         using (_logger.BeginScope(new Dictionary<string, object> { ["trace.id"] = correlationId, ["error.id"] = errorId }))
         {
-            var logMessage = $"ErrorId: {errorId} | CorrelationId: {correlationId} | StatusCode: {statusCode}";
+            const string logMessageTemplate = "ErrorId: {errorId} | CorrelationId: {correlationId} | StatusCode: {statusCode}";
+
             if (statusCode == 500)
-                _logger.LogError(exception, logMessage);
+            {
+                _logger.LogError(exception, logMessageTemplate, errorId, correlationId, statusCode);
+            }
             else
-                _logger.LogInformation(exception, logMessage);
+            {
+                _logger.LogInformation(exception, logMessageTemplate, errorId, correlationId, statusCode);
+            }
         }
 
-        string resolvedTitle = title
+        var resolvedTitle = title
             ?? (exception is DomainException de ? de.Title : "An error occurred");
 
         var problemDetails = new ProblemDetails
@@ -95,13 +94,8 @@ public sealed class ExceptionHandlingMiddleware
 
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json";
-        var jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true
-        };
 
-        var json = JsonSerializer.Serialize(problemDetails, jsonOptions);
+        var json = JsonSerializer.Serialize(problemDetails, JsonDefaults.DefaultOptionsWithIndented);
         return context.Response.WriteAsync(json);
     }
 }

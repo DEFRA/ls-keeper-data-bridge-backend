@@ -8,13 +8,15 @@ namespace KeeperData.Bridge.Setup
     {
         public static void ConfigureApi(this IServiceCollection services, IConfiguration configuration)
         {
+            services.AddDefaultAWSOptions(configuration.GetAWSOptions());
+
+            services.ConfigureHealthChecks();
+
             services.AddDatabaseDependencies(configuration);
 
             services.AddMessagingDependencies(configuration);
 
             services.AddStorageDependencies(configuration);
-
-            services.ConfigureHealthChecks();
         }
 
         private static void ConfigureHealthChecks(this IServiceCollection services)

@@ -8,6 +8,7 @@
     <DockerLaunchAction>LaunchBrowser</DockerLaunchAction>
     <DockerServiceUrl>{Scheme}://localhost:{ServicePort}/health</DockerServiceUrl>
     <DockerServiceName>keeperdata.bridge</DockerServiceName>
+    <AdditionalComposeFilePaths>docker-compose.override.yml</AdditionalComposeFilePaths>
   </PropertyGroup>
   <ItemGroup>
     <None Include="docker-compose.override.yml">

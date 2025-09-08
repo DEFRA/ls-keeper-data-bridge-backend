@@ -20,7 +20,7 @@ public static class ServiceCollectionExtensions
         var storageConfiguration = configuration.GetSection(nameof(StorageConfiguration)).Get<StorageConfiguration>()!;
         services.AddSingleton(storageConfiguration);
 
-        var defaultAmazonS3Config = GetDefaultAmazonS3Config();
+        var defaultAmazonS3Config = GetDefaultAmazonS3Config(configuration);
         services.AddSingleton(defaultAmazonS3Config);
 
         var factory = new S3ClientFactory();
@@ -42,22 +42,20 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IStorageReader<ExternalStorageClient>, ExternalStorageReader>();
     }
 
-    private static AmazonS3Config GetDefaultAmazonS3Config()
+    private static AmazonS3Config GetDefaultAmazonS3Config(IConfiguration configuration)
     {
-        var localStackServiceURL = Environment.GetEnvironmentVariable("LocalStack_ServiceURL");
-
-        if (localStackServiceURL == null)
+        if (configuration["LOCALSTACK_ENDPOINT"] != null)
         {
             return new AmazonS3Config
             {
-                RegionEndpoint = RegionEndpoint.EUWest2
+                ServiceURL = configuration["LOCALSTACK_ENDPOINT"],
+                ForcePathStyle = true
             };
         }
 
         return new AmazonS3Config
         {
-            ServiceURL = localStackServiceURL,
-            ForcePathStyle = true
+            RegionEndpoint = RegionEndpoint.EUWest2
         };
     }
 }

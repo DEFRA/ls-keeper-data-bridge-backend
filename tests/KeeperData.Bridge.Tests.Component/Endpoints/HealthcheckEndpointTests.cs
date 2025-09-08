@@ -1,4 +1,3 @@
-using Amazon.S3;
 using Amazon.S3.Model;
 using FluentAssertions;
 using Moq;
@@ -14,10 +13,6 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
     public async Task GivenValidHealthCheckRequest_ShouldSucceed()
     {
         _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
-            .Setup(x => x.GetBucketAclAsync(It.IsAny<GetBucketAclRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GetBucketAclResponse { HttpStatusCode = HttpStatusCode.OK });
-
-        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
             .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.OK });
 
@@ -27,15 +22,12 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
         response.EnsureSuccessStatusCode();
         responseBody.Should().NotBeNullOrEmpty().And.Contain("\"status\": \"Healthy\"");
         responseBody.Should().Contain("All S3 buckets are reachable");
+        responseBody.Should().Contain("SNS topic \\u0027ls-keeper-data-bridge-events\\u0027 is reachable.");
     }
 
     [Fact]
     public async Task GivenS3BucketsAreNotFound_WhenRequestingHealthCheck_ShouldFail()
     {
-        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
-            .Setup(x => x.GetBucketAclAsync(It.IsAny<GetBucketAclRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GetBucketAclResponse { HttpStatusCode = HttpStatusCode.NotFound });
-
         _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
             .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.NotFound });
@@ -52,10 +44,6 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
     public async Task GivenS3ClientThrowsAmazonS3Exception_WhenRequestingHealthCheck_ShouldFail()
     {
         _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
-            .Setup(x => x.GetBucketAclAsync(It.IsAny<GetBucketAclRequest>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new AmazonS3Exception("Exception message") { StatusCode = HttpStatusCode.NotFound });
-
-        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
             .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.NotFound });
 
@@ -70,10 +58,6 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
     [Fact]
     public async Task GivenS3ClientThrowsException_WhenRequestingHealthCheck_ShouldFail()
     {
-        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
-            .Setup(x => x.GetBucketAclAsync(It.IsAny<GetBucketAclRequest>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Exception message"));
-
         _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
             .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Exception message"));

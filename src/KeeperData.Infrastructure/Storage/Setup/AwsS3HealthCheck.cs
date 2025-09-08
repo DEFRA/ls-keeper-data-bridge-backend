@@ -21,7 +21,7 @@ public class AwsS3HealthCheck(IS3ClientFactory s3ClientFactory, ILogger<AwsS3Hea
         {
             var client = _s3ClientFactory.GetClient(clientName);
             var bucketName = _s3ClientFactory.GetClientBucketName(clientName);
-            var loggingName = $"{client}-{bucketName}";
+            var combinedName = $"{clientName}-{bucketName}";
 
             try
             {
@@ -47,7 +47,7 @@ public class AwsS3HealthCheck(IS3ClientFactory s3ClientFactory, ILogger<AwsS3Hea
                         Bucket = bucketName,
                         Status = $"Degraded (Status: {response.HttpStatusCode})"
                     };
-                    unhealthyClients.Add(loggingName);
+                    unhealthyClients.Add(combinedName);
                 }
             }
             catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -60,7 +60,7 @@ public class AwsS3HealthCheck(IS3ClientFactory s3ClientFactory, ILogger<AwsS3Hea
                     Status = "Unhealthy (Bucket not found)",
                     Exception = ex.Message
                 };
-                unhealthyClients.Add(loggingName);
+                unhealthyClients.Add(combinedName);
             }
             catch (Exception ex)
             {
@@ -72,7 +72,7 @@ public class AwsS3HealthCheck(IS3ClientFactory s3ClientFactory, ILogger<AwsS3Hea
                     Status = "Unhealthy (Exception)",
                     Exception = ex.Message
                 };
-                unhealthyClients.Add(loggingName);
+                unhealthyClients.Add(combinedName);
             }
         }
 

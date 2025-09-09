@@ -4,7 +4,7 @@
       "commandName": "DockerCompose",
       "commandVersion": "1.0",
       "serviceActions": {
-        "keeperdata.bridge": "StartDebugging",
+        "keeperdata_bridge": "StartDebugging",
         "localstack": "StartWithoutDebugging",
         "mongodb": "StartWithoutDebugging",
         "redis": "StartWithoutDebugging"

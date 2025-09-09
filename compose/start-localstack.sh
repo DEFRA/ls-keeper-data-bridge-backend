@@ -23,11 +23,13 @@ else
   echo "S3 bucket created: test-external-bucket"
 fi
 
-## Optional: Add a test object
-echo "Adding test object to S3 bucket..."
-echo "Alive" > /tmp/test-object.txt
-awslocal s3 cp /tmp/test-object.txt s3://test-external-bucket/test-object.txt
+echo "Bootstrapping SNS setup..."
 
-## Optional: List contents
-echo "Listing contents of test-external-bucket:"
-awslocal s3 ls s3://test-external-bucket/
+# Create SNS Topics
+topic_arn=$(awslocal sns create-topic \
+  --name ls-keeper-data-bridge-events \
+  --endpoint-url=http://localhost:4566 \
+  --output text \
+  --query 'TopicArn')
+
+echo "SNS Topic created: $topic_arn"

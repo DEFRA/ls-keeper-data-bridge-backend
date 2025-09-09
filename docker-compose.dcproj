@@ -17,4 +17,9 @@
     <None Include="docker-compose.yml" />
     <None Include=".dockerignore" />
   </ItemGroup>
+  <ItemGroup>
+    <DockerComposeServiceReference Include="keeperdata_bridge">
+      <ProjectPath>src\KeeperData.Bridge\KeeperData.Bridge.csproj</ProjectPath>
+    </DockerComposeServiceReference>
+  </ItemGroup>
 </Project>

@@ -21,7 +21,6 @@ namespace KeeperData.Bridge.Tests.Component;
 public class AppWebApplicationFactory : WebApplicationFactory<Program>
 {
     public Mock<IAmazonS3>? AmazonS3Mock;
-    public Mock<IS3ClientFactory>? S3ClientFactoryMock;
 
     public Mock<IAmazonSimpleNotificationService>? AmazonSimpleNotificationServiceMock;
 

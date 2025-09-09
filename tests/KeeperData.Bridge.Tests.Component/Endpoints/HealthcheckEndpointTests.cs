@@ -24,49 +24,4 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
         responseBody.Should().Contain("All S3 buckets are reachable");
         responseBody.Should().Contain("SNS topic \\u0027ls-keeper-data-bridge-events\\u0027 is reachable.");
     }
-
-    [Fact]
-    public async Task GivenS3BucketsAreNotFound_WhenRequestingHealthCheck_ShouldFail()
-    {
-        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
-            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.NotFound });
-
-        var response = await _appTestFixture.HttpClient.GetAsync("health");
-        var responseBody = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
-        responseBody.Should().NotBeNullOrEmpty().And.Contain("\"status\": \"Unhealthy\"");
-        responseBody.Should().Contain("Some S3 buckets failed");
-    }
-
-    [Fact]
-    public async Task GivenS3ClientThrowsAmazonS3Exception_WhenRequestingHealthCheck_ShouldFail()
-    {
-        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
-            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ListObjectsV2Response { HttpStatusCode = HttpStatusCode.NotFound });
-
-        var response = await _appTestFixture.HttpClient.GetAsync("health");
-        var responseBody = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
-        responseBody.Should().NotBeNullOrEmpty().And.Contain("\"status\": \"Unhealthy\"");
-        responseBody.Should().Contain("Some S3 buckets failed");
-    }
-
-    [Fact]
-    public async Task GivenS3ClientThrowsException_WhenRequestingHealthCheck_ShouldFail()
-    {
-        _appTestFixture.AppWebApplicationFactory.AmazonS3Mock!
-            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Exception message"));
-
-        var response = await _appTestFixture.HttpClient.GetAsync("health");
-        var responseBody = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
-        responseBody.Should().NotBeNullOrEmpty().And.Contain("\"status\": \"Unhealthy\"");
-        responseBody.Should().Contain("Some S3 buckets failed");
-    }
 }

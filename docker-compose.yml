@@ -33,11 +33,12 @@ services:
       - cdp-tenant
 
   mongodb:
+    container_name: mongodb
     image: mongo:6.0.13
     networks:
       - cdp-tenant
     ports:
-      - '27017:27017'
+      - '27018:27017'
     volumes:
       - mongodb-data:/data
     restart: always
@@ -45,7 +46,7 @@ services:
   keeperdata_bridge:
     container_name: "keeperdata_bridge"
     platform: linux
-    image: keeperdata_bridge:latest
+    image: keeperdata_bridge
     build: ./
     ports:
       - '8080:8080'
@@ -62,7 +63,6 @@ services:
     environment:
       PORT: 8080
       LOCALSTACK_ENDPOINT: http://localstack-emulator:4566
-      MONGO_URI: mongodb://mongodb:27017/
     networks:
       - cdp-tenant
 

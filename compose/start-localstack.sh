@@ -11,7 +11,7 @@ set -e
 # S3 buckets
 echo "Bootstrapping S3 setup..."
 
-## Check if bucket already exists
+## Create External Bucket
 existing_bucket=$(awslocal s3api list-buckets \
   --query "Buckets[?Name=='test-external-bucket'].Name" \
   --output text)

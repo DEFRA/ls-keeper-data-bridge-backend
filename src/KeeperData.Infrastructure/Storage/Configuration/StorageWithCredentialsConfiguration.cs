@@ -1,4 +1,4 @@
-using KeeperData.Infrastructure.Storage.Configuration;
+namespace KeeperData.Infrastructure.Storage.Configuration;
 
 public record StorageWithCredentialsConfiguration : StorageConfigurationDetails
 {

@@ -34,8 +34,9 @@ public static class ServiceCollectionExtensions
         factory.AddClient<InternalStorageClient>(
             storageConfiguration.InternalStorage.BucketName,
             defaultAmazonS3Config);
-        //Should we have a health check for each storage client?
-        if (storageConfiguration.ExternalStorage.HealthcheckEnabled || storageConfiguration.InternalStorage.HealthcheckEnabled)
+
+        if (storageConfiguration.ExternalStorage.HealthcheckEnabled
+            || storageConfiguration.InternalStorage.HealthcheckEnabled)
         {
             services.AddHealthChecks()
                 .AddCheck<AwsS3HealthCheck>("aws_s3", tags: ["aws", "s3"]);

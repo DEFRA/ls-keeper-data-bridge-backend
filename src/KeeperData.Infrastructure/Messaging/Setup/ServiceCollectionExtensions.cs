@@ -1,10 +1,10 @@
 using Amazon.SimpleNotificationService;
+using KeeperData.Core.Messaging;
 using KeeperData.Infrastructure.Messaging.Clients;
 using KeeperData.Infrastructure.Messaging.Configuration;
 using KeeperData.Infrastructure.Messaging.Factories;
 using KeeperData.Infrastructure.Messaging.Factories.Implementations;
 using KeeperData.Infrastructure.Messaging.Publishers;
-using KeeperData.Infrastructure.Messaging.Publishers.Implementations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics.CodeAnalysis;

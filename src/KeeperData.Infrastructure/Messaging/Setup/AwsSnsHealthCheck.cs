@@ -14,8 +14,6 @@ public class AwsSnsHealthCheck(IAmazonSimpleNotificationService snsClient, IServ
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($"AwsSnsHealthCheck: {_config.DataBridgeEventsTopic.TopicName}, {_config.DataBridgeEventsTopic.TopicArn}");
-
         var defaultTopicName = _config.DataBridgeEventsTopic.TopicName;
         var defaultTopicArn = _config.DataBridgeEventsTopic.TopicArn ?? string.Empty;
 
@@ -27,12 +25,10 @@ public class AwsSnsHealthCheck(IAmazonSimpleNotificationService snsClient, IServ
         }
         catch (NotFoundException ex)
         {
-            Console.WriteLine(ex.Message);
             return HealthCheckResult.Unhealthy($"SNS topic '{defaultTopicName}' does not exist.", ex);
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.Message);
             return HealthCheckResult.Unhealthy($"Error accessing SNS topic '{defaultTopicName}'.", ex);
         }
     }

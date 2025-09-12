@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using MongoDB.Driver;
 using Moq;
 using System.Net;
 
@@ -23,6 +24,8 @@ public class AppWebApplicationFactory : WebApplicationFactory<Program>
     public Mock<IAmazonS3>? AmazonS3Mock;
 
     public Mock<IAmazonSimpleNotificationService>? AmazonSimpleNotificationServiceMock;
+
+    public Mock<IMongoClient>? MongoClientMock;
 
     private const string ExternalStorageBucket = "test-external-bucket";
     private const string InternalStorageBucket = "test-internal-bucket";
@@ -42,12 +45,20 @@ public class AppWebApplicationFactory : WebApplicationFactory<Program>
             ConfigureS3ClientFactory(services);
 
             ConfigureSimpleNotificationService(services);
+
+            ConfigureDatabase(services);
         });
+    }
+
+    protected T GetService<T>() where T : notnull
+    {
+        return Services.GetRequiredService<T>();
     }
 
     private static void SetTestEnvironmentVariables()
     {
         Environment.SetEnvironmentVariable("AWS__ServiceURL", "http://localhost:4566");
+        Environment.SetEnvironmentVariable("Mongo__DatabaseUri", "mongodb://localhost:27017");
         Environment.SetEnvironmentVariable("IMB_S3_ACCESS_KEY", "test");
         Environment.SetEnvironmentVariable("IMB_S3_ACCESS_SECRET", "test");
         Environment.SetEnvironmentVariable("StorageConfiguration__ExternalStorage__BucketName", ExternalStorageBucket);
@@ -101,6 +112,16 @@ public class AppWebApplicationFactory : WebApplicationFactory<Program>
             .ReturnsAsync(new GetTopicAttributesResponse { HttpStatusCode = HttpStatusCode.OK });
 
         services.Replace(new ServiceDescriptor(typeof(IAmazonSimpleNotificationService), AmazonSimpleNotificationServiceMock.Object));
+    }
+
+    private void ConfigureDatabase(IServiceCollection services)
+    {
+        MongoClientMock = new Mock<IMongoClient>();
+
+        MongoClientMock.Setup(x => x.GetDatabase(It.IsAny<string>(), It.IsAny<MongoDatabaseSettings>()))
+            .Returns(() => new Mock<IMongoDatabase>().Object);
+
+        services.Replace(new ServiceDescriptor(typeof(IMongoClient), MongoClientMock.Object));
     }
 
     private static void RemoveService<T>(IServiceCollection services)

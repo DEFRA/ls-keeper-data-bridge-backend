@@ -1,4 +1,4 @@
-using KeeperData.Common.Exceptions;
+using KeeperData.Core.Exceptions;
 using KeeperData.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;

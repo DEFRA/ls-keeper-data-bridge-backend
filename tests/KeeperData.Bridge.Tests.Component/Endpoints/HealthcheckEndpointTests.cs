@@ -23,6 +23,8 @@ public class HealthcheckEndpointTests(AppTestFixture appTestFixture) : IClassFix
         responseBody.Should().NotBeNullOrEmpty().And.Contain("\"status\": \"Healthy\"");
         responseBody.Should().Contain("All S3 buckets are reachable");
         responseBody.Should().Contain("SNS topic \\u0027ls-keeper-data-bridge-events\\u0027 is reachable.");
+        responseBody.Should().Contain("\"ExternalStorageClient\":");
+        responseBody.Should().Contain("\"InternalStorageClient\":");
         responseBody.Should().Contain("MongoDB is reachable");
     }
 }

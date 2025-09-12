@@ -1,14 +1,16 @@
 services:
   keeperdata_bridge:
     labels:
-      com.microsoft.visual-studio.project-name: "keeperdata_bridge"
+      com.microsoft.visual-studio.project-name: "KeeperData.Bridge"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_HTTP_PORTS=8080
       - AWS__ServiceURL=http://localstack-emulator:4566
+      - Mongo__DatabaseUri=mongodb://mongodb:27017
       - IMB_S3_ACCESS_KEY=test
       - IMB_S3_ACCESS_SECRET=test
       - StorageConfiguration__ExternalStorage__BucketName=test-external-bucket
+      - StorageConfiguration__InternalStorage__BucketName=test-internal-bucket
       - ServiceBusSenderConfiguration__DataBridgeEventsTopic__TopicArn=arn:aws:sns:eu-west-2:000000000000:ls-keeper-data-bridge-events
     ports:
       - "8080"

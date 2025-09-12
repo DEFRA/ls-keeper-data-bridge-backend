@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using MongoDB.Driver;
 using Moq;
 using System.Net;
 
@@ -24,7 +25,10 @@ public class AppWebApplicationFactory : WebApplicationFactory<Program>
 
     public Mock<IAmazonSimpleNotificationService>? AmazonSimpleNotificationServiceMock;
 
+    public Mock<IMongoClient>? MongoClientMock;
+
     private const string ExternalStorageBucket = "test-external-bucket";
+    private const string InternalStorageBucket = "test-internal-bucket";
     private const string DataBridgeEventsTopicName = "ls-keeper-data-bridge-events";
     private const string DataBridgeEventsTopicArn = $"arn:aws:sns:eu-west-2:000000000000:{DataBridgeEventsTopicName}";
 
@@ -41,15 +45,24 @@ public class AppWebApplicationFactory : WebApplicationFactory<Program>
             ConfigureS3ClientFactory(services);
 
             ConfigureSimpleNotificationService(services);
+
+            ConfigureDatabase(services);
         });
+    }
+
+    protected T GetService<T>() where T : notnull
+    {
+        return Services.GetRequiredService<T>();
     }
 
     private static void SetTestEnvironmentVariables()
     {
         Environment.SetEnvironmentVariable("AWS__ServiceURL", "http://localhost:4566");
+        Environment.SetEnvironmentVariable("Mongo__DatabaseUri", "mongodb://localhost:27017");
         Environment.SetEnvironmentVariable("IMB_S3_ACCESS_KEY", "test");
         Environment.SetEnvironmentVariable("IMB_S3_ACCESS_SECRET", "test");
         Environment.SetEnvironmentVariable("StorageConfiguration__ExternalStorage__BucketName", ExternalStorageBucket);
+        Environment.SetEnvironmentVariable("StorageConfiguration__InternalStorage__BucketName", InternalStorageBucket);
         Environment.SetEnvironmentVariable("ServiceBusSenderConfiguration__DataBridgeEventsTopic__TopicName", DataBridgeEventsTopicName);
         Environment.SetEnvironmentVariable("ServiceBusSenderConfiguration__DataBridgeEventsTopic__TopicArn", string.Empty);
     }
@@ -80,6 +93,7 @@ public class AppWebApplicationFactory : WebApplicationFactory<Program>
         if (factory is S3ClientFactory concreteFactory)
         {
             concreteFactory.RegisterMockClient<ExternalStorageClient>(ExternalStorageBucket, AmazonS3Mock.Object);
+            concreteFactory.RegisterMockClient<InternalStorageClient>(InternalStorageBucket, AmazonS3Mock.Object);
         }
     }
 
@@ -98,6 +112,16 @@ public class AppWebApplicationFactory : WebApplicationFactory<Program>
             .ReturnsAsync(new GetTopicAttributesResponse { HttpStatusCode = HttpStatusCode.OK });
 
         services.Replace(new ServiceDescriptor(typeof(IAmazonSimpleNotificationService), AmazonSimpleNotificationServiceMock.Object));
+    }
+
+    private void ConfigureDatabase(IServiceCollection services)
+    {
+        MongoClientMock = new Mock<IMongoClient>();
+
+        MongoClientMock.Setup(x => x.GetDatabase(It.IsAny<string>(), It.IsAny<MongoDatabaseSettings>()))
+            .Returns(() => new Mock<IMongoDatabase>().Object);
+
+        services.Replace(new ServiceDescriptor(typeof(IMongoClient), MongoClientMock.Object));
     }
 
     private static void RemoveService<T>(IServiceCollection services)

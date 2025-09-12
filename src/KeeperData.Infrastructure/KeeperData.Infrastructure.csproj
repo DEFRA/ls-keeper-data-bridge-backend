@@ -24,8 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\KeeperData.Common\KeeperData.Common.csproj" />
-    <ProjectReference Include="..\KeeperData.Data\KeeperData.Data.csproj" />
+    <ProjectReference Include="..\KeeperData.Application\KeeperData.Application.csproj" />
   </ItemGroup>
 
 </Project>

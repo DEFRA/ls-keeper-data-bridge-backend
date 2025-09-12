@@ -23,6 +23,22 @@ else
   echo "S3 bucket created: test-external-bucket"
 fi
 
+## Create Internal Bucket
+INTERNAL_BUCKET_NAME="test-internal-bucket"
+existing_internal_bucket=$(awslocal s3api list-buckets \
+  --query "Buckets[?Name=='$INTERNAL_BUCKET_NAME'].Name" \
+  --output text)
+
+if [ "$existing_internal_bucket" == "$INTERNAL_BUCKET_NAME" ]; then
+  echo "S3 bucket already exists: $INTERNAL_BUCKET_NAME"
+else
+  awslocal s3api create-bucket --bucket "$INTERNAL_BUCKET_NAME" --region eu-west-2 \
+    --create-bucket-configuration LocationConstraint=eu-west-2 \
+    --endpoint-url=http://localhost:4566
+  echo "S3 bucket created: $INTERNAL_BUCKET_NAME"
+fi
+
+
 echo "Bootstrapping SNS setup..."
 
 # Create SNS Topics

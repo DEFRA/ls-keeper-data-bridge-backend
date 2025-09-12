@@ -1,3 +1,4 @@
+using KeeperData.Application.Setup;
 using KeeperData.Infrastructure.Database.Setup;
 using KeeperData.Infrastructure.Messaging.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
@@ -11,6 +12,8 @@ namespace KeeperData.Bridge.Setup
             services.AddDefaultAWSOptions(configuration.GetAWSOptions());
 
             services.ConfigureHealthChecks();
+
+            services.AddApplicationLayer();
 
             services.AddDatabaseDependencies(configuration);
 

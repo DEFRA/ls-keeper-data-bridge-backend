@@ -1,12 +1,10 @@
 using FluentAssertions;
-using KeeperData.Data.Configuration;
+using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Database.Setup;
-using KeeperData.Infrastructure.Messaging.Exceptions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using Moq;
-using System;
 
 namespace KeeperData.Infrastructure.Tests.Unit.Database.Setup;
 

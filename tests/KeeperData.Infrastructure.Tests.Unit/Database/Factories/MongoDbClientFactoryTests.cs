@@ -1,5 +1,5 @@
 using FluentAssertions;
-using KeeperData.Data.Configuration;
+using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Database.Factories.Implementations;
 using Microsoft.Extensions.Options;
 using Moq;

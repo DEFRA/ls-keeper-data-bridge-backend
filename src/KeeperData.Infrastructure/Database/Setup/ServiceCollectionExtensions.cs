@@ -1,8 +1,12 @@
-using KeeperData.Data.Configuration;
-using KeeperData.Data.Repositories;
-using KeeperData.Data.Repositories.Implementations;
+using KeeperData.Core.Repositories;
+using KeeperData.Core.Transactions;
+using KeeperData.Infrastructure.Behaviors;
+using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Database.Factories;
 using KeeperData.Infrastructure.Database.Factories.Implementations;
+using KeeperData.Infrastructure.Database.Repositories;
+using KeeperData.Infrastructure.Database.Transactions;
+using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
@@ -29,7 +33,13 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped(sp => sp.GetRequiredService<IMongoSessionFactory>().GetSession());
         services.AddSingleton(sp => sp.GetRequiredService<IMongoDbClientFactory>().CreateClient());
-        services.AddScoped(typeof(IGenericRepository<>), typeof(MongoRepository<>));
+        services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
+
+        services.AddScoped<IUnitOfWork, MongoUnitOfWork>();
+        services.AddScoped(sp => (ITransactionManager)sp.GetRequiredService<IUnitOfWork>());
+
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(UnitOfWorkTransactionBehavior<,>));
 
         if (mongoConfig.HealthcheckEnabled)
         {

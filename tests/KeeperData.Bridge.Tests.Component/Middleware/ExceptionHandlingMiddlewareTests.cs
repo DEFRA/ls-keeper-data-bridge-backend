@@ -1,7 +1,7 @@
 using FluentAssertions;
 using FluentValidation.Results;
 using KeeperData.Bridge.Middleware;
-using KeeperData.Common.Exceptions;
+using KeeperData.Core.Exceptions;
 using KeeperData.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;

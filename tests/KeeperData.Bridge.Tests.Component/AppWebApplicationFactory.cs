@@ -49,6 +49,11 @@ public class AppWebApplicationFactory : WebApplicationFactory<Program>
         });
     }
 
+    protected T GetService<T>() where T : notnull
+    {
+        return Services.GetRequiredService<T>();
+    }
+
     private static void SetTestEnvironmentVariables()
     {
         Environment.SetEnvironmentVariable("AWS__ServiceURL", "http://localhost:4566");

@@ -45,7 +45,7 @@ services:
   keeperdata_bridge:
     container_name: "keeperdata_bridge"
     platform: linux
-    image: keeperdata_bridge:latest
+    image: keeperdata_bridge
     build: ./
     ports:
       - '8080:8080'

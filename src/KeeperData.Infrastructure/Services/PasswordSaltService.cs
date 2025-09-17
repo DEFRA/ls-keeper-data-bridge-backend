@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using System.Text.RegularExpressions;
 
 namespace KeeperData.Infrastructure.Services;
+
 public partial class PasswordSaltService(IConfiguration configuration, TimeProvider timeProvider) : IPasswordSaltService
 {
     private static readonly Regex DatePattern = DatePatternRegEx();
@@ -36,16 +37,16 @@ public partial class PasswordSaltService(IConfiguration configuration, TimeProvi
         var dateTime = _timeProvider.GetUtcNow();
         var dateString = dateTime.ToString("yyyy-MM-dd");
         var timeString = dateTime.ToString("HHmmss");
-        
+
         var prefixes = new List<string>();
         for (int i = 0; i < 7; i++)
         {
-            var length = _random.Next(2, 10);        
+            var length = _random.Next(2, 10);
             prefixes.Add(GenerateRandomString(length));
         }
-        
+
         var fileName = $"{string.Join("_", prefixes)}_{dateString}-{timeString}.csv";
-        
+
         return fileName;
     }
 
@@ -53,12 +54,12 @@ public partial class PasswordSaltService(IConfiguration configuration, TimeProvi
     {
         const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         var stringChars = new char[length];
-        
+
         for (int i = 0; i < length; i++)
         {
             stringChars[i] = chars[_random.Next(chars.Length)];
         }
-        
+
         return new string(stringChars);
     }
 
@@ -84,8 +85,8 @@ public partial class PasswordSaltService(IConfiguration configuration, TimeProvi
 
         var beforeDate = fileNameWithoutExtension.Substring(0, dateIndex).TrimEnd('_', '-');
         var afterDateStartIndex = dateIndex + dateString.Length;
-        var afterDate = afterDateStartIndex < fileNameWithoutExtension.Length 
-            ? fileNameWithoutExtension.Substring(afterDateStartIndex).TrimStart('_', '-') 
+        var afterDate = afterDateStartIndex < fileNameWithoutExtension.Length
+            ? fileNameWithoutExtension.Substring(afterDateStartIndex).TrimStart('_', '-')
             : string.Empty;
 
         return new FileNameComponents(beforeDate, dateString, afterDate, fileExtension);
@@ -100,7 +101,7 @@ public partial class PasswordSaltService(IConfiguration configuration, TimeProvi
         var part1 = components.DateString;
 
         var password = $"{part1}_{part2}";
-        
+
         if (!string.IsNullOrEmpty(components.AfterDate))
         {
             var afterDateParts = components.AfterDate.Split('_');

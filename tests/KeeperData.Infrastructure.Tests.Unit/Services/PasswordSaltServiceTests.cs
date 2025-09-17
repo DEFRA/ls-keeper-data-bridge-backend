@@ -86,7 +86,7 @@ public class PasswordSaltServiceTests
         Assert.EndsWith("_2025-08-05-143045.csv", result);
 
         var parts = result.Split('_');
-        Assert.True(parts.Length >= 8);        
+        Assert.True(parts.Length >= 8);
 
         var passwordSalt = _sut.Get(result);
         Assert.NotNull(passwordSalt);

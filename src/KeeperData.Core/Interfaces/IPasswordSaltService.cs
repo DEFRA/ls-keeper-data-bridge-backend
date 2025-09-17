@@ -1,0 +1,10 @@
+namespace KeeperData.Core.Interfaces;
+
+public record PasswordSalt(string Password, string Salt);
+
+public interface IPasswordSaltService
+{
+    PasswordSalt Get(string fileName);
+
+    string GenerateFileName();
+}

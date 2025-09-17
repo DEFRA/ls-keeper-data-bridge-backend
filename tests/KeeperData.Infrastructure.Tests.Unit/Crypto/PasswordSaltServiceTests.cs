@@ -1,10 +1,10 @@
 using KeeperData.Core.Exceptions;
-using KeeperData.Infrastructure.Services;
+using KeeperData.Infrastructure.Crypto;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 
-namespace KeeperData.Infrastructure.Tests.Unit.Services;
+namespace KeeperData.Infrastructure.Tests.Unit.Crypto;
 
 public class PasswordSaltServiceTests
 {

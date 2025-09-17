@@ -1,4 +1,4 @@
-namespace KeeperData.Core.Interfaces;
+namespace KeeperData.Core.Crypto;
 
 public record PasswordSalt(string Password, string Salt);
 

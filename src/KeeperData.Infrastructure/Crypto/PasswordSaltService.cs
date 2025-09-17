@@ -1,9 +1,9 @@
+using KeeperData.Core.Crypto;
 using KeeperData.Core.Exceptions;
-using KeeperData.Core.Interfaces;
 using Microsoft.Extensions.Configuration;
 using System.Text.RegularExpressions;
 
-namespace KeeperData.Infrastructure.Services;
+namespace KeeperData.Infrastructure.Crypto;
 
 public partial class PasswordSaltService(IConfiguration configuration, TimeProvider timeProvider) : IPasswordSaltService
 {

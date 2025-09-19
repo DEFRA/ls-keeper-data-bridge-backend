@@ -2,7 +2,7 @@ using FluentAssertions;
 
 namespace KeeperData.Bridge.Tests.Integration.Endpoints;
 
-[Trait("Category", "Integration")]
+[Trait("Dependence", "localstack")]
 public class HealthcheckEndpointTests(IntegrationTestFixture fixture) : IClassFixture<IntegrationTestFixture>
 {
     private readonly HttpClient _httpClient = fixture.HttpClient;

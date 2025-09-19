@@ -1,4 +1,5 @@
 using Amazon.SimpleNotificationService.Model;
+using KeeperData.Core.Messaging.Extensions;
 using System.Text.Json;
 
 namespace KeeperData.Infrastructure.Messaging.Factories.Implementations;
@@ -41,12 +42,7 @@ public class MessageFactory : IMessageFactory
             StringValue = dateTime.ToString()
         });
 
-        if (additionalUserProperties == null || additionalUserProperties.Count == 0)
-        {
-            return message;
-        }
-
-        foreach (var (key, value) in additionalUserProperties)
+        foreach (var (key, value) in additionalUserProperties ?? [])
         {
             message.MessageAttributes.Add(key, new MessageAttributeValue
             {
@@ -54,6 +50,19 @@ public class MessageFactory : IMessageFactory
                 StringValue = value
             });
         }
+
+        message.MessageAttributes.TryAdd("Subject", new MessageAttributeValue
+        {
+            DataType = "String",
+            StringValue = subject.ReplaceSuffix()
+        });
+
+        // TODO - Write this out with a Logical Context AsyncLocal implementation
+        message.MessageAttributes.TryAdd("CorrelationId", new MessageAttributeValue
+        {
+            DataType = "String",
+            StringValue = Guid.NewGuid().ToString()
+        });
 
         return message;
     }

@@ -1,4 +1,5 @@
 namespace KeeperData.Infrastructure.Storage.Configuration;
+
 public record StorageConfigurationDetails
 {
     public bool HealthcheckEnabled { get; init; }

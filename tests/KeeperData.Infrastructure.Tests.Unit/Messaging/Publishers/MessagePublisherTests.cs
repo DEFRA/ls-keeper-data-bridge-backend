@@ -1,10 +1,10 @@
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using FluentAssertions;
+using KeeperData.Core.Messaging.Exceptions;
 using KeeperData.Infrastructure.Messaging.Configuration;
-using KeeperData.Infrastructure.Messaging.Exceptions;
 using KeeperData.Infrastructure.Messaging.Factories.Implementations;
-using KeeperData.Infrastructure.Messaging.Publishers.Implementations;
+using KeeperData.Infrastructure.Messaging.Publishers;
 using Moq;
 using System.Net;
 

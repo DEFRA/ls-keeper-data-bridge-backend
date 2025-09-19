@@ -1,3 +1,5 @@
+using KeeperData.Core.Messaging;
+
 namespace KeeperData.Infrastructure.Messaging.Clients;
 
 public class DataBridgeTopicClient : ITopicClient

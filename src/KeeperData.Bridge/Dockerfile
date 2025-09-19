@@ -14,7 +14,7 @@ WORKDIR /src
 COPY ["src/KeeperData.Bridge/KeeperData.Bridge.csproj", "src/KeeperData.Bridge/"]
 COPY ["src/KeeperData.Core/KeeperData.Core.csproj", "src/KeeperData.Core/"]
 COPY ["src/KeeperData.Infrastructure/KeeperData.Infrastructure.csproj", "src/KeeperData.Infrastructure/"]
-COPY ["src/KeeperData.Common/KeeperData.Common.csproj", "src/KeeperData.Common/"]
+COPY ["src/KeeperData.Application/KeeperData.Application.csproj", "src/KeeperData.Application/"]
 COPY ["src/KeeperData.Data/KeeperData.Data.csproj", "src/KeeperData.Data/"]
 RUN dotnet restore "./src/KeeperData.Bridge/KeeperData.Bridge.csproj"
 COPY . .

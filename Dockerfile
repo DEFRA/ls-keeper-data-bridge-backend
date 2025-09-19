@@ -18,16 +18,14 @@ ENV BUILD_CONFIGURATION=${BUILD_CONFIGURATION}
 WORKDIR /src
 
 COPY ["src/KeeperData.Bridge/KeeperData.Bridge.csproj", "KeeperData.Bridge/"]
-COPY ["src/KeeperData.Common/KeeperData.Common.csproj", "KeeperData.Common/"]
-COPY ["src/KeeperData.Core/KeeperData.Core.csproj", "KeeperData.Core/"]
-COPY ["src/KeeperData.Data/KeeperData.Data.csproj", "KeeperData.Data/"]
 COPY ["src/KeeperData.Infrastructure/KeeperData.Infrastructure.csproj", "KeeperData.Infrastructure/"]
+COPY ["src/KeeperData.Application/KeeperData.Application.csproj", "KeeperData.Application/"]
+COPY ["src/KeeperData.Core/KeeperData.Core.csproj", "KeeperData.Core/"]
 
 RUN dotnet restore "KeeperData.Bridge/KeeperData.Bridge.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Common/KeeperData.Common.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Core/KeeperData.Core.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Data/KeeperData.Data.csproj" -r linux-x64 -v n
 RUN dotnet restore "KeeperData.Infrastructure/KeeperData.Infrastructure.csproj" -r linux-x64 -v n
+RUN dotnet restore "KeeperData.Application/KeeperData.Application.csproj" -r linux-x64 -v n
+RUN dotnet restore "KeeperData.Core/KeeperData.Core.csproj" -r linux-x64 -v n
 
 COPY ["src/", "."]
 

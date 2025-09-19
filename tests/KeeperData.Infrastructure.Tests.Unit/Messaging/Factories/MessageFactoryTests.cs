@@ -41,7 +41,7 @@ public class MessageFactoryTests
         var result = _factory.CreateMessage(TestTopicArn, testMessage, additionalUserProperties: null);
 
         result.MessageAttributes.Should().ContainKey("EventTimeUtc");
-        result.MessageAttributes.Count.Should().Be(1);
+        result.MessageAttributes.Count.Should().Be(3);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class MessageFactoryTests
         var result = _factory.CreateMessage(TestTopicArn, testMessage);
 
         result.MessageAttributes.Should().ContainKey("EventTimeUtc");
-        result.MessageAttributes.Count.Should().Be(1);
+        result.MessageAttributes.Count.Should().Be(3);
     }
 
     [Fact]

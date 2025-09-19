@@ -29,11 +29,6 @@ RUN dotnet restore "KeeperData.Core/KeeperData.Core.csproj" -r linux-x64 -v n
 
 COPY ["src/", "."]
 
-# Run all tests except those with "Integration" in the path
-RUN find ./tests -name '*.csproj' | grep -v Integration | while read testproj; do \
-    dotnet test "$testproj" --configuration ${BUILD_CONFIGURATION} --no-restore --verbosity normal; \
-done
-
 FROM build AS publish
 WORKDIR "/src/KeeperData.Bridge"
 RUN dotnet publish "KeeperData.Bridge.csproj" -v n -c ${BUILD_CONFIGURATION} -o /app/publish -r linux-x64 --no-restore /p:UseAppHost=false

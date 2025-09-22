@@ -1,4 +1,5 @@
 using KeeperData.Application.Setup;
+using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Database.Setup;
 using KeeperData.Infrastructure.Messaging.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
@@ -20,6 +21,8 @@ namespace KeeperData.Bridge.Setup
             services.AddMessagingDependencies(configuration);
 
             services.AddStorageDependencies(configuration);
+
+            services.AddCrypto(configuration);
         }
 
         private static void ConfigureHealthChecks(this IServiceCollection services)

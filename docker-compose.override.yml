@@ -12,6 +12,7 @@ services:
       - StorageConfiguration__ExternalStorage__BucketName=test-external-bucket
       - StorageConfiguration__InternalStorage__BucketName=test-internal-bucket
       - ServiceBusSenderConfiguration__DataBridgeEventsTopic__TopicArn=arn:aws:sns:eu-west-2:000000000000:ls-keeper-data-bridge-events
+      - AesSalt=LD8BB2NNze7qKbVyLutAfGBxhkAApR 
     ports:
       - "8080"
     volumes:

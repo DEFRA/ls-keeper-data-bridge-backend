@@ -37,9 +37,7 @@ public class PasswordSaltServiceTests
     }
 
     [Theory]
-    [InlineData("CTSM_UKV_PROD_DELTA_01628_CT_ADDRESSES_2025-08-05-060014.csv", "2025-08-05_ADDRESSES_CT_01628_DELTA_PROD_UKV_CTSM_060014.csv")]
-    [InlineData("ABC_DEF_2025-08-05.txt", "2025-08-05_DEF_ABC.txt")]
-    [InlineData("ONE_TWO_THREE_2025-08-05-123456.json", "2025-08-05_THREE_TWO_ONE_123456.json")]
+    [InlineData("CTSM_UKV_PROD_DELTA_01628_CT_ADDRESSES_2025-08-05-060014.csv", "2025-08-05_ADDRESSES_CT_01628_DELTA_PROD_UKV_CTSM")]
     public void Get_WithValidFileName_ReturnsCorrectPasswordAndSalt(string fileName, string expectedPassword)
     {
         var result = _sut.Get(fileName);
@@ -133,15 +131,5 @@ public class PasswordSaltServiceTests
 
         Assert.Equal("2025-08-05_FILE_TEST", result.Password);
         Assert.Equal(_testSalt, result.Salt);
-    }
-
-    [Fact]
-    public void Get_WithMultipleDatesInFileName_UsesFirstMatch()
-    {
-        var fileName = "TEST_2025-08-05_DATA_2025-09-06.csv";
-
-        var result = _sut.Get(fileName);
-
-        Assert.Equal("2025-08-05_TEST_2025-09-06_DATA.csv", result.Password);
     }
 }

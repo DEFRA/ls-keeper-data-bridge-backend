@@ -34,19 +34,19 @@ encryptCommand.SetAction(async (parseResult) =>
     var cryptoTransform = host.Services.GetRequiredService<IAesCryptoTransform>();
 
     Console.WriteLine($"Encrypting '{inputFile}' to '{outputFile}'...");
-    
+
     try
     {
         await cryptoTransform.EncryptFileAsync(
-            inputFile, 
-            outputFile, 
-            password, 
+            inputFile,
+            outputFile,
+            password,
             salt,
-            (progress, status) => 
+            (progress, status) =>
             {
                 Console.Write($"\rProgress: {progress}% - {status}");
             });
-        
+
         Console.WriteLine("\nEncryption completed successfully!");
     }
     catch (Exception ex)
@@ -74,19 +74,19 @@ decryptCommand.SetAction(async (parseResult) =>
     var cryptoTransform = host.Services.GetRequiredService<IAesCryptoTransform>();
 
     Console.WriteLine($"Decrypting '{inputFile}' to '{outputFile}'...");
-    
+
     try
     {
         await cryptoTransform.DecryptFileAsync(
-            inputFile, 
-            outputFile, 
-            password, 
+            inputFile,
+            outputFile,
+            password,
             salt,
-            (progress, status) => 
+            (progress, status) =>
             {
                 Console.Write($"\rProgress: {progress}% - {status}");
             });
-        
+
         Console.WriteLine("\nDecryption completed successfully!");
     }
     catch (Exception ex)
@@ -144,4 +144,3 @@ rootCommand.Add(generateFilenameCommand);
 
 var parseResult = rootCommand.Parse(args);
 return await parseResult.InvokeAsync();
-

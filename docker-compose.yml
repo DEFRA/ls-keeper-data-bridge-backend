@@ -66,6 +66,17 @@ services:
     networks:
       - cdp-tenant
 
+  keeperdata_bridge_worker:
+    container_name: "keeperdata_bridge_worker"
+    build:
+      context: .
+      dockerfile: src/KeeperData.Bridge.Worker/Dockerfile
+    depends_on:
+      - mongodb
+      - localstack
+    networks:
+      - cdp-tenant
+
 volumes:
   mongodb-data:
 

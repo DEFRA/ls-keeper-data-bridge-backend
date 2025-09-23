@@ -31,6 +31,10 @@ Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "docker-co
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeeperData.Core.Tests.Unit", "tests\KeeperData.Core.Tests.Unit\KeeperData.Core.Tests.Unit.csproj", "{389DD08B-1B37-4BF2-9F2B-3F4805B25A46}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "util", "util", "{25784FFF-FBA8-4398-8497-7BE1FF8F92A5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeeperData.Crypto.Tool", "src\KeeperData.Crypto.Tool\KeeperData.Crypto.Tool.csproj", "{92F51802-9BF8-42A8-98C9-C25B27163DF0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -77,6 +81,10 @@ Global
 		{389DD08B-1B37-4BF2-9F2B-3F4805B25A46}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{389DD08B-1B37-4BF2-9F2B-3F4805B25A46}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{389DD08B-1B37-4BF2-9F2B-3F4805B25A46}.Release|Any CPU.Build.0 = Release|Any CPU
+		{92F51802-9BF8-42A8-98C9-C25B27163DF0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{92F51802-9BF8-42A8-98C9-C25B27163DF0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{92F51802-9BF8-42A8-98C9-C25B27163DF0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{92F51802-9BF8-42A8-98C9-C25B27163DF0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -86,6 +94,7 @@ Global
 		{E2B6D37D-2D17-4B43-83DC-36F1C4961526} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{16AA106D-B4F1-46C9-92F3-548AE89FDA3A} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{389DD08B-1B37-4BF2-9F2B-3F4805B25A46} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{92F51802-9BF8-42A8-98C9-C25B27163DF0} = {25784FFF-FBA8-4398-8497-7BE1FF8F92A5}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {235917AE-9AF5-49A5-AB06-472A5E5DB30D}

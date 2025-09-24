@@ -5,7 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Moq;
 using Quartz;
 
-namespace KeeperData.Bridge.Tests.Component;
+namespace KeeperData.Bridge.Tests.Component.Scheduling;
 
 public class SchedulerTests
 {
@@ -14,10 +14,9 @@ public class SchedulerTests
     {
         var jobDidRun = new ManualResetEventSlim(false);
 
-        var mockTaskDownload = new Mock<ITaskDownload>();
-        var mockTaskProcess = new Mock<ITaskProcess>();
+        var taskProcessBulkFilesMock = new Mock<ITaskProcessBulkFiles>();
 
-        mockTaskProcess.Setup(x => x.RunAsync(It.IsAny<CancellationToken>()))
+        taskProcessBulkFilesMock.Setup(x => x.RunAsync(It.IsAny<CancellationToken>()))
             .Returns(() =>
             {
                 jobDidRun.Set();
@@ -27,37 +26,31 @@ public class SchedulerTests
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices((hostContext, services) =>
             {
-                services.AddScoped<ITaskDownload>(_ => mockTaskDownload.Object);
-                services.AddScoped<ITaskProcess>(_ => mockTaskProcess.Object);
-
-                services.AddScoped<DataProcessingOrchestratorJob>();
+                services.AddScoped(_ => taskProcessBulkFilesMock.Object);
+                services.AddScoped<ImportBulkFilesJob>();
 
                 services.AddQuartz(q =>
                 {
-
                     q.UseInMemoryStore();
 
-                    var jobKey = new JobKey("TestOrchestratorJob");
-
                     // Durable as don't want a timed trigger in tests
-                    q.AddJob<DataProcessingOrchestratorJob>(opts => opts.WithIdentity(jobKey).StoreDurably());
+                    var jobKey = new JobKey("TestJob");
+                    q.AddJob<ImportBulkFilesJob>(opts => opts.WithIdentity(jobKey).StoreDurably());
                 });
                 services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
             }).Build();
 
-
         await host.StartAsync();
 
-        var scheduler = host.Services.GetRequiredService<ISchedulerFactory>().GetScheduler().Result;
+        var scheduler = await host.Services.GetRequiredService<ISchedulerFactory>().GetScheduler();
 
-        await scheduler.TriggerJob(new JobKey("TestOrchestratorJob"));
+        await scheduler.TriggerJob(new JobKey("TestJob"));
 
         var completedInTime = jobDidRun.Wait(TimeSpan.FromSeconds(10));
 
         await host.StopAsync();
 
         Assert.True(completedInTime, "The job did not complete in the expected time.");
-        mockTaskDownload.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
-        mockTaskProcess.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
+        taskProcessBulkFilesMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

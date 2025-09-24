@@ -8,94 +8,66 @@ namespace KeeperData.Infrastructure.Tests.Unit.Scheduling
 {
     public class DataProcessingOrchestratorJobTests
     {
-        private readonly Mock<ILogger<DataProcessingOrchestratorJob>> _mockLogger;
-        private readonly Mock<ITaskDownload> _mockTaskDownload;
-        private readonly Mock<ITaskProcess> _mockTaskProcess;
-        private readonly Mock<IJobExecutionContext> _mockContext;
-        private readonly DataProcessingOrchestratorJob _sut;
+        private readonly Mock<ILogger<ImportBulkFilesJob>> _loggerMock;
+        private readonly Mock<ITaskProcessBulkFiles> _taskProcessBulkFilesMock;
+        private readonly Mock<IJobExecutionContext> _jobExecutionContextMock;
+
+        private readonly ImportBulkFilesJob _sut;
 
         public DataProcessingOrchestratorJobTests()
         {
-            _mockLogger = new Mock<ILogger<DataProcessingOrchestratorJob>>();
-            _mockTaskDownload = new Mock<ITaskDownload>();
-            _mockTaskProcess = new Mock<ITaskProcess>();
-            _mockContext = new Mock<IJobExecutionContext>();
+            _loggerMock = new Mock<ILogger<ImportBulkFilesJob>>();
+            _taskProcessBulkFilesMock = new Mock<ITaskProcessBulkFiles>();
+            _jobExecutionContextMock = new Mock<IJobExecutionContext>();
 
             var cts = new CancellationTokenSource();
-            _mockContext.Setup(c => c.CancellationToken).Returns(cts.Token);
+            _jobExecutionContextMock.Setup(c => c.CancellationToken).Returns(cts.Token);
 
-            _sut = new DataProcessingOrchestratorJob(
-                _mockLogger.Object,
-                _mockTaskDownload.Object,
-                _mockTaskProcess.Object);
+            _sut = new ImportBulkFilesJob(
+                _taskProcessBulkFilesMock.Object,
+                _loggerMock.Object);
         }
 
         [Fact]
         public async Task Execute_WhenSuccessful_CallsTasksInSequence()
         {
             var sequence = new MockSequence();
-            _mockTaskDownload.InSequence(sequence).Setup(x => x.RunAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-            _mockTaskProcess.InSequence(sequence).Setup(x => x.RunAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            _taskProcessBulkFilesMock.InSequence(sequence).Setup(x => x.RunAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
-            await _sut.Execute(_mockContext.Object);
+            await _sut.Execute(_jobExecutionContextMock.Object);
 
-            // Verify calls are in the correct order.
-            _mockTaskDownload.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
-            _mockTaskProcess.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
-        }
-
-        [Fact]
-        public async Task Execute_WhenTaskAFails_DoesNotCallTaskBAndThrows()
-        {
-            var expectedException = new InvalidOperationException("Task A failed!");
-            _mockTaskDownload.Setup(x => x.RunAsync(It.IsAny<CancellationToken>())).ThrowsAsync(expectedException);
-
-            var action = async () => await _sut.Execute(_mockContext.Object);
-
-            await Assert.ThrowsAsync<InvalidOperationException>(action);
-            _mockTaskProcess.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Never);
+            _taskProcessBulkFilesMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
         public async Task Execute_WhenTaskProcessFails_ThrowsException()
         {
-            var expectedException = new InvalidOperationException("Task Process failed!");
+            _taskProcessBulkFilesMock.Setup(x => x.RunAsync(It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("Invalid operation exception"));
 
-            // Task A succeeds
-            _mockTaskDownload.Setup(x => x.RunAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            async Task act() => await _sut.Execute(_jobExecutionContextMock.Object);
 
-            // Task B fails
-            _mockTaskProcess.Setup(x => x.RunAsync(It.IsAny<CancellationToken>())).ThrowsAsync(expectedException);
+            await Assert.ThrowsAsync<InvalidOperationException>(act);
 
-            var action = async () => await _sut.Execute(_mockContext.Object);
-
-            await Assert.ThrowsAsync<InvalidOperationException>(action);
-
-            _mockTaskDownload.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
+            _taskProcessBulkFilesMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
         }
-
 
         [Fact]
         public async Task Execute_WhenCancellationIsRequested_StopsProcessingAndThrows()
         {
             var cts = new CancellationTokenSource();
+            _jobExecutionContextMock.Setup(c => c.CancellationToken).Returns(cts.Token);
 
-            _mockContext.Setup(c => c.CancellationToken).Returns(cts.Token);
-
-            _mockTaskDownload
+            _taskProcessBulkFilesMock
                 .Setup(x => x.RunAsync(It.IsAny<CancellationToken>()))
-                .Returns<CancellationToken>(async (token) => {
-                    await Task.Delay(100, token);
-                });
+                .Returns<CancellationToken>(async (token) => await Task.Delay(100, token));
 
             // Act
-            var executionTask = _sut.Execute(_mockContext.Object);
+            var executionTask = _sut.Execute(_jobExecutionContextMock.Object);
             cts.Cancel();
 
             // Assert
             await Assert.ThrowsAsync<TaskCanceledException>(() => executionTask);
-
-            _mockTaskProcess.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Never);
         }
     }
 }

@@ -18,11 +18,13 @@ ENV BUILD_CONFIGURATION=${BUILD_CONFIGURATION}
 WORKDIR /src
 
 COPY ["src/KeeperData.Bridge/KeeperData.Bridge.csproj", "KeeperData.Bridge/"]
+COPY ["src/KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj", "KeeperData.Bridge.Worker/"]
 COPY ["src/KeeperData.Infrastructure/KeeperData.Infrastructure.csproj", "KeeperData.Infrastructure/"]
 COPY ["src/KeeperData.Application/KeeperData.Application.csproj", "KeeperData.Application/"]
 COPY ["src/KeeperData.Core/KeeperData.Core.csproj", "KeeperData.Core/"]
 
 RUN dotnet restore "KeeperData.Bridge/KeeperData.Bridge.csproj" -r linux-x64 -v n
+RUN dotnet restore "KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj" -r linux-x64 -v n
 RUN dotnet restore "KeeperData.Infrastructure/KeeperData.Infrastructure.csproj" -r linux-x64 -v n
 RUN dotnet restore "KeeperData.Application/KeeperData.Application.csproj" -r linux-x64 -v n
 RUN dotnet restore "KeeperData.Core/KeeperData.Core.csproj" -r linux-x64 -v n

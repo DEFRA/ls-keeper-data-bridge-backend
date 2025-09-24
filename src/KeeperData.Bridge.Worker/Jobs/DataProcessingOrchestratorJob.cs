@@ -1,4 +1,5 @@
 using KeeperData.Bridge.Worker.Tasks;
+using Microsoft.Extensions.Logging;
 using Quartz;
 using System;
 using System.Collections.Generic;
@@ -29,7 +30,6 @@ namespace KeeperData.Bridge.Worker.Jobs
             catch (Exception ex)
             {
                 logger.LogError(ex, "Orchestration Job failed.");
-                // Optionally, rethrow the exception to have Quartz mark the job as failed
                 throw;
             }
         }

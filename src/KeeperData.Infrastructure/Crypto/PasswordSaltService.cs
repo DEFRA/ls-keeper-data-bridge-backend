@@ -102,15 +102,6 @@ public partial class PasswordSaltService(IConfiguration configuration, TimeProvi
 
         var password = $"{part1}_{part2}";
 
-        if (!string.IsNullOrEmpty(components.AfterDate))
-        {
-            var afterDateParts = components.AfterDate.Split('_');
-            Array.Reverse(afterDateParts);
-            password += "_" + string.Join("_", afterDateParts);
-        }
-
-        password += components.FileExtension;
-
         return password;
     }
 

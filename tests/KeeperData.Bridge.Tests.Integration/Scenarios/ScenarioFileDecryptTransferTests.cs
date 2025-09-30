@@ -27,8 +27,8 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
     private const string TestPassword = "testtest123";
     private const string TestSalt = "Jr8Lm2PXzd7qNbVyWutRfGBxhkHTpE";
     private const string SourceFolder = "encrypted-source";
-    private const string DestinationFolder = "decrypted-destination"; 
-    
+    private const string DestinationFolder = "decrypted-destination";
+
     public ScenarioFileDecryptTransferTests(ITestOutputHelper testOutputHelper, LocalStackFixture localStackFixture)
     {
         _testOutputHelper = testOutputHelper;
@@ -37,7 +37,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
 
         _sourceStorageService = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, SourceFolder);
         _destinationStorageService = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, DestinationFolder);
-        
+
         _cryptoTransform = new AesCryptoTransform();
 
         _testScope = new TestScope(_sourceStorageService, _destinationStorageService, LocalStackFixture.TestBucket);
@@ -62,7 +62,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         _testScope.TrackForCleanup("progress-test-encrypted.csv");
         _testScope.TrackForCleanup("progress-test-decrypted.csv");
 
-        const long smallerFileSize = 2L * 1024L * 1024L;     
+        const long smallerFileSize = 2L * 1024L * 1024L;
         var progressReports = new List<(int percentage, string status)>();
 
         ProgressCallback progressCallback = (percentage, status) =>
@@ -76,7 +76,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         await using (var sourceStream = await _sourceStorageService.OpenReadAsync("progress-test.csv"))
         await using (var encryptedUploadStream = await _sourceStorageService.OpenWriteAsync("progress-test-encrypted.csv", "application/octet-stream"))
         {
-            await _cryptoTransform.EncryptStreamAsync(sourceStream, encryptedUploadStream, TestPassword, TestSalt, 
+            await _cryptoTransform.EncryptStreamAsync(sourceStream, encryptedUploadStream, TestPassword, TestSalt,
                 smallerFileSize, progressCallback);
         }
 
@@ -85,8 +85,8 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         await using (var decryptedUploadStream = await _destinationStorageService.OpenWriteAsync("progress-test-decrypted.csv", "text/csv"))
         {
             var encryptedMetadata = await _sourceStorageService.GetMetadataAsync("progress-test-encrypted.csv");
-            
-            await _cryptoTransform.DecryptStreamAsync(encryptedStream, decryptedUploadStream, TestPassword, TestSalt, 
+
+            await _cryptoTransform.DecryptStreamAsync(encryptedStream, decryptedUploadStream, TestPassword, TestSalt,
                 encryptedMetadata.ContentLength, progressCallback);
         }
 
@@ -102,14 +102,14 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
     {
         _testOutputHelper.WriteLine("Testing stream decrypt transfer with small files");
 
-        const long fileSize = 1L * 1024L * 1024L;  
-        const int numberOfFiles = 2;    
+        const long fileSize = 1L * 1024L * 1024L;
+        const int numberOfFiles = 2;
         var results = new List<string>();
 
         for (int i = 0; i < numberOfFiles; i++)
         {
             var csvFile = $"small-test-{i}.csv";
-            var encryptedFile = $"small-test-{i}-encrypted.csv"; 
+            var encryptedFile = $"small-test-{i}-encrypted.csv";
             var decryptedFile = $"small-test-{i}-decrypted.csv";
 
             _testScope.TrackForCleanup(csvFile);
@@ -146,11 +146,11 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData(1L * 1024L * 1024L)]      
-    [InlineData(5L * 1024L * 1024L)]      
-    [InlineData(10L * 1024L * 1024L)]     
-    [InlineData(25L * 1024L * 1024L)]     
-    [InlineData(500L * 1024L * 1024L)]     
+    [InlineData(1L * 1024L * 1024L)]
+    [InlineData(5L * 1024L * 1024L)]
+    [InlineData(10L * 1024L * 1024L)]
+    [InlineData(25L * 1024L * 1024L)]
+    [InlineData(500L * 1024L * 1024L)]
     public async Task StreamDecryptTransfer_ShouldMaintainIntegrity(long fileSizeBytes)
     {
         _testOutputHelper.WriteLine($"Starting local filesystem to S3 to local filesystem test with {fileSizeBytes:N0} bytes file");
@@ -159,7 +159,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         var originalFile = $"original-{testId}.csv";
         var encryptedFile = $"encrypted-{testId}.csv";
         var s3EncryptedKey = $"s3-encrypted-{testId}.csv";
-        var s3DecryptedKey = $"s3-decrypted-{testId}.csv"; 
+        var s3DecryptedKey = $"s3-decrypted-{testId}.csv";
         var finalDecryptedFile = $"final-{testId}.csv";
 
         _testScope.TrackForCleanup(s3EncryptedKey);
@@ -196,8 +196,8 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
 
             _testOutputHelper.WriteLine("Step 6: Verifying MD5 integrity...");
             var finalMd5Hash = await CalculateLocalFileMd5Async(finalDecryptedFilePath);
-            
-            finalMd5Hash.Should().Be(originalMd5Hash, 
+
+            finalMd5Hash.Should().Be(originalMd5Hash,
                 $"The MD5 hash of the final decrypted file should match the original file for {fileSizeBytes:N0} bytes, proving data integrity throughout the entire encrypt/decrypt/transfer process");
 
             _testOutputHelper.WriteLine($"✅ Test completed successfully for {fileSizeBytes:N0} bytes! MD5 integrity verified: {originalMd5Hash}");
@@ -205,7 +205,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
             var originalSize = new FileInfo(originalFilePath).Length;
             var encryptedSize = new FileInfo(encryptedFilePath).Length;
             var finalSize = new FileInfo(finalDecryptedFilePath).Length;
-            
+
             _testOutputHelper.WriteLine($"File size analysis:");
             _testOutputHelper.WriteLine($"  Original: {originalSize:N0} bytes");
             _testOutputHelper.WriteLine($"  Encrypted: {encryptedSize:N0} bytes ({(double)encryptedSize / originalSize:P1} of original)");
@@ -240,10 +240,10 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         {
             await writer.WriteLineAsync("Id,Name,Email,Department,Salary,StartDate,IsActive,Notes");
 
-            var random = new Random(42);       
+            var random = new Random(42);
             var departments = new[] { "Engineering", "Marketing", "Sales", "HR", "Finance", "Operations", "Support" };
             var domains = new[] { "example.com", "test.org", "company.net", "business.co.uk" };
-            
+
             long bytesWritten = 0;
             int recordId = 1;
 
@@ -272,9 +272,9 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
 
             await writer.FlushAsync();
             await fileStream.FlushAsync();
-            
+
             _testOutputHelper.WriteLine($"✅ Created local CSV file with {recordId - 1:N0} records");
-        }      
+        }
 
         var actualSize = new FileInfo(filePath).Length;
         _testOutputHelper.WriteLine($"Actual file size: {actualSize:N0} bytes");
@@ -288,7 +288,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
 
         await using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         using var md5 = MD5.Create();
-        
+
         var hashBytes = await md5.ComputeHashAsync(fileStream);
         var hashString = Convert.ToHexString(hashBytes);
 
@@ -303,14 +303,14 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         var encryptProgress = 0;
         ProgressCallback encryptProgressCallback = (percentage, status) =>
         {
-            if (percentage != encryptProgress && percentage % 20 == 0)    
+            if (percentage != encryptProgress && percentage % 20 == 0)
             {
                 _testOutputHelper.WriteLine($"Local encryption: {percentage}% - {status}");
                 encryptProgress = percentage;
             }
         };
 
-        await _cryptoTransform.EncryptFileAsync(inputFilePath, outputFilePath, TestPassword, TestSalt, 
+        await _cryptoTransform.EncryptFileAsync(inputFilePath, outputFilePath, TestPassword, TestSalt,
             encryptProgressCallback);
 
         var encryptedSize = new FileInfo(outputFilePath).Length;
@@ -325,7 +325,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         await using var s3UploadStream = await _sourceStorageService.OpenWriteAsync(s3Key, "application/octet-stream");
 
         var totalBytes = localFileStream.Length;
-        var buffer = new byte[64 * 1024];   
+        var buffer = new byte[64 * 1024];
         long totalUploaded = 0;
         int bytesRead;
 
@@ -334,7 +334,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
             await s3UploadStream.WriteAsync(buffer, 0, bytesRead);
             totalUploaded += bytesRead;
 
-            if (totalUploaded % (1024 * 1024) == 0)   
+            if (totalUploaded % (1024 * 1024) == 0)
             {
                 var percentage = (int)((double)totalUploaded / totalBytes * 100);
                 _testOutputHelper.WriteLine($"S3 upload progress: {percentage}% ({totalUploaded:N0} / {totalBytes:N0} bytes)");
@@ -344,7 +344,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         await s3UploadStream.FlushAsync();
         await s3UploadStream.DisposeAsync();
 
-        await Task.Delay(100);     
+        await Task.Delay(100);
         var exists = await _sourceStorageService.ExistsAsync(s3Key);
         if (!exists)
         {
@@ -363,24 +363,24 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         await using var decryptedS3UploadStream = await _destinationStorageService.OpenWriteAsync(decryptedS3Key, "text/csv");
 
         var encryptedMetadata = await _sourceStorageService.GetMetadataAsync(encryptedS3Key);
-        
+
         var decryptProgress = 0;
         ProgressCallback decryptProgressCallback = (percentage, status) =>
         {
-            if (percentage != decryptProgress && percentage % 20 == 0)    
+            if (percentage != decryptProgress && percentage % 20 == 0)
             {
                 _testOutputHelper.WriteLine($"S3 to S3 decryption: {percentage}% - {status}");
                 decryptProgress = percentage;
             }
         };
 
-        await _cryptoTransform.DecryptStreamAsync(encryptedS3Stream, decryptedS3UploadStream, TestPassword, TestSalt, 
+        await _cryptoTransform.DecryptStreamAsync(encryptedS3Stream, decryptedS3UploadStream, TestPassword, TestSalt,
             encryptedMetadata.ContentLength, decryptProgressCallback);
 
         await decryptedS3UploadStream.FlushAsync();
         await decryptedS3UploadStream.DisposeAsync();
 
-        await Task.Delay(100);     
+        await Task.Delay(100);
         var exists = await _destinationStorageService.ExistsAsync(decryptedS3Key);
         if (!exists)
         {
@@ -400,7 +400,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
 
         var metadata = await _destinationStorageService.GetMetadataAsync(s3Key);
         var totalBytes = metadata.ContentLength;
-        var buffer = new byte[64 * 1024];   
+        var buffer = new byte[64 * 1024];
         long totalDownloaded = 0;
         int bytesRead;
 
@@ -409,7 +409,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
             await localFileStream.WriteAsync(buffer, 0, bytesRead);
             totalDownloaded += bytesRead;
 
-            if (totalDownloaded % (1024 * 1024) == 0)   
+            if (totalDownloaded % (1024 * 1024) == 0)
             {
                 var percentage = (int)((double)totalDownloaded / totalBytes * 100);
                 _testOutputHelper.WriteLine($"S3 download progress: {percentage}% ({totalDownloaded:N0} / {totalBytes:N0} bytes)");
@@ -430,10 +430,10 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         var csv = new StringBuilder();
         csv.AppendLine("Id,Name,Email,Department,Salary,StartDate,IsActive,Notes");
 
-        var random = new Random(42);       
+        var random = new Random(42);
         var departments = new[] { "Engineering", "Marketing", "Sales", "HR", "Finance", "Operations", "Support" };
         var domains = new[] { "example.com", "test.org", "company.net", "business.co.uk" };
-        
+
         long bytesWritten = 0;
         int recordId = 1;
 
@@ -461,7 +461,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         }
 
         var csvBytes = Encoding.UTF8.GetBytes(csv.ToString());
-        
+
         await using (var contentStream = new MemoryStream(csvBytes))
         await using (var uploadStream = await _sourceStorageService.OpenWriteAsync(fileName, "text/csv"))
         {
@@ -470,8 +470,8 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
 
         _testOutputHelper.WriteLine($"✅ Created and uploaded CSV file using streaming API with {recordId - 1:N0} records, {csvBytes.Length:N0} bytes");
 
-        await Task.Delay(100);      
-        
+        await Task.Delay(100);
+
         var exists = await _sourceStorageService.ExistsAsync(fileName);
         if (!exists)
         {
@@ -489,7 +489,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
 
     private static string GenerateRandomName(Random random)
     {
-        var names = new[] 
+        var names = new[]
         {
             "John", "Jane", "Michael", "Sarah", "David", "Lisa", "Robert", "Emma", "William", "Olivia",
             "James", "Sophia", "Benjamin", "Isabella", "Lucas", "Charlotte", "Henry", "Amelia", "Alexander", "Mia"
@@ -503,8 +503,8 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
         _testOutputHelper.WriteLine($"Calculating MD5 hash for file: {fileName}");
 
         await using var fileStream = await storageService.OpenReadAsync(fileName);
-        using var md5 = MD5.Create(); 
-        
+        using var md5 = MD5.Create();
+
         var hashBytes = await md5.ComputeHashAsync(fileStream);
         var hashString = Convert.ToHexString(hashBytes);
 

@@ -45,7 +45,7 @@ public interface IBlobStorageServiceReadOnly
         CancellationToken cancellationToken = default);
 
     Task<bool> ExistsAsync(
-        string objectKey, 
+        string objectKey,
         CancellationToken cancellationToken = default);
 }
 

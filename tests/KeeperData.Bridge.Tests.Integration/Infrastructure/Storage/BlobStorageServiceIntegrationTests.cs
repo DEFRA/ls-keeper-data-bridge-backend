@@ -14,7 +14,7 @@ namespace KeeperData.Bridge.Tests.Integration.Infrastructure.Storage;
 /// Tests `BlobStorageService` against localstack S3 in testcontainer
 /// Reuses the LocalStack container instance from BlobStorageServiceReadOnlyIntegrationTests
 /// </summary>
-[Collection("LocalStack")]
+[Collection("LocalStack"), Trait("Dependence", "localstack")]
 public class BlobStorageServiceIntegrationTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _testOutputHelper;

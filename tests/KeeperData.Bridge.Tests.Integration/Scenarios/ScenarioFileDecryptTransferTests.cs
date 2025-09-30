@@ -13,7 +13,7 @@ using KeeperData.Core.Storage;
 
 namespace KeeperData.Bridge.Tests.Integration.Scenarios;
 
-[Collection("LocalStack")]
+[Collection("LocalStack"), Trait("Dependence", "localstack")]
 public class ScenarioFileDecryptTransferTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _testOutputHelper;

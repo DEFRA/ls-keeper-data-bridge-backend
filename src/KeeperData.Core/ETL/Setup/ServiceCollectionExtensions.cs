@@ -12,5 +12,6 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<IDataSetDefinitions>(_ => StandardDataSetDefinitionsBuilder.Build());
         services.AddTransient<ISourceDataServiceFactory, SourceDataServiceFactory>();
+        services.AddTransient<IImportPipeline, ImportPipeline>();
     }
 }

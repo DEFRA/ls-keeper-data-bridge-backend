@@ -11,13 +11,13 @@ namespace KeeperData.Infrastructure.Tests.Unit.Storage;
 /// </summary>
 public class BlobStorageServiceReadOnlyUnitTests
 {
-    private readonly Mock<ILogger<BlobStorageServiceReadOnly>> _loggerMock;
+    private readonly Mock<ILogger<S3BlobStorageServiceReadOnly>> _loggerMock;
     private readonly Mock<IAmazonS3> _mockS3Client;
     private const string TestContainer = "test-bucket";
 
     public BlobStorageServiceReadOnlyUnitTests()
     {
-        _loggerMock = new Mock<ILogger<BlobStorageServiceReadOnly>>();
+        _loggerMock = new Mock<ILogger<S3BlobStorageServiceReadOnly>>();
         _mockS3Client = new Mock<IAmazonS3>();
     }
 
@@ -25,7 +25,7 @@ public class BlobStorageServiceReadOnlyUnitTests
     public void Constructor_WithNullS3Client_ShouldThrow()
     {
         // Act & Assert
-        var act = () => new BlobStorageServiceReadOnly(
+        var act = () => new S3BlobStorageServiceReadOnly(
             (IAmazonS3)null!,
             _loggerMock.Object,
             TestContainer);
@@ -38,7 +38,7 @@ public class BlobStorageServiceReadOnlyUnitTests
     public void Constructor_WithNullLogger_ShouldThrow()
     {
         // Act & Assert
-        var act = () => new BlobStorageServiceReadOnly(
+        var act = () => new S3BlobStorageServiceReadOnly(
             _mockS3Client.Object,
             null!,
             TestContainer);
@@ -51,20 +51,20 @@ public class BlobStorageServiceReadOnlyUnitTests
     public void Constructor_WithNullContainer_ShouldThrow()
     {
         // Act & Assert
-        var act = () => new BlobStorageServiceReadOnly(
+        var act = () => new S3BlobStorageServiceReadOnly(
             _mockS3Client.Object,
             _loggerMock.Object,
             null!);
 
         act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("container");
+            .WithParameterName("bucketName");
     }
 
     [Fact]
     public void Constructor_WithValidParameters_ShouldCreateInstance()
     {
         // Arrange & Act
-        using var service = new BlobStorageServiceReadOnly(
+        using var service = new S3BlobStorageServiceReadOnly(
             _mockS3Client.Object,
             _loggerMock.Object,
             TestContainer);
@@ -77,7 +77,7 @@ public class BlobStorageServiceReadOnlyUnitTests
     public void Constructor_WithTopLevelFolder_ShouldCreateInstance()
     {
         // Arrange & Act
-        using var service = new BlobStorageServiceReadOnly(
+        using var service = new S3BlobStorageServiceReadOnly(
             _mockS3Client.Object,
             _loggerMock.Object,
             TestContainer,
@@ -94,7 +94,7 @@ public class BlobStorageServiceReadOnlyUnitTests
     public void Constructor_WithEmptyTopLevelFolder_ShouldCreateInstance(string? topLevelFolder)
     {
         // Arrange & Act
-        using var service = new BlobStorageServiceReadOnly(
+        using var service = new S3BlobStorageServiceReadOnly(
             _mockS3Client.Object,
             _loggerMock.Object,
             TestContainer,
@@ -116,7 +116,7 @@ public class BlobStorageServiceReadOnlyUnitTests
             RegionEndpoint = Amazon.RegionEndpoint.USEast1
         };
 
-        using var service = new BlobStorageServiceReadOnly(
+        using var service = new S3BlobStorageServiceReadOnly(
             "test",
             "test",
             config,

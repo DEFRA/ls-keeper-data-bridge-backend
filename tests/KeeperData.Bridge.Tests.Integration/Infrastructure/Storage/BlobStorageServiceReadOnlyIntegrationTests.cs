@@ -17,8 +17,8 @@ public class BlobStorageServiceReadOnlyIntegrationTests
 {
     private readonly ITestOutputHelper _testOutputHelper;
     private readonly LocalStackFixture _localStackFixture;
-    private readonly Mock<ILogger<BlobStorageServiceReadOnly>> _loggerMock;
-    private readonly BlobStorageServiceReadOnly _blobService;
+    private readonly Mock<ILogger<S3BlobStorageServiceReadOnly>> _loggerMock;
+    private readonly S3BlobStorageServiceReadOnly _blobService;
 
     private const string TestTopLevelFolder = "test-folder";
 
@@ -26,10 +26,10 @@ public class BlobStorageServiceReadOnlyIntegrationTests
     {
         _testOutputHelper = testOutputHelper;
         _localStackFixture = localStackFixture;
-        _loggerMock = new Mock<ILogger<BlobStorageServiceReadOnly>>();
+        _loggerMock = new Mock<ILogger<S3BlobStorageServiceReadOnly>>();
 
         // Create blob service using the shared S3 client
-        _blobService = new BlobStorageServiceReadOnly(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        _blobService = new S3BlobStorageServiceReadOnly(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
     }
 
     // Note: The following tests require LocalStack to be working properly
@@ -191,7 +191,7 @@ public class BlobStorageServiceReadOnlyIntegrationTests
     public async Task Constructor_WithTopLevelFolder_ShouldFilterOperations()
     {
         // Arrange
-        using var service = new BlobStorageServiceReadOnly(
+        using var service = new S3BlobStorageServiceReadOnly(
             _localStackFixture.S3Client,
             _loggerMock.Object,
             LocalStackFixture.TestBucket,
@@ -209,7 +209,7 @@ public class BlobStorageServiceReadOnlyIntegrationTests
     public async Task AllMethods_WithTopLevelFolder_ShouldWorkCorrectly()
     {
         // Arrange
-        using var service = new BlobStorageServiceReadOnly(
+        using var service = new S3BlobStorageServiceReadOnly(
             _localStackFixture.S3Client,
             _loggerMock.Object,
             LocalStackFixture.TestBucket,
@@ -246,7 +246,7 @@ public class BlobStorageServiceReadOnlyIntegrationTests
     public async Task Constructor_WithEmptyTopLevelFolder_ShouldNotFilterOperations(string? topLevelFolder)
     {
         // Arrange
-        using var service = new BlobStorageServiceReadOnly(
+        using var service = new S3BlobStorageServiceReadOnly(
             _localStackFi​xture.S3Client,
             _loggerMock.Object,
             LocalStackFixture.TestBucket,

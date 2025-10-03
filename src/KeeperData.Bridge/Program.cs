@@ -1,6 +1,7 @@
 using KeeperData.Bridge.Setup;
 using KeeperData.Bridge.Utils;
 using KeeperData.Infrastructure.Telemetry.Logging;
+using Microsoft.AspNetCore.Http.Features;
 using Serilog;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
@@ -54,13 +55,6 @@ static void ConfigureBuilder(WebApplicationBuilder builder)
             options.Headers.Add(traceHeader);
         }
     });
-
-    builder.Services.AddControllers()
-        .AddJsonOptions(opts =>
-        {
-            var enumConverter = new JsonStringEnumConverter();
-            opts.JsonSerializerOptions.Converters.Add(enumConverter);
-        });
 
     builder.Services.ConfigureApi(builder.Configuration);
 }

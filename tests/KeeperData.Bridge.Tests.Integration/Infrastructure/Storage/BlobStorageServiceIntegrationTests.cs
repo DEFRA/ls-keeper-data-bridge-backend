@@ -19,8 +19,8 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _testOutputHelper;
     private readonly LocalStackFixture _localStackFixture;
-    private readonly Mock<ILogger<BlobStorageService>> _loggerMock;
-    private readonly BlobStorageService _blobService;
+    private readonly Mock<ILogger<S3BlobStorageService>> _loggerMock;
+    private readonly S3BlobStorageService _blobService;
     private readonly TestScope _testScope;
 
     private const string TestTopLevelFolder = "test-write-folder";
@@ -37,10 +37,10 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         _testOutputHelper = testOutputHelper;
         _localStackFixture = localStackFixture;
-        _loggerMock = new Mock<ILogger<BlobStorageService>>();
+        _loggerMock = new Mock<ILogger<S3BlobStorageService>>();
 
         // Create blob service using the shared S3 client
-        _blobService = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        _blobService = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
         _testScope = new TestScope(_blobService, LocalStackFixture.TestBucket);
     }
 
@@ -394,7 +394,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var service = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, topLevelFolder);
+        using var service = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, topLevelFolder);
         var testData = Encoding.UTF8.GetBytes("No folder test content");
         var fileName = "no-folder-test.txt";
 
@@ -429,9 +429,9 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange - Create services for different "tenants"
         await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var tenantA = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder1);
-        using var tenantB = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder2);
-        using var globalService = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var tenantA = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder1);
+        using var tenantB = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder2);
+        using var globalService = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
 
         var testData = Encoding.UTF8.GetBytes("Isolated tenant data");
         var sharedFileName = "document.txt";
@@ -486,7 +486,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var service = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, folderName);
+        using var service = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, folderName);
         var testData = Encoding.UTF8.GetBytes($"Test data for folder: {folderName}");
         var fileName = "test-file.txt";
 
@@ -519,7 +519,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var service = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, folderName);
+        using var service = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, folderName);
         var fileName = "slash-test.txt";
         var testData = Encoding.UTF8.GetBytes("Testing slash normalization");
 
@@ -538,7 +538,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
         metadata.StorageUri.ToString().Should().Contain(expectedFullKey);
 
         // Verify that the global service can access it with the normalized path
-        var globalService = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        var globalService = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
         var globalExists = await globalService.ExistsAsync(expectedFullKey);
         globalExists.Should().BeTrue();
 
@@ -552,7 +552,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var service = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder3);
+        using var service = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder3);
         var testData = Encoding.UTF8.GetBytes("Prefixed file content");
 
         // Create files in different subfolders within the top-level folder
@@ -591,7 +591,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var service = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder1);
+        using var service = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder1);
         var fileName = "streamed-file.txt";
         var expectedContent = "This is streamed content that should be properly isolated within the top-level folder.";
 
@@ -613,7 +613,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
         actualContent.Should().Be(expectedContent);
 
         // Verify isolation - global service should not see the file with relative path
-        var globalService = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        var globalService = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
         var existsGlobally = await globalService.ExistsAsync(fileName);
         var existsWithFullPath = await globalService.ExistsAsync($"{TestFolder1}/{fileName}");
 
@@ -628,9 +628,9 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange - Set up test data in different folders
         await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var setupService = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var folder1Service = new BlobStorageServiceReadOnly(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder1);
-        using var folder2Service = new BlobStorageServiceReadOnly(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder2);
+        using var setupService = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var folder1Service = new S3BlobStorageServiceReadOnly(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder1);
+        using var folder2Service = new S3BlobStorageServiceReadOnly(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, TestFolder2);
 
         var testData = Encoding.UTF8.GetBytes("Read-only test data");
         var fileName = "readonly-test.txt";
@@ -672,7 +672,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var scopedService = new BlobStorageService(
+        using var scopedService = new S3BlobStorageService(
             _localStackFixture.S3Client,
             _loggerMock.Object,
             LocalStackFixture.TestBucket,
@@ -704,7 +704,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
-        using var scopedService = new BlobStorageService(
+        using var scopedService = new S3BlobStorageService(
             _localStackFixture.S3Client,
             _loggerMock.Object,
             LocalStackFixture.TestBucket,
@@ -774,8 +774,8 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
             _bucketName = bucketName ?? throw new ArgumentNullException(nameof(bucketName));
         }
 
-        public TestScope(IAmazonS3 s3Client, ILogger<BlobStorageService> logger, string bucketName, string? topLevelFolder = null)
-            : this(new BlobStorageService(s3Client, logger, bucketName, topLevelFolder), bucketName)
+        public TestScope(IAmazonS3 s3Client, ILogger<S3BlobStorageService> logger, string bucketName, string? topLevelFolder = null)
+            : this(new S3BlobStorageService(s3Client, logger, bucketName, topLevelFolder), bucketName)
         {
         }
 

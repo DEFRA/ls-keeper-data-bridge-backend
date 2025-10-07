@@ -30,7 +30,7 @@ public class ImportPipeline(IBlobStorageServiceFactory blobStorageServiceFactory
 
             // step 1: discover files that may need processing
             logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
-            var fileSets = await sourceDataService.GetFileSetsAsync(20 ,ct);
+            var fileSets = await sourceDataService.GetFileSetsAsync(20, ct);
             logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",
                 fileSets.Count,
                 fileSets.Sum(fs => fs.Files.Length),

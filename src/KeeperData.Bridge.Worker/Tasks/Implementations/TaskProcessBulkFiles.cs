@@ -7,20 +7,20 @@ using Microsoft.Extensions.Logging;
 namespace KeeperData.Bridge.Worker.Tasks.Implementations;
 
 public class TaskProcessBulkFiles(
-    ILogger<TaskProcessBulkFiles> logger, 
-    IDistributedLock distributedLock, 
+    ILogger<TaskProcessBulkFiles> logger,
+    IDistributedLock distributedLock,
     IImportPipeline importPipeline,
     IHostApplicationLifetime applicationLifetime) : ITaskProcessBulkFiles
 {
     private const string LockName = nameof(TaskProcessBulkFiles);
-    private static readonly TimeSpan LockDuration = TimeSpan.FromMinutes(4);       
-    private static readonly TimeSpan RenewalInterval = TimeSpan.FromMinutes(1);      
-    private static readonly TimeSpan RenewalExtension = TimeSpan.FromMinutes(2);   
-    
+    private static readonly TimeSpan LockDuration = TimeSpan.FromMinutes(4);
+    private static readonly TimeSpan RenewalInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan RenewalExtension = TimeSpan.FromMinutes(2);
+
     public async Task<Guid?> StartAsync(string sourceType, CancellationToken cancellationToken = default)
     {
         var importId = Guid.NewGuid();
-        
+
         logger.LogInformation("Attempting to acquire lock for {LockName} with sourceType={sourceType} (importid={importId}).", LockName, sourceType, importId);
 
         var @lock = await distributedLock.TryAcquireAsync(LockName, LockDuration, cancellationToken);
@@ -32,20 +32,20 @@ public class TaskProcessBulkFiles(
         }
 
         logger.LogInformation("Lock acquired for {LockName}. Starting import in background with sourceType={sourceType} (importid={importId}).", LockName, sourceType, importId);
-        
+
         var stoppingToken = applicationLifetime.ApplicationStopping;
-        
+
         _ = Task.Factory.StartNew(
-            async () => 
+            async () =>
             {
                 try
                 {
                     await using (@lock)
                     {
                         using var cts = CancellationTokenSource.CreateLinkedTokenSource(
-                            cancellationToken, 
+                            cancellationToken,
                             stoppingToken);
-                        
+
                         await ExecuteImportWithLockRenewalAsync(@lock, importId, sourceType, cts.Token);
                     }
                 }
@@ -59,10 +59,10 @@ public class TaskProcessBulkFiles(
                 }
             },
             CancellationToken.None,
-            TaskCreationOptions.LongRunning,    
+            TaskCreationOptions.LongRunning,
             TaskScheduler.Default
         ).Unwrap();
-        
+
         return importId;
     }
 
@@ -81,24 +81,24 @@ public class TaskProcessBulkFiles(
         }
 
         logger.LogInformation("Lock acquired for {LockName}. Task started at {startTime} (importid={importId}).", LockName, DateTime.UtcNow, importId);
-        
+
         await ExecuteImportWithLockRenewalAsync(@lock, importId, BlobStorageSources.External, cancellationToken);
     }
 
     private async Task ExecuteImportWithLockRenewalAsync(
-        IDistributedLockHandle lockHandle, 
+        IDistributedLockHandle lockHandle,
         Guid importId,
         string sourceType,
         CancellationToken externalCancellationToken)
     {
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellationToken);
-        
+
         var renewalTask = RenewLockPeriodicallyAsync(lockHandle, linkedCts.Token, importId);
-        
+
         try
         {
             await importPipeline.StartAsync(importId, sourceType, linkedCts.Token);
-            
+
             logger.LogInformation("Import completed successfully at {endTime}, (importid={importId})", DateTime.UtcNow, importId);
         }
         catch (OperationCanceledException) when (externalCancellationToken.IsCancellationRequested)
@@ -122,7 +122,7 @@ public class TaskProcessBulkFiles(
             {
                 await linkedCts.CancelAsync();
             }
-            
+
             try
             {
                 await renewalTask;
@@ -140,7 +140,7 @@ public class TaskProcessBulkFiles(
     private async Task RenewLockPeriodicallyAsync(IDistributedLockHandle lockHandle, CancellationToken cancellationToken, Guid importId)
     {
         logger.LogDebug("Starting lock renewal task for {LockName} with interval {RenewalInterval} (importid={importId})", LockName, RenewalInterval, importId);
-        
+
         while (!cancellationToken.IsCancellationRequested)
         {
             try
@@ -152,14 +152,14 @@ public class TaskProcessBulkFiles(
                 logger.LogDebug("Lock renewal task cancelled for {LockName} (importid={importId})", LockName, importId);
                 return;
             }
-            
+
             if (cancellationToken.IsCancellationRequested)
             {
                 return;
             }
-            
+
             logger.LogDebug("Attempting to renew lock for {LockName} (importid={importId})", LockName, importId);
-            
+
             bool renewed;
             try
             {
@@ -170,7 +170,7 @@ public class TaskProcessBulkFiles(
                 logger.LogDebug("Lock renewal cancelled for {LockName} (importid={importId})", LockName, importId);
                 return;
             }
-            
+
             if (renewed)
             {
                 logger.LogDebug("Successfully renewed lock for {LockName} with extension {RenewalExtension} (importid={importId})", LockName, RenewalExtension, importId);
@@ -178,11 +178,11 @@ public class TaskProcessBulkFiles(
             else
             {
                 logger.LogError("Failed to renew lock for {LockName}. Lock may have been lost. Cancelling main task. (importid={importId})", LockName, importId);
-                
+
                 throw new InvalidOperationException($"Failed to renew lock for {LockName} (importid={importId})");
             }
         }
-        
+
         logger.LogDebug("Lock renewal task completed for {LockName} (importid={importId})", LockName, importId);
     }
 }

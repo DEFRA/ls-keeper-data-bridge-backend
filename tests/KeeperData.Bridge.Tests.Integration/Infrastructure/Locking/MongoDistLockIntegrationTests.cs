@@ -32,7 +32,7 @@ public class MongoDistLockIntegrationTests : IAsyncLifetime
         });
 
         _distributedLock = new MongoDistributedLock(mongoConfig, _mongoDbFixture.MongoClient);
-        
+
         var database = _mongoDbFixture.MongoClient.GetDatabase(MongoDbFixture.TestDatabaseName);
         _locksCollection = database.GetCollection<DistributedLock>("distributed_locks");
     }
@@ -74,7 +74,7 @@ public class MongoDistLockIntegrationTests : IAsyncLifetime
         });
 
         ttlIndex.Should().NotBeNull("TTL index on ExpiresAtUtc should exist");
-        
+
         // Verify expireAfterSeconds is 0 (expires at the specified time)
         if (ttlIndex!.TryGetValue("expireAfterSeconds", out var expireValue))
         {
@@ -149,7 +149,7 @@ public class MongoDistLockIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var lockName = $"test-lock-{Guid.NewGuid()}";
-        
+
         // Create an expired lock directly in database
         var expiredLock = new DistributedLock
         {
@@ -245,7 +245,7 @@ public class MongoDistLockIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var lockName = $"test-lock-{Guid.NewGuid()}";
-        
+
         // First process acquires lock
         var firstLock = await _distributedLock.TryAcquireAsync(lockName, TimeSpan.FromSeconds(1));
         firstLock.Should().NotBeNull();
@@ -414,7 +414,7 @@ public class MongoDistLockIntegrationTests : IAsyncLifetime
             lockHandle.Should().NotBeNull($"iteration {i} should acquire lock");
 
             _testOutputHelper.WriteLine($"Iteration {i}: Lock acquired and will be released");
-            
+
             // Lock is released here via DisposeAsync
         }
 

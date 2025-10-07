@@ -1,6 +1,6 @@
 namespace KeeperData.Bridge.Worker.Tasks;
 
-public interface ITaskProcessBulkFiles : ITask 
+public interface ITaskProcessBulkFiles : ITask
 {
     /// <summary>
     /// Starts the import process asynchronously and returns immediately after acquiring the lock.

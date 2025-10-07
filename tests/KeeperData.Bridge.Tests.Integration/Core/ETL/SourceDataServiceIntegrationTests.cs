@@ -14,7 +14,7 @@ namespace KeeperData.Bridge.Tests.Integration.Core.ETL;
 /// Integration tests for SourceDataService using TestContainers.LocalStack.
 /// Tests the ability to discover files within S3 based on date ranges and dataset definitions.
 /// </summary>
-[Collection("LocalStack"), Trait("Dependence", "localstack")]
+[Collection("LocalStack"), Trait("Dependence", "docker")]
 public class SourceDataServiceIntegrationTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _testOutputHelper;

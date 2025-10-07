@@ -12,7 +12,7 @@ namespace KeeperData.Bridge.Tests.Integration.Infrastructure.Storage;
 /// <summary>
 /// Tests `BlobStorageServiceReadOnly` against localstack S3 in testcontainer
 /// </summary>
-[Collection("LocalStack"), Trait("Dependence", "localstack")]
+[Collection("LocalStack"), Trait("Dependence", "docker")]
 public class BlobStorageServiceReadOnlyIntegrationTests
 {
     private readonly ITestOutputHelper _testOutputHelper;

@@ -11,7 +11,7 @@ public class TaskProcessDeltaFiles(ILogger<TaskProcessDeltaFiles> logger, IDistr
     {
         logger.LogInformation("Attempting to acquire lock for {LockName}.", LockName);
 
-        using var _ = await distributedLock.TryAcquireAsync(LockName, TimeSpan.FromMinutes(30), cancellationToken);
+        await using var _ = await distributedLock.TryAcquireAsync(LockName, TimeSpan.FromMinutes(30), cancellationToken);
 
         if (_ == null)
         {

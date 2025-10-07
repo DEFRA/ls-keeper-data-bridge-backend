@@ -3,7 +3,7 @@ using Amazon.S3.Model;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
 using Microsoft.Extensions.Logging;
-using System.Linq;
+using System.Diagnostics;
 
 namespace KeeperData.Infrastructure.Storage;
 
@@ -142,24 +142,59 @@ public class S3BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDispos
         string? prefix = null,
         CancellationToken cancellationToken = default)
     {
+        const int MaxPages = 20; // don't allow > 20 pages of data, use `ListPageAsync` if you need more.
+        var stopwatch = Stopwatch.StartNew();
+        _logger.LogInformation("Starting list operation for container: {Container}, prefix: {Prefix}", _bucketName, prefix ?? "(none)");
+
         try
         {
             var objects = new List<StorageObjectInfo>();
             var continuationToken = (string?)null;
+            var pageCount = 0;
 
             do
             {
+                pageCount++;
+
+                if (pageCount > MaxPages)
+                {
+                    stopwatch.Stop();
+                    var errorMessage = $"List operation exceeded maximum page limit ({MaxPages}) for container: {_bucketName}, prefix: {prefix}. Retrieved {objects.Count} objects before stopping.";
+                    _logger.LogError(errorMessage + " Duration: {Duration}ms", stopwatch.ElapsedMilliseconds);
+                    throw new InvalidOperationException(errorMessage);
+                }
+
+                _logger.LogDebug("Fetching page {PageCount} for container: {Container}, prefix: {Prefix}", pageCount, _bucketName, prefix);
+
                 var page = await ListPageAsync(prefix, 1000, continuationToken, cancellationToken).ConfigureAwait(false);
                 objects.AddRange(page.Items);
                 continuationToken = page.ContinuationToken;
+
+                _logger.LogDebug("Page {PageCount} retrieved {ItemCount} objects (Total so far: {TotalObjects}) for container: {Container}",
+                    pageCount,
+                    page.Items.Count,
+                    objects.Count,
+                    _bucketName);
             }
             while (!string.IsNullOrEmpty(continuationToken));
+
+            stopwatch.Stop();
+            _logger.LogInformation("List operation completed for container: {Container}, prefix: {Prefix}. Retrieved {TotalObjects} objects in {PageCount} page(s). Duration: {Duration}ms",
+                _bucketName,
+                prefix ?? "(none)",
+                objects.Count,
+                pageCount,
+                stopwatch.ElapsedMilliseconds);
 
             return objects;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to list objects in container {Container} with prefix {Prefix}", _bucketName, prefix);
+            stopwatch.Stop();
+            _logger.LogError(ex, "Failed to list objects in container {Container} with prefix {Prefix} after {Duration}ms",
+                _bucketName,
+                prefix,
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
     }

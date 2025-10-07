@@ -6,12 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Infrastructure.Storage;
 
-public static class BlobStorageSources
-{
-    public const string Internal = "internal";
-    public const string External = "external";
-}
-
 public class S3BlobStorageServiceFactory(IS3ClientFactory s3ClientFactory, ILoggerFactory loggerFactory,
     StorageConfiguration storageConfiguration) : IBlobStorageServiceFactory
 {

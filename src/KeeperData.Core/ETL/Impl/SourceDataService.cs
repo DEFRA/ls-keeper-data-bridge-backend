@@ -8,7 +8,9 @@ namespace KeeperData.Core.ETL.Impl;
 
 public record FileSet(DataSetDefinition Definition, StorageObjectInfo[] Files);
 
-public class SourceDataService(IBlobStorageServiceReadOnly sourceBlobs, TimeProvider timeProvider, IDataSetDefinitions dataSetDefinitions) : ISourceDataService
+public class SourceDataService(IBlobStorageServiceReadOnly sourceBlobs, 
+    TimeProvider timeProvider, 
+    IDataSetDefinitions dataSetDefinitions) : ISourceDataService
 {
     public async Task<ImmutableList<FileSet>> GetFileSetsAsync(CancellationToken ct)
     {
@@ -101,12 +103,8 @@ public class SourceDataService(IBlobStorageServiceReadOnly sourceBlobs, TimeProv
         return new FileSet(definition, allFiles);
     }
 
-    private static List<DateOnly> GetDates(DateOnly from, DateOnly to)
-    {
-        return Enumerable.Range(0, to.DayNumber - from.DayNumber + 1)
-                    .Select(offset => from.AddDays(offset))
-                    .ToList();
-    }
+    private static List<DateOnly> GetDates(DateOnly from, DateOnly to) 
+        => [.. Enumerable.Range(0, to.DayNumber - from.DayNumber + 1).Select(offset => from.AddDays(offset))];
 
     public async Task<FileSet> GetFileSetAsync(DataSetDefinition definition, DateOnly date, CancellationToken ct)
     {

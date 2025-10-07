@@ -5,63 +5,63 @@ using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Infrastructure.Storage;
 
-public class BlobStorageService : BlobStorageServiceReadOnly, IBlobStorageService
+public class S3BlobStorageService : S3BlobStorageServiceReadOnly, IBlobStorageService
 {
-    public BlobStorageService(
+    public S3BlobStorageService(
         IAmazonS3 s3Client,
-        ILogger<BlobStorageService> logger,
+        ILogger<S3BlobStorageService> logger,
         string container,
         string? topLevelFolder = null)
         : base(s3Client, logger, container, topLevelFolder)
     {
     }
 
-    public BlobStorageService(
+    public S3BlobStorageService(
         AmazonS3Config config,
-        ILogger<BlobStorageService> logger,
+        ILogger<S3BlobStorageService> logger,
         string container,
         string? topLevelFolder = null)
         : base(config, logger, container, topLevelFolder)
     {
     }
 
-    public BlobStorageService(
+    public S3BlobStorageService(
         string accessKey,
         string secretKey,
         AmazonS3Config config,
-        ILogger<BlobStorageService> logger,
+        ILogger<S3BlobStorageService> logger,
         string container,
         string? topLevelFolder = null)
         : base(accessKey, secretKey, config, logger, container, topLevelFolder)
     {
     }
 
-    public BlobStorageService(
+    public S3BlobStorageService(
         string accessKey,
         string secretKey,
         string sessionToken,
         AmazonS3Config config,
-        ILogger<BlobStorageService> logger,
+        ILogger<S3BlobStorageService> logger,
         string container,
         string? topLevelFolder = null)
         : base(accessKey, secretKey, sessionToken, config, logger, container, topLevelFolder)
     {
     }
 
-    public BlobStorageService(
+    public S3BlobStorageService(
         string serviceUrl,
         string accessKey,
         string secretKey,
-        ILogger<BlobStorageService> logger,
+        ILogger<S3BlobStorageService> logger,
         string container,
         string? topLevelFolder = null)
         : base(serviceUrl, accessKey, secretKey, logger, container, topLevelFolder)
     {
     }
 
-    public BlobStorageService(
+    public S3BlobStorageService(
         Amazon.RegionEndpoint region,
-        ILogger<BlobStorageService> logger,
+        ILogger<S3BlobStorageService> logger,
         string container,
         string? topLevelFolder = null)
         : base(region, logger, container, topLevelFolder)
@@ -82,7 +82,7 @@ public class BlobStorageService : BlobStorageServiceReadOnly, IBlobStorageServic
             using var stream = new MemoryStream(content);
             var request = new PutObjectRequest
             {
-                BucketName = _container,
+                BucketName = _bucketName,
                 Key = fullObjectKey,
                 InputStream = stream,
                 ContentType = contentType ?? "application/octet-stream"
@@ -99,11 +99,11 @@ public class BlobStorageService : BlobStorageServiceReadOnly, IBlobStorageServic
 
             await _s3Client.PutObjectAsync(request, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogDebug("Successfully uploaded object {ObjectKey} to container {Container}", objectKey, _container);
+            _logger.LogDebug("Successfully uploaded object {ObjectKey} to container {Container}", objectKey, _bucketName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to upload object {ObjectKey} to container {Container}", objectKey, _container);
+            _logger.LogError(ex, "Failed to upload object {ObjectKey} to container {Container}", objectKey, _bucketName);
             throw;
         }
     }
@@ -122,7 +122,7 @@ public class BlobStorageService : BlobStorageServiceReadOnly, IBlobStorageServic
             // Create a multipart upload stream
             var multipartStream = new MultipartUploadStream(
                 _s3Client,
-                _container,
+                _bucketName,
                 fullObjectKey,
                 contentType ?? "application/octet-stream",
                 metadata,
@@ -132,13 +132,13 @@ public class BlobStorageService : BlobStorageServiceReadOnly, IBlobStorageServic
 
             await multipartStream.InitializeAsync().ConfigureAwait(false);
 
-            _logger.LogDebug("Opened write stream for object {ObjectKey} in container {Container}", objectKey, _container);
+            _logger.LogDebug("Opened write stream for object {ObjectKey} in container {Container}", objectKey, _bucketName);
 
             return multipartStream;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to open write stream for object {ObjectKey} in container {Container}", objectKey, _container);
+            _logger.LogError(ex, "Failed to open write stream for object {ObjectKey} in container {Container}", objectKey, _bucketName);
             throw;
         }
     }
@@ -155,9 +155,9 @@ public class BlobStorageService : BlobStorageServiceReadOnly, IBlobStorageServic
             // First get the existing object to preserve its content
             var copyRequest = new CopyObjectRequest
             {
-                SourceBucket = _container,
+                SourceBucket = _bucketName,
                 SourceKey = fullObjectKey,
-                DestinationBucket = _container,
+                DestinationBucket = _bucketName,
                 DestinationKey = fullObjectKey,
                 MetadataDirective = S3MetadataDirective.REPLACE
             };
@@ -170,11 +170,11 @@ public class BlobStorageService : BlobStorageServiceReadOnly, IBlobStorageServic
 
             await _s3Client.CopyObjectAsync(copyRequest, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogDebug("Successfully updated metadata for object {ObjectKey} in container {Container}", objectKey, _container);
+            _logger.LogDebug("Successfully updated metadata for object {ObjectKey} in container {Container}", objectKey, _bucketName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to update metadata for object {ObjectKey} in container {Container}", objectKey, _container);
+            _logger.LogError(ex, "Failed to update metadata for object {ObjectKey} in container {Container}", objectKey, _bucketName);
             throw;
         }
     }
@@ -188,17 +188,17 @@ public class BlobStorageService : BlobStorageServiceReadOnly, IBlobStorageServic
             var fullObjectKey = GetFullObjectKey(objectKey);
             var request = new DeleteObjectRequest
             {
-                BucketName = _container,
+                BucketName = _bucketName,
                 Key = fullObjectKey
             };
 
             await _s3Client.DeleteObjectAsync(request, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogDebug("Successfully deleted object {ObjectKey} from container {Container}", objectKey, _container);
+            _logger.LogDebug("Successfully deleted object {ObjectKey} from container {Container}", objectKey, _bucketName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete object {ObjectKey} from container {Container}", objectKey, _container);
+            _logger.LogError(ex, "Failed to delete object {ObjectKey} from container {Container}", objectKey, _bucketName);
             throw;
         }
     }

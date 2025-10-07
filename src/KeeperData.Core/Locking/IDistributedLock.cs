@@ -2,5 +2,5 @@ namespace KeeperData.Core.Locking;
 
 public interface IDistributedLock
 {
-    Task<IDisposable?> TryAcquireAsync(string lockName, TimeSpan duration, CancellationToken cancellationToken = default);
+    Task<IDistributedLockHandle?> TryAcquireAsync(string lockName, TimeSpan duration, CancellationToken cancellationToken = default);
 }

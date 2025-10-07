@@ -4,9 +4,13 @@ namespace KeeperData.Infrastructure.Storage.Factories.Implementations;
 
 public class S3ClientFactory : IS3ClientFactory
 {
-    private readonly Dictionary<string, (IAmazonS3 Client, string BucketName)> _clients = [];
+    public sealed record ClientInfo(IAmazonS3 Client, string BucketName);
 
-    public IAmazonS3 GetClient<T>()
+    private readonly Dictionary<string, ClientInfo> _clients = [];
+
+    public IAmazonS3 GetClient<T>() where T : IStorageClient, new() => GetClientInfo<T>().Client;
+
+    public ClientInfo GetClientInfo<T>()
         where T : IStorageClient, new()
     {
         var instance = new T();
@@ -15,7 +19,7 @@ public class S3ClientFactory : IS3ClientFactory
         if (!_clients.TryGetValue(storageClientName, out var client))
             throw new KeyNotFoundException($"No S3 client registered for name '{storageClientName}'");
 
-        return client.Client;
+        return client;
     }
 
     public IAmazonS3 GetClient(string clientName)
@@ -26,17 +30,7 @@ public class S3ClientFactory : IS3ClientFactory
         return client.Client;
     }
 
-    public string GetClientBucketName<T>()
-        where T : IStorageClient, new()
-    {
-        var instance = new T();
-        var storageClientName = instance.ClientName;
-
-        if (!_clients.TryGetValue(storageClientName, out var client))
-            throw new KeyNotFoundException($"No S3 client registered for name '{storageClientName}'");
-
-        return client.BucketName;
-    }
+    public string GetClientBucketName<T>() where T : IStorageClient, new() => GetClientInfo<T>().BucketName;
 
     public string GetClientBucketName(string clientName)
     {
@@ -59,7 +53,7 @@ public class S3ClientFactory : IS3ClientFactory
         if (!HasStorageClient(storageClientName))
         {
             var newClient = new AmazonS3Client(amazonS3Config);
-            _clients[storageClientName] = (newClient, defaultBucketName);
+            _clients[storageClientName] = new(newClient, defaultBucketName);
         }
     }
 
@@ -81,7 +75,7 @@ public class S3ClientFactory : IS3ClientFactory
                 throw new InvalidOperationException($"Missing AWS credentials for '{storageClientName}'");
 
             var newClient = new AmazonS3Client(accessKey, secretKey, amazonS3Config);
-            _clients[storageClientName] = (newClient, defaultBucketName);
+            _clients[storageClientName] = new(newClient, defaultBucketName);
         }
     }
 
@@ -90,6 +84,6 @@ public class S3ClientFactory : IS3ClientFactory
     {
         var instance = new T();
         var name = instance.ClientName;
-        _clients[name] = (mockClient, bucketName);
+        _clients[name] = new(mockClient, bucketName);
     }
 }

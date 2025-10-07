@@ -1,33 +1,34 @@
 using Amazon.S3;
 using Amazon.S3.Model;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Storage.Dtos;
 using Microsoft.Extensions.Logging;
-using System.Linq;
+using System.Diagnostics;
 
 namespace KeeperData.Infrastructure.Storage;
 
-public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposable
+public class S3BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposable
 {
     protected readonly IAmazonS3 _s3Client;
     protected readonly ILogger _logger;
-    protected readonly string _container;
+    protected readonly string _bucketName;
     protected readonly string? _topLevelFolder;
     private readonly bool _shouldDisposeClient;
 
-    public BlobStorageServiceReadOnly(
+    public S3BlobStorageServiceReadOnly(
         IAmazonS3 s3Client,
         ILogger logger,
-        string container,
+        string bucketName,
         string? topLevelFolder = null)
     {
         _s3Client = s3Client ?? throw new ArgumentNullException(nameof(s3Client));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _container = container ?? throw new ArgumentNullException(nameof(container));
+        _bucketName = bucketName ?? throw new ArgumentNullException(nameof(bucketName));
         _topLevelFolder = NormalizeTopLevelFolder(topLevelFolder);
         _shouldDisposeClient = false;
     }
 
-    public BlobStorageServiceReadOnly(
+    public S3BlobStorageServiceReadOnly(
         AmazonS3Config config,
         ILogger logger,
         string container,
@@ -36,7 +37,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
     {
     }
 
-    public BlobStorageServiceReadOnly(
+    public S3BlobStorageServiceReadOnly(
         string accessKey,
         string secretKey,
         AmazonS3Config config,
@@ -47,7 +48,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
     {
     }
 
-    public BlobStorageServiceReadOnly(
+    public S3BlobStorageServiceReadOnly(
         string accessKey,
         string secretKey,
         string sessionToken,
@@ -59,7 +60,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
     {
     }
 
-    public BlobStorageServiceReadOnly(
+    public S3BlobStorageServiceReadOnly(
         string serviceUrl,
         string accessKey,
         string secretKey,
@@ -74,7 +75,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
     {
     }
 
-    public BlobStorageServiceReadOnly(
+    public S3BlobStorageServiceReadOnly(
         string profileName,
         Amazon.RegionEndpoint region,
         ILogger logger,
@@ -84,7 +85,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
     {
     }
 
-    public BlobStorageServiceReadOnly(
+    public S3BlobStorageServiceReadOnly(
         Amazon.RegionEndpoint region,
         ILogger logger,
         string container,
@@ -93,7 +94,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
     {
     }
 
-    private BlobStorageServiceReadOnly(
+    private S3BlobStorageServiceReadOnly(
         IAmazonS3 s3Client,
         ILogger logger,
         string container,
@@ -102,7 +103,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
     {
         _s3Client = s3Client ?? throw new ArgumentNullException(nameof(s3Client));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _container = container ?? throw new ArgumentNullException(nameof(container));
+        _bucketName = container ?? throw new ArgumentNullException(nameof(container));
         _topLevelFolder = NormalizeTopLevelFolder(topLevelFolder);
         _shouldDisposeClient = shouldDisposeClient;
     }
@@ -141,24 +142,59 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
         string? prefix = null,
         CancellationToken cancellationToken = default)
     {
+        const int MaxPages = 20; // don't allow > 20 pages of data, use `ListPageAsync` if you need more.
+        var stopwatch = Stopwatch.StartNew();
+        _logger.LogInformation("Starting list operation for container: {Container}, prefix: {Prefix}", _bucketName, prefix ?? "(none)");
+
         try
         {
             var objects = new List<StorageObjectInfo>();
             var continuationToken = (string?)null;
+            var pageCount = 0;
 
             do
             {
+                pageCount++;
+
+                if (pageCount > MaxPages)
+                {
+                    stopwatch.Stop();
+                    var errorMessage = $"List operation exceeded maximum page limit ({MaxPages}) for container: {_bucketName}, prefix: {prefix}. Retrieved {objects.Count} objects before stopping.";
+                    _logger.LogError(errorMessage + " Duration: {Duration}ms", stopwatch.ElapsedMilliseconds);
+                    throw new InvalidOperationException(errorMessage);
+                }
+
+                _logger.LogDebug("Fetching page {PageCount} for container: {Container}, prefix: {Prefix}", pageCount, _bucketName, prefix);
+
                 var page = await ListPageAsync(prefix, 1000, continuationToken, cancellationToken).ConfigureAwait(false);
                 objects.AddRange(page.Items);
                 continuationToken = page.ContinuationToken;
+
+                _logger.LogDebug("Page {PageCount} retrieved {ItemCount} objects (Total so far: {TotalObjects}) for container: {Container}",
+                    pageCount,
+                    page.Items.Count,
+                    objects.Count,
+                    _bucketName);
             }
             while (!string.IsNullOrEmpty(continuationToken));
+
+            stopwatch.Stop();
+            _logger.LogInformation("List operation completed for container: {Container}, prefix: {Prefix}. Retrieved {TotalObjects} objects in {PageCount} page(s). Duration: {Duration}ms",
+                _bucketName,
+                prefix ?? "(none)",
+                objects.Count,
+                pageCount,
+                stopwatch.ElapsedMilliseconds);
 
             return objects;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to list objects in container {Container} with prefix {Prefix}", _container, prefix);
+            stopwatch.Stop();
+            _logger.LogError(ex, "Failed to list objects in container {Container} with prefix {Prefix} after {Duration}ms",
+                _bucketName,
+                prefix,
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
     }
@@ -173,7 +209,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
         {
             var request = new ListObjectsV2Request
             {
-                BucketName = _container,
+                BucketName = _bucketName,
                 Prefix = GetFullPrefix(prefix),
                 MaxKeys = Math.Min(Math.Max(pageSize, 1), 1000),
                 ContinuationToken = continuationToken
@@ -181,17 +217,17 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
 
             var response = await _s3Client.ListObjectsV2Async(request, cancellationToken).ConfigureAwait(false);
 
-            var items = response.S3Objects.Select(obj => new StorageObjectInfo
+            var items = (response.S3Objects ?? Enumerable.Empty<S3Object>()).Select(obj => new StorageObjectInfo
             {
-                Container = _container,
+                Container = _bucketName,
                 Key = GetRelativeObjectKey(obj.Key),
                 Size = obj.Size ?? 0,
                 LastModified = obj.LastModified ?? DateTimeOffset.MinValue,
                 ETag = obj.ETag?.Trim('"'),
-                StorageUri = new Uri($"s3://{_container}/{obj.Key}"),
+                StorageUri = new Uri($"s3://{_bucketName}/{obj.Key}"),
                 HttpUri = _s3Client.GetPreSignedURL(new GetPreSignedUrlRequest
                 {
-                    BucketName = _container,
+                    BucketName = _bucketName,
                     Key = obj.Key,
                     Verb = HttpVerb.GET,
                     Expires = DateTime.UtcNow.AddHours(1)
@@ -207,7 +243,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to list page of objects in container {Container} with prefix {Prefix}", _container, prefix);
+            _logger.LogError(ex, "Failed to list page of objects in container {Container} with prefix {Prefix}", _bucketName, prefix);
             throw;
         }
     }
@@ -221,7 +257,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
             var fullObjectKey = GetFullObjectKey(objectKey);
             var request = new GetObjectMetadataRequest
             {
-                BucketName = _container,
+                BucketName = _bucketName,
                 Key = fullObjectKey
             };
 
@@ -229,7 +265,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
 
             return new StorageObjectMetadata
             {
-                Container = _container,
+                Container = _bucketName,
                 Key = objectKey,
                 ContentLength = response.ContentLength,
                 ContentType = response.Headers.ContentType,
@@ -237,10 +273,10 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
                 LastModified = response.LastModified,
                 StorageClass = response.StorageClass?.Value,
                 Encryption = response.ServerSideEncryptionMethod?.Value,
-                StorageUri = new Uri($"s3://{_container}/{fullObjectKey}"),
+                StorageUri = new Uri($"s3://{_bucketName}/{fullObjectKey}"),
                 HttpUri = _s3Client.GetPreSignedURL(new GetPreSignedUrlRequest
                 {
-                    BucketName = _container,
+                    BucketName = _bucketName,
                     Key = fullObjectKey,
                     Verb = HttpVerb.GET,
                     Expires = DateTime.UtcNow.AddHours(1)
@@ -257,7 +293,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get metadata for object {ObjectKey} in container {Container}", objectKey, _container);
+            _logger.LogError(ex, "Failed to get metadata for object {ObjectKey} in container {Container}", objectKey, _bucketName);
             throw;
         }
     }
@@ -276,7 +312,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to download object {ObjectKey} from container {Container}", objectKey, _container);
+            _logger.LogError(ex, "Failed to download object {ObjectKey} from container {Container}", objectKey, _bucketName);
             throw;
         }
     }
@@ -290,7 +326,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
             var fullObjectKey = GetFullObjectKey(objectKey);
             var request = new GetObjectRequest
             {
-                BucketName = _container,
+                BucketName = _bucketName,
                 Key = fullObjectKey
             };
 
@@ -300,7 +336,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to open read stream for object {ObjectKey} in container {Container}", objectKey, _container);
+            _logger.LogError(ex, "Failed to open read stream for object {ObjectKey} in container {Container}", objectKey, _bucketName);
             throw;
         }
     }
@@ -314,7 +350,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
             var fullObjectKey = GetFullObjectKey(objectKey);
             var request = new GetObjectMetadataRequest
             {
-                BucketName = _container,
+                BucketName = _bucketName,
                 Key = fullObjectKey
             };
 
@@ -327,7 +363,7 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to check existence of object {ObjectKey} in container {Container}", objectKey, _container);
+            _logger.LogError(ex, "Failed to check existence of object {ObjectKey} in container {Container}", objectKey, _bucketName);
             throw;
         }
     }
@@ -356,4 +392,6 @@ public class BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDisposab
 
         return string.IsNullOrEmpty(normalized) ? null : normalized + "/";
     }
+
+    public override string ToString() => $"BlobStorageService(bucket={_bucketName},tlf={_topLevelFolder})";
 }

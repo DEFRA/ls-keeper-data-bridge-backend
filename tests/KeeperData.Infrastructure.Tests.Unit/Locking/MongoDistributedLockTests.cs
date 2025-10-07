@@ -15,7 +15,7 @@ using System.Reflection;
 
 namespace KeeperData.Infrastructure.Tests.Unit.Locking;
 
-public class MongoDistributedLockTests : IDisposable
+public class MongoDistributedLockTests
 {
     private readonly Mock<IMongoCollection<DistributedLock>> _collectionMock;
     private readonly Mock<IMongoIndexManager<DistributedLock>> _indexManagerMock;
@@ -31,7 +31,10 @@ public class MongoDistributedLockTests : IDisposable
         _indexManagerMock = new Mock<IMongoIndexManager<DistributedLock>>();
 
         _collectionMock.Setup(c => c.Indexes).Returns(_indexManagerMock.Object);
+        _collectionMock.Setup(c => c.Database).Returns(mongoDatabaseMock.Object);
+        _collectionMock.Setup(c => c.CollectionNamespace).Returns(new CollectionNamespace("testdb", "distributed_locks"));
 
+        mongoDatabaseMock.Setup(db => db.DatabaseNamespace).Returns(new DatabaseNamespace("testdb"));
         mongoDatabaseMock.Setup(db => db.GetCollection<DistributedLock>(It.IsAny<string>(), It.IsAny<MongoCollectionSettings>()))
             .Returns(_collectionMock.Object);
 
@@ -39,27 +42,22 @@ public class MongoDistributedLockTests : IDisposable
             .Returns(mongoDatabaseMock.Object);
     }
 
-    public void Dispose()
-    {
-        //Reset flags
-        typeof(MongoDistributedLock)
-            .GetField("_ttlIndexEnsured", BindingFlags.NonPublic | BindingFlags.Static)!
-            .SetValue(null, false);
-    }
-
     [Fact]
-    public void Constructor_WhenFirstInstanceCreated_CreatesTtlIndex()
+    public async Task InitializeAsync_WhenCalled_CreatesTtlIndex()
     {
         // Arrange
         CreateIndexModel<DistributedLock>? capturedIndexModel = null;
-        _indexManagerMock.Setup(im => im.CreateOne(It.IsAny<CreateIndexModel<DistributedLock>>(), null, It.IsAny<CancellationToken>()))
-            .Callback<CreateIndexModel<DistributedLock>, CreateOneIndexOptions, CancellationToken>((model, options, token) => capturedIndexModel = model);
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .Callback<CreateIndexModel<DistributedLock>, CreateOneIndexOptions, CancellationToken>((model, options, token) => capturedIndexModel = model)
+            .ReturnsAsync("test-index");
 
-        // Act
         var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
 
+        // Act
+        await sut.InitializeAsync();
+
         // Assert
-        _indexManagerMock.Verify(im => im.CreateOne(It.IsAny<CreateIndexModel<DistributedLock>>(), null, It.IsAny<CancellationToken>()), Times.Once);
+        _indexManagerMock.Verify(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()), Times.Once);
         capturedIndexModel.Should().NotBeNull();
         capturedIndexModel!.Options.ExpireAfter.Should().Be(TimeSpan.Zero);
         var renderedKeys = capturedIndexModel.Keys.Render(BsonSerializer.SerializerRegistry.GetSerializer<DistributedLock>(), BsonSerializer.SerializerRegistry);
@@ -67,21 +65,29 @@ public class MongoDistributedLockTests : IDisposable
     }
 
     [Fact]
-    public void Constructor_WhenMultipleInstancesCreated_CreatesIndexOnlyOnce()
+    public async Task InitializeAsync_WhenCalledMultipleTimes_CreatesIndexOnlyOnce()
     {
+        // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
+        var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+
         // Act
-        var sut1 = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
-        var sut2 = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+        await sut.InitializeAsync();
+        await sut.InitializeAsync();
 
         // Assert
-        // Verify that CreateOne was only called a single time across all instances.
-        _indexManagerMock.Verify(im => im.CreateOne(It.IsAny<CreateIndexModel<DistributedLock>>(), null, It.IsAny<CancellationToken>()), Times.Once);
+        _indexManagerMock.Verify(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task TryAcquireAsync_WhenNoLockExists_AcquiresLockSuccessfully()
     {
         // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
         _collectionMock.Setup(c => c.FindOneAndReplaceAsync(
                 It.IsAny<FilterDefinition<DistributedLock>>(),
                 It.IsAny<DistributedLock>(),
@@ -109,6 +115,9 @@ public class MongoDistributedLockTests : IDisposable
     public async Task TryAcquireAsync_WhenLockIsExpired_ReplacesAndAcquiresLockSuccessfully()
     {
         // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
         var expiredLock = new DistributedLock { Id = "test-lock", Owner = "old-owner", ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5) };
         _collectionMock.Setup(c => c.FindOneAndReplaceAsync(
                 It.IsAny<FilterDefinition<DistributedLock>>(),
@@ -132,6 +141,9 @@ public class MongoDistributedLockTests : IDisposable
     public async Task TryAcquireAsync_WhenLockIsHeld_FailsToAcquireLock()
     {
         // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
         _collectionMock.Setup(c => c.FindOneAndReplaceAsync(
                 It.IsAny<FilterDefinition<DistributedLock>>(),
                 It.IsAny<DistributedLock>(),
@@ -157,9 +169,12 @@ public class MongoDistributedLockTests : IDisposable
     }
 
     [Fact]
-    public async Task Dispose_WhenCalledOnAcquiredLock_DeletesTheLock()
+    public async Task DisposeAsync_WhenCalledOnAcquiredLock_DeletesTheLock()
     {
         // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
         _collectionMock.Setup(c => c.FindOneAndReplaceAsync(
                 It.IsAny<FilterDefinition<DistributedLock>>(),
                 It.IsAny<DistributedLock>(),
@@ -173,19 +188,21 @@ public class MongoDistributedLockTests : IDisposable
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        _collectionMock.Setup(c => c.DeleteOne(
+        _collectionMock.Setup(c => c.DeleteOneAsync(
             It.IsAny<FilterDefinition<DistributedLock>>(),
-            It.IsAny<CancellationToken>()));
+            It.IsAny<DeleteOptions>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteResult.Acknowledged(1));
 
         var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
 
         // Act
         var lockHandle = await sut.TryAcquireAsync("test-lock", TimeSpan.FromMinutes(1));
         lockHandle.Should().NotBeNull();
-        lockHandle!.Dispose();
+        await lockHandle!.DisposeAsync();
 
         // Assert
-        _collectionMock.Verify(c => c.DeleteOne(It.IsAny<FilterDefinition<DistributedLock>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _collectionMock.Verify(c => c.DeleteOneAsync(It.IsAny<FilterDefinition<DistributedLock>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static MongoWriteException CreateMongoWriteExceptionForDuplicateKey()

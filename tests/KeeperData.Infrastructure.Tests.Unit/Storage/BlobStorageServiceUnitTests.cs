@@ -14,13 +14,13 @@ namespace KeeperData.Infrastructure.Tests.Unit.Storage;
 /// </summary>
 public class BlobStorageServiceUnitTests
 {
-    private readonly Mock<ILogger<BlobStorageService>> _loggerMock;
+    private readonly Mock<ILogger<S3BlobStorageService>> _loggerMock;
     private readonly Mock<IAmazonS3> _mockS3Client;
     private const string TestContainer = "test-bucket";
 
     public BlobStorageServiceUnitTests()
     {
-        _loggerMock = new Mock<ILogger<BlobStorageService>>();
+        _loggerMock = new Mock<ILogger<S3BlobStorageService>>();
         _mockS3Client = new Mock<IAmazonS3>();
     }
 
@@ -30,7 +30,7 @@ public class BlobStorageServiceUnitTests
     public void Constructor_WithNullS3Client_ShouldThrow()
     {
         // Act & Assert
-        var act = () => new BlobStorageService(
+        var act = () => new S3BlobStorageService(
             (IAmazonS3)null!,
             _loggerMock.Object,
             TestContainer);
@@ -43,7 +43,7 @@ public class BlobStorageServiceUnitTests
     public void Constructor_WithNullLogger_ShouldThrow()
     {
         // Act & Assert
-        var act = () => new BlobStorageService(
+        var act = () => new S3BlobStorageService(
             _mockS3Client.Object,
             null!,
             TestContainer);
@@ -56,20 +56,20 @@ public class BlobStorageServiceUnitTests
     public void Constructor_WithNullContainer_ShouldThrow()
     {
         // Act & Assert
-        var act = () => new BlobStorageService(
+        var act = () => new S3BlobStorageService(
             _mockS3Client.Object,
             _loggerMock.Object,
             null!);
 
         act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("container");
+            .WithParameterName("bucketName");
     }
 
     [Fact]
     public void Constructor_WithValidParameters_ShouldCreateInstance()
     {
         // Arrange & Act
-        using var service = new BlobStorageService(
+        using var service = new S3BlobStorageService(
             _mockS3Client.Object,
             _loggerMock.Object,
             TestContainer);
@@ -82,7 +82,7 @@ public class BlobStorageServiceUnitTests
     public void Constructor_WithTopLevelFolder_ShouldCreateInstance()
     {
         // Arrange & Act
-        using var service = new BlobStorageService(
+        using var service = new S3BlobStorageService(
             _mockS3Client.Object,
             _loggerMock.Object,
             TestContainer,
@@ -101,7 +101,7 @@ public class BlobStorageServiceUnitTests
     public void Constructor_WithEmptyOrNullTopLevelFolder_ShouldCreateInstance(string? topLevelFolder)
     {
         // Arrange & Act
-        using var service = new BlobStorageService(
+        using var service = new S3BlobStorageService(
             _mockS3Client.Object,
             _loggerMock.Object,
             TestContainer,
@@ -123,7 +123,7 @@ public class BlobStorageServiceUnitTests
             RegionEndpoint = Amazon.RegionEndpoint.USEast1
         };
 
-        using var service = new BlobStorageService(
+        using var service = new S3BlobStorageService(
             config,
             _loggerMock.Object,
             TestContainer);
@@ -143,7 +143,7 @@ public class BlobStorageServiceUnitTests
             UseHttp = true
         };
 
-        using var service = new BlobStorageService(
+        using var service = new S3BlobStorageService(
             "test-access-key",
             "test-secret-key",
             config,
@@ -162,7 +162,7 @@ public class BlobStorageServiceUnitTests
     public async Task UploadAsync_WithValidParameters_ShouldCallPutObjectAsync()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
         var content = Encoding.UTF8.GetBytes("test content");
         var contentType = "text/plain";
@@ -195,7 +195,7 @@ public class BlobStorageServiceUnitTests
     {
         // Arrange
         var topLevelFolder = "tenant-123";
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, topLevelFolder);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, topLevelFolder);
         var objectKey = "test-key";
         var content = Encoding.UTF8.GetBytes("test content");
 
@@ -218,7 +218,7 @@ public class BlobStorageServiceUnitTests
     public async Task UploadAsync_WithoutContentType_ShouldUseDefaultContentType()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
         var content = Encoding.UTF8.GetBytes("test content");
 
@@ -239,7 +239,7 @@ public class BlobStorageServiceUnitTests
     public async Task UploadAsync_WhenS3ClientThrows_ShouldLogErrorAndRethrow()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
         var content = Encoding.UTF8.GetBytes("test content");
         var exception = new AmazonS3Exception("S3 Error");
@@ -271,7 +271,7 @@ public class BlobStorageServiceUnitTests
     public async Task OpenWriteAsync_WithValidParameters_ShouldReturnMultipartStream()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
         var contentType = "application/octet-stream";
         var metadata = new Dictionary<string, string> { ["key1"] = "value1" };
@@ -312,7 +312,7 @@ public class BlobStorageServiceUnitTests
     {
         // Arrange
         var topLevelFolder = "tenant-456";
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, topLevelFolder);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, topLevelFolder);
         var objectKey = "test-key";
 
         _mockS3Client
@@ -337,7 +337,7 @@ public class BlobStorageServiceUnitTests
     public async Task OpenWriteAsync_WithoutContentType_ShouldUseDefaultContentType()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
 
         _mockS3Client
@@ -360,7 +360,7 @@ public class BlobStorageServiceUnitTests
     public async Task OpenWriteAsync_WhenInitiateMultipartFails_ShouldLogErrorAndRethrow()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
         var exception = new AmazonS3Exception("Failed to initiate multipart upload");
 
@@ -391,7 +391,7 @@ public class BlobStorageServiceUnitTests
     public async Task SetMetadataAsync_WithValidParameters_ShouldCallCopyObjectAsync()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
         var metadata = new Dictionary<string, string>
         {
@@ -430,7 +430,7 @@ public class BlobStorageServiceUnitTests
     {
         // Arrange
         var topLevelFolder = "company-xyz";
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, topLevelFolder);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, topLevelFolder);
         var objectKey = "test-key";
         var metadata = new Dictionary<string, string> { ["key1"] = "value1" };
 
@@ -456,7 +456,7 @@ public class BlobStorageServiceUnitTests
     public async Task SetMetadataAsync_WhenCopyObjectFails_ShouldLogErrorAndRethrow()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
         var metadata = new Dictionary<string, string> { ["key1"] = "value1" };
         var exception = new AmazonS3Exception("Copy failed");
@@ -488,7 +488,7 @@ public class BlobStorageServiceUnitTests
     public async Task DeleteAsync_WithValidParameters_ShouldCallDeleteObjectAsync()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
 
         _mockS3Client
@@ -511,7 +511,7 @@ public class BlobStorageServiceUnitTests
     {
         // Arrange
         var topLevelFolder = "department-abc";
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, topLevelFolder);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, topLevelFolder);
         var objectKey = "test-key";
 
         _mockS3Client
@@ -533,7 +533,7 @@ public class BlobStorageServiceUnitTests
     public async Task DeleteAsync_WhenDeleteObjectFails_ShouldLogErrorAndRethrow()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
         var exception = new AmazonS3Exception("Delete failed");
 
@@ -571,7 +571,7 @@ public class BlobStorageServiceUnitTests
     public async Task Operations_WithVariousFolderFormats_ShouldNormalizeCorrectly(string inputFolder, string expectedNormalizedFolder)
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, inputFolder);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, inputFolder);
         var objectKey = "test-key";
         var content = Encoding.UTF8.GetBytes("test");
 
@@ -597,7 +597,7 @@ public class BlobStorageServiceUnitTests
     public async Task Operations_WithEmptyOrNullFolder_ShouldNotPrependFolder(string? inputFolder)
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, inputFolder);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer, inputFolder);
         var objectKey = "test-key";
         var content = Encoding.UTF8.GetBytes("test");
 
@@ -622,7 +622,7 @@ public class BlobStorageServiceUnitTests
     public async Task UploadAsync_OnSuccess_ShouldLogDebugMessage()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
         var content = Encoding.UTF8.GetBytes("test");
 
@@ -648,7 +648,7 @@ public class BlobStorageServiceUnitTests
     public async Task DeleteAsync_OnSuccess_ShouldLogDebugMessage()
     {
         // Arrange
-        using var service = new BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
         var objectKey = "test-key";
 
         _mockS3Client

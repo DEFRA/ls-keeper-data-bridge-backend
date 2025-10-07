@@ -1,4 +1,5 @@
 using Amazon.S3;
+using KeeperData.Infrastructure.Storage.Factories.Implementations;
 
 namespace KeeperData.Infrastructure.Storage.Factories;
 
@@ -26,4 +27,6 @@ public interface IS3ClientFactory
 
     void RegisterMockClient<T>(string bucketName, IAmazonS3 mockClient)
         where T : IStorageClient, new();
+
+    S3ClientFactory.ClientInfo GetClientInfo<T>() where T : IStorageClient, new();
 }

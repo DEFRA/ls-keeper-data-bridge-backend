@@ -13,14 +13,14 @@ using KeeperData.Core.Storage;
 
 namespace KeeperData.Bridge.Tests.Integration.Scenarios;
 
-[Collection("LocalStack"), Trait("Dependence", "localstack")]
+[Collection("LocalStack"), Trait("Dependence", "docker")]
 public class ScenarioFileDecryptTransferTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _testOutputHelper;
     private readonly LocalStackFixture _localStackFixture;
-    private readonly Mock<ILogger<BlobStorageService>> _loggerMock;
-    private readonly BlobStorageService _sourceStorageService;
-    private readonly BlobStorageService _destinationStorageService;
+    private readonly Mock<ILogger<S3BlobStorageService>> _loggerMock;
+    private readonly S3BlobStorageService _sourceStorageService;
+    private readonly S3BlobStorageService _destinationStorageService;
     private readonly IAesCryptoTransform _cryptoTransform;
     private readonly TestScope _testScope;
 
@@ -33,10 +33,10 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
     {
         _testOutputHelper = testOutputHelper;
         _localStackFixture = localStackFixture;
-        _loggerMock = new Mock<ILogger<BlobStorageService>>();
+        _loggerMock = new Mock<ILogger<S3BlobStorageService>>();
 
-        _sourceStorageService = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, SourceFolder);
-        _destinationStorageService = new BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, DestinationFolder);
+        _sourceStorageService = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, SourceFolder);
+        _destinationStorageService = new S3BlobStorageService(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket, DestinationFolder);
 
         _cryptoTransform = new AesCryptoTransform();
 
@@ -498,7 +498,7 @@ public class ScenarioFileDecryptTransferTests : IAsyncLifetime
     }
 
 
-    private async Task<string> DownloadAndCalculateMd5Async(BlobStorageService storageService, string fileName)
+    private async Task<string> DownloadAndCalculateMd5Async(S3BlobStorageService storageService, string fileName)
     {
         _testOutputHelper.WriteLine($"Calculating MD5 hash for file: {fileName}");
 

@@ -96,51 +96,8 @@ decryptCommand.SetAction(async (parseResult) =>
     }
 });
 
-var getPasswordCommand = new Command("get-password", "Get password for a filename")
-{
-    new Option<string>("--filename") { Description = "Filename to get password for", Required = true }
-};
-
-getPasswordCommand.SetAction((parseResult) =>
-{
-    var filename = parseResult.GetValue<string>("--filename")!;
-    var passwordSaltService = host.Services.GetRequiredService<IPasswordSaltService>();
-
-    try
-    {
-        var passwordSalt = passwordSaltService.Get(filename);
-        Console.WriteLine($"Password: {passwordSalt.Password}");
-        // Console.WriteLine($"Salt: {passwordSalt.Salt}"); // ignore salt, we only use fake values in this tool.
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error getting password for filename '{filename}': {ex.Message}");
-        Environment.Exit(1);
-    }
-});
-
-var generateFilenameCommand = new Command("generate-filename", "Generate a compliant filename");
-
-generateFilenameCommand.SetAction((parseResult) =>
-{
-    var passwordSaltService = host.Services.GetRequiredService<IPasswordSaltService>();
-
-    try
-    {
-        var filename = passwordSaltService.GenerateFileName();
-        Console.WriteLine($"Generated filename: {filename}");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error generating filename: {ex.Message}");
-        Environment.Exit(1);
-    }
-});
-
 rootCommand.Add(encryptCommand);
 rootCommand.Add(decryptCommand);
-rootCommand.Add(getPasswordCommand);
-rootCommand.Add(generateFilenameCommand);
 
 var parseResult = rootCommand.Parse(args);
 return await parseResult.InvokeAsync();

@@ -6,48 +6,49 @@ using MongoDB.Driver;
 
 namespace KeeperData.Infrastructure.Locking;
 
-public class MongoDistributedLock : IDistributedLock
+public sealed class MongoDistributedLock : IDistributedLock, IDisposable
 {
     private readonly IMongoCollection<DistributedLock> _collection;
-    private static bool _ttlIndexEnsured;
-    private static readonly object _lock = new();
+    private readonly SemaphoreSlim _initSemaphore = new(1, 1);
+    private volatile bool _indexInitialized;
 
     public MongoDistributedLock(IOptions<MongoConfig> mongoConfig, IMongoClient client)
     {
         var mongoDatabase = client.GetDatabase(mongoConfig.Value.DatabaseName);
         _collection = mongoDatabase.GetCollection<DistributedLock>("distributed_locks");
-        EnsureTtlIndexExists();
     }
 
-
-    // TTL index for cleanup of abandoned locks.
-    private void EnsureTtlIndexExists()
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        if (_ttlIndexEnsured)
+        if (!_indexInitialized)
         {
-            return;
-        }
-
-        lock (_lock)
-        {
-            if (_ttlIndexEnsured)
+            await _initSemaphore.WaitAsync(cancellationToken);
+            try
             {
-                return;
+                if (!_indexInitialized)
+                {
+                    var options = new CreateIndexOptions { ExpireAfter = TimeSpan.FromSeconds(0) };
+                    var indexDefinition = new IndexKeysDefinitionBuilder<DistributedLock>().Ascending(d => d.ExpiresAtUtc);
+                    var indexModel = new CreateIndexModel<DistributedLock>(indexDefinition, options);
+                    await _collection.Indexes.CreateOneAsync(indexModel, cancellationToken: cancellationToken);
+                    _indexInitialized = true;
+                }
             }
-
-            // set ExpireAfter to 0. This tells MongoDB to look at ExpiresAtUtc and expire the document at that specific time.
-            var options = new CreateIndexOptions { ExpireAfter = TimeSpan.FromSeconds(0) };
-            var indexDefinition = new IndexKeysDefinitionBuilder<DistributedLock>().Ascending(d => d.ExpiresAtUtc);
-            var indexModel = new CreateIndexModel<DistributedLock>(indexDefinition, options);
-
-            _collection.Indexes.CreateOne(indexModel);
-
-            _ttlIndexEnsured = true;
+            finally
+            {
+                _initSemaphore.Release();
+            }
         }
     }
 
-    public async Task<IDisposable?> TryAcquireAsync(string lockName, TimeSpan duration, CancellationToken cancellationToken = default)
+    public async Task<IDistributedLockHandle?> TryAcquireAsync(string lockName, TimeSpan duration, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(lockName);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(duration, TimeSpan.Zero);
+
+        // Ensure index is created before attempting lock operations
+        await InitializeAsync(cancellationToken);
+
         var ownerId = Guid.NewGuid().ToString();
         var expiresAt = DateTimeOffset.UtcNow.Add(duration);
 
@@ -58,26 +59,25 @@ public class MongoDistributedLock : IDistributedLock
             ExpiresAtUtc = expiresAt
         };
 
-        // Atomically find and replace an expired lock.
-        var filter = Builders<DistributedLock>.Filter.And(
-            Builders<DistributedLock>.Filter.Eq(d => d.Id, lockName),
-            Builders<DistributedLock>.Filter.Lt(d => d.ExpiresAtUtc, DateTimeOffset.UtcNow)
-        );
-
-        var replaced = await _collection.FindOneAndReplaceAsync(filter, lockDocument, cancellationToken: cancellationToken);
-
-        if (replaced != null)
-        {
-            // Successfully replaced an expired lock
-            return new MongoLockHandle(_collection, lockName, ownerId);
-        }
-
-        // If no lock was replaced, it's either unexpired or doesn't exist.
-        // this will fail if an unexpired lock already exists.
         try
         {
-            await _collection.InsertOneAsync(lockDocument, cancellationToken: cancellationToken);
+            // Atomically find and replace an expired lock.
+            var filter = Builders<DistributedLock>.Filter.And(
+                Builders<DistributedLock>.Filter.Eq(d => d.Id, lockName),
+                Builders<DistributedLock>.Filter.Lt(d => d.ExpiresAtUtc, DateTimeOffset.UtcNow)
+            );
 
+            var replaced = await _collection.FindOneAndReplaceAsync(filter, lockDocument, cancellationToken: cancellationToken);
+
+            if (replaced != null)
+            {
+                // Successfully replaced an expired lock
+                return new MongoLockHandle(_collection, lockName, ownerId);
+            }
+
+            // If no lock was replaced, it's either unexpired or doesn't exist.
+            // this will fail if an unexpired lock already exists.
+            await _collection.InsertOneAsync(lockDocument, cancellationToken: cancellationToken);
             return new MongoLockHandle(_collection, lockName, ownerId);
         }
         catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
@@ -87,27 +87,70 @@ public class MongoDistributedLock : IDistributedLock
         }
     }
 
-    private sealed class MongoLockHandle : IDisposable
-    {
-        private readonly IMongoCollection<DistributedLock> _collection;
-        private readonly string _lockName;
-        private readonly string _ownerId;
+    public void Dispose() => _initSemaphore?.Dispose();
 
-        public MongoLockHandle(IMongoCollection<DistributedLock> collection, string lockName, string ownerId)
+    private sealed class MongoLockHandle(IMongoCollection<DistributedLock> collection, string lockName, string ownerId) : IDistributedLockHandle
+    {
+        private bool _disposed;
+
+        /// <summary>
+        /// Attempts to renew the lock by extending its expiration time.
+        /// </summary>
+        /// <param name="extension">The additional time to extend the lock</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>True if the lock was successfully renewed, false if the lock is no longer owned by this handle</returns>
+        public async Task<bool> TryRenewAsync(TimeSpan extension, CancellationToken cancellationToken = default)
         {
-            _collection = collection;
-            _lockName = lockName;
-            _ownerId = ownerId;
+            if (!_disposed)
+            {
+                ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(extension, TimeSpan.Zero);
+
+                try
+                {
+                    var filter = Builders<DistributedLock>.Filter.And(
+                        Builders<DistributedLock>.Filter.Eq(d => d.Id, lockName),
+                        Builders<DistributedLock>.Filter.Eq(d => d.Owner, ownerId)
+                    );
+
+                    var update = Builders<DistributedLock>.Update.Set(d => d.ExpiresAtUtc, DateTimeOffset.UtcNow.Add(extension));
+
+                    var result = await collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+                    return result.ModifiedCount > 0;
+                }
+                catch (MongoException)
+                {
+                    // Return false on any MongoDB exception during renewal
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
         }
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
-            // Only release the lock if we are still the owner.
-            var filter = Builders<DistributedLock>.Filter.And(
-                Builders<DistributedLock>.Filter.Eq(d => d.Id, _lockName),
-                Builders<DistributedLock>.Filter.Eq(d => d.Owner, _ownerId)
-            );
-            _collection.DeleteOne(filter);
+            if (!_disposed)
+            {
+                try
+                {
+                    var filter = Builders<DistributedLock>.Filter.And(
+                        Builders<DistributedLock>.Filter.Eq(d => d.Id, lockName),
+                        Builders<DistributedLock>.Filter.Eq(d => d.Owner, ownerId)
+                    );
+
+                    await collection.DeleteOneAsync(filter);
+                }
+                catch (MongoException)
+                {
+                    // Ignore exceptions during cleanup - the TTL index will eventually clean up abandoned locks
+                }
+                finally
+                {
+                    _disposed = true;
+                }
+            }
         }
     }
 }

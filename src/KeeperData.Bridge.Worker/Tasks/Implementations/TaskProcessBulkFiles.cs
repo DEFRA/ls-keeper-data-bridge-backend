@@ -17,11 +17,11 @@ public class TaskProcessBulkFiles(
     private static readonly TimeSpan RenewalInterval = TimeSpan.FromMinutes(1);      
     private static readonly TimeSpan RenewalExtension = TimeSpan.FromMinutes(2);   
     
-    public async Task<Guid?> StartAsync(CancellationToken cancellationToken = default)
+    public async Task<Guid?> StartAsync(string sourceType, CancellationToken cancellationToken = default)
     {
         var importId = Guid.NewGuid();
         
-        logger.LogInformation("Attempting to acquire lock for {LockName} (importid={importId}).", LockName, importId);
+        logger.LogInformation("Attempting to acquire lock for {LockName} with sourceType={sourceType} (importid={importId}).", LockName, sourceType, importId);
 
         var @lock = await distributedLock.TryAcquireAsync(LockName, LockDuration, cancellationToken);
 
@@ -31,7 +31,7 @@ public class TaskProcessBulkFiles(
             return null;
         }
 
-        logger.LogInformation("Lock acquired for {LockName}. Starting import in background (importid={importId}).", LockName, importId);
+        logger.LogInformation("Lock acquired for {LockName}. Starting import in background with sourceType={sourceType} (importid={importId}).", LockName, sourceType, importId);
         
         var stoppingToken = applicationLifetime.ApplicationStopping;
         
@@ -46,7 +46,7 @@ public class TaskProcessBulkFiles(
                             cancellationToken, 
                             stoppingToken);
                         
-                        await ExecuteImportWithLockRenewalAsync(@lock, importId, cts.Token);
+                        await ExecuteImportWithLockRenewalAsync(@lock, importId, sourceType, cts.Token);
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -82,12 +82,13 @@ public class TaskProcessBulkFiles(
 
         logger.LogInformation("Lock acquired for {LockName}. Task started at {startTime} (importid={importId}).", LockName, DateTime.UtcNow, importId);
         
-        await ExecuteImportWithLockRenewalAsync(@lock, importId, cancellationToken);
+        await ExecuteImportWithLockRenewalAsync(@lock, importId, BlobStorageSources.External, cancellationToken);
     }
 
     private async Task ExecuteImportWithLockRenewalAsync(
         IDistributedLockHandle lockHandle, 
-        Guid importId, 
+        Guid importId,
+        string sourceType,
         CancellationToken externalCancellationToken)
     {
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellationToken);
@@ -96,7 +97,7 @@ public class TaskProcessBulkFiles(
         
         try
         {
-            await importPipeline.StartAsync(importId, BlobStorageSources.External, linkedCts.Token);
+            await importPipeline.StartAsync(importId, sourceType, linkedCts.Token);
             
             logger.LogInformation("Import completed successfully at {endTime}, (importid={importId})", DateTime.UtcNow, importId);
         }

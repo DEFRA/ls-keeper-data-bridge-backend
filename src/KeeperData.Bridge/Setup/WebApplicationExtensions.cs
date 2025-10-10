@@ -4,6 +4,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
+using KeeperData.Infrastructure.Metrics;
 
 namespace KeeperData.Bridge.Setup;
 
@@ -22,6 +23,9 @@ public static class WebApplicationExtensions
             logger.LogInformation("{applicationName} stopping", env.ApplicationName));
         applicationLifetime.ApplicationStopped.Register(() =>
             logger.LogInformation("{applicationName} stopped", env.ApplicationName));
+
+        // Initialize the MeterListener to start capturing metrics
+        _ = app.Services.GetRequiredService<EmfMeterListener>();
 
         app.UseMiddleware<ExceptionHandlingMiddleware>();
 

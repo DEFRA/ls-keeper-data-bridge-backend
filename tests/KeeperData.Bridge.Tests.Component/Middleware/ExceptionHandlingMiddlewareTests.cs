@@ -3,6 +3,7 @@ using FluentValidation.Results;
 using KeeperData.Bridge.Middleware;
 using KeeperData.Core.Exceptions;
 using KeeperData.Infrastructure;
+using KeeperData.Infrastructure.Metrics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -11,6 +12,34 @@ using Microsoft.Extensions.Primitives;
 using System.Text.Json;
 
 namespace KeeperData.Bridge.Tests.Component.Middleware;
+
+public class TestApplicationMetrics : IApplicationMetrics
+{
+    public List<(string MetricName, long Count, (string Key, string Value)[] Tags)> RecordedCounts { get; } = [];
+    public List<(string Operation, string Status)> RecordedRequests { get; } = [];
+    public List<(string Operation, double Duration)> RecordedDurations { get; } = [];
+    public List<(string MetricName, double Value, (string Key, string Value)[] Tags)> RecordedValues { get; } = [];
+
+    public void RecordCount(string metricName, long count = 1, params (string Key, string Value)[] tags)
+    {
+        RecordedCounts.Add((metricName, count, tags));
+    }
+
+    public void RecordRequest(string operation, string status)
+    {
+        RecordedRequests.Add((operation, status));
+    }
+
+    public void RecordDuration(string operation, double durationMs)
+    {
+        RecordedDurations.Add((operation, durationMs));
+    }
+
+    public void RecordValue(string metricName, double value, params (string Key, string Value)[] tags)
+    {
+        RecordedValues.Add((metricName, value, tags));
+    }
+}
 
 public class ExceptionHandlingMiddlewareTests
 {
@@ -83,7 +112,9 @@ public class ExceptionHandlingMiddlewareTests
             .AddInMemoryCollection(initialData)
             .Build();
 
-        return new ExceptionHandlingMiddleware(next, _testLogger, config);
+        var mockMetrics = new TestApplicationMetrics();
+
+        return new ExceptionHandlingMiddleware(next, _testLogger, config, mockMetrics);
     }
 
     private DefaultHttpContext CreateHttpContext(string path = "/test", string? traceHeaderValue = null)
@@ -398,5 +429,57 @@ public class ExceptionHandlingMiddlewareTests
 
         nextCalled.Should().BeTrue();
         context.Response.StatusCode.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task Exception_records_metrics_with_correct_tags()
+    {
+        var context = CreateHttpContext("/api/test");
+        context.Request.Method = "POST";
+        var middleware = CreateMiddleware(_ => throw new NotFoundException("Test", 1));
+
+        await middleware.InvokeAsync(context);
+
+        var testMetrics = (TestApplicationMetrics?)middleware
+            .GetType()
+            .GetField("_metrics", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?.GetValue(middleware);
+
+        testMetrics.Should().NotBeNull();
+        testMetrics!.RecordedCounts.Should().HaveCount(1);
+        
+        var metricRecord = testMetrics.RecordedCounts[0];
+        metricRecord.MetricName.Should().Be("http_exceptions_total");
+        metricRecord.Count.Should().Be(1);
+        
+        var tags = metricRecord.Tags;
+        tags.Should().Contain(("exception_type", "NotFoundException"));
+        tags.Should().Contain(("status_code", "404"));
+        tags.Should().Contain(("method", "POST"));
+        tags.Should().Contain(("path", "/api/test"));
+        tags.Should().Contain(("severity", "warning"));
+    }
+
+    [Fact]
+    public async Task InternalServerError_records_error_severity_metrics()
+    {
+        var context = CreateHttpContext("/api/test");
+        var middleware = CreateMiddleware(_ => throw new InvalidOperationException("internal error"));
+
+        await middleware.InvokeAsync(context);
+
+        var testMetrics = (TestApplicationMetrics?)middleware
+            .GetType()
+            .GetField("_metrics", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?.GetValue(middleware);
+
+        testMetrics.Should().NotBeNull();
+        testMetrics!.RecordedCounts.Should().HaveCount(1);
+        
+        var metricRecord = testMetrics.RecordedCounts[0];
+        var tags = metricRecord.Tags;
+        tags.Should().Contain(("exception_type", "InvalidOperationException"));
+        tags.Should().Contain(("status_code", "500"));
+        tags.Should().Contain(("severity", "error"));
     }
 }

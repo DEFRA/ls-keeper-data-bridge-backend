@@ -1,27 +1,34 @@
 using System.Diagnostics.Metrics;
+using Amazon.CloudWatch.EMF.Logger;
+using Amazon.CloudWatch.EMF.Model;
 using KeeperData.Infrastructure.Config;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Unit = Amazon.CloudWatch.EMF.Model.Unit;
 
 namespace KeeperData.Infrastructure.Metrics;
 
 public class EmfMeterListener : IDisposable
 {
     private readonly MeterListener _meterListener;
-    private readonly IMetricsService _metricsService;
     private readonly ILogger<EmfMeterListener> _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly string _meterName;
+    private readonly string _namespace;
+    private readonly string _serviceName;
 
     public EmfMeterListener(
         MeterListener meterListener, 
-        IMetricsService metricsService, 
-        ILogger<EmfMeterListener> logger, 
+        ILogger<EmfMeterListener> logger,
+        ILoggerFactory loggerFactory,
         IOptions<AwsConfig> awsConfig)
     {
         _meterListener = meterListener;
-        _metricsService = metricsService;
         _logger = logger;
+        _loggerFactory = loggerFactory;
         _meterName = awsConfig.Value.Metrics.MeterName;
+        _namespace = awsConfig.Value.EMF.Namespace;
+        _serviceName = awsConfig.Value.EMF.ServiceName;
         
         _meterListener.InstrumentPublished = OnInstrumentPublished;
         _meterListener.SetMeasurementEventCallback<double>(OnMeasurementRecorded);
@@ -46,22 +53,31 @@ public class EmfMeterListener : IDisposable
     {
         try
         {
-            var value = Convert.ToDouble(measurement);
-            var dimensions = new Dictionary<string, string>();
+            using var metricsLogger = new MetricsLogger(_loggerFactory);
+            
+            metricsLogger.SetNamespace(_namespace);
+            var dimensionSet = new DimensionSet();
+            dimensionSet.AddDimension("ServiceName", _serviceName);
 
             foreach (var tag in tags)
             {
-                if (tag.Value?.ToString() is string stringValue)
+                if (!string.IsNullOrWhiteSpace(tag.Value?.ToString()))
                 {
-                    dimensions[tag.Key] = stringValue;
+                    dimensionSet.AddDimension(tag.Key, tag.Value!.ToString()!);
                 }
             }
 
+            metricsLogger.SetDimensions(dimensionSet);
+            var name = instrument.Name;
+            var value = Convert.ToDouble(measurement);
             var unit = DetermineUnit(instrument);
-            _metricsService.PutMetric(instrument.Name, value, unit, dimensions);
+
+            metricsLogger.PutMetric(name, value, unit);
+            metricsLogger.Flush();
             
+            var tagCount = tags.Length;
             _logger.LogDebug("Recorded metric {InstrumentName}={Value} with {DimensionCount} dimensions", 
-                instrument.Name, value, dimensions.Count);
+                instrument.Name, value, tagCount + 1); // +1 for ServiceName
         }
         catch (Exception ex)
         {
@@ -69,14 +85,17 @@ public class EmfMeterListener : IDisposable
         }
     }
 
-    private static string DetermineUnit(Instrument instrument)
+    private static Unit DetermineUnit(Instrument instrument)
     {
         return instrument switch
         {
-            _ when instrument.GetType().Name.Contains("Counter") => "Count",
-            _ when instrument.Name.Contains("duration") || instrument.Name.Contains("time") => "Milliseconds",
-            _ when instrument.Name.Contains("size") || instrument.Name.Contains("bytes") => "Bytes",
-            _ => "Count"
+            _ when instrument.GetType().Name.Contains("Counter") => Unit.COUNT,
+            _ when instrument.Name.Contains("duration") || instrument.Name.Contains("time") => Unit.MILLISECONDS,
+            _ when instrument.Name.Contains("size") || instrument.Name.Contains("bytes") => Unit.BYTES,
+            _ when instrument.Unit?.ToLowerInvariant() == "ms" => Unit.MILLISECONDS,
+            _ when instrument.Unit?.ToLowerInvariant() == "s" => Unit.SECONDS,
+            _ when !string.IsNullOrEmpty(instrument.Unit) && Enum.TryParse<Unit>(instrument.Unit, true, out var parsedUnit) => parsedUnit,
+            _ => Unit.COUNT
         };
     }
 

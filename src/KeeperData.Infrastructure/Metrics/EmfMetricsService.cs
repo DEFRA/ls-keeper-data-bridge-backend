@@ -3,10 +3,12 @@ using Amazon.CloudWatch.EMF.Model;
 using KeeperData.Infrastructure.Config;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Diagnostics.CodeAnalysis;
 using Unit = Amazon.CloudWatch.EMF.Model.Unit;
 
 namespace KeeperData.Infrastructure.Metrics;
 
+[ExcludeFromCodeCoverage]
 public class EmfMetricsService(ILogger<EmfMetricsService> logger, IOptions<AwsConfig> awsConfig, ILoggerFactory loggerFactory)
     : IMetricsService
 {

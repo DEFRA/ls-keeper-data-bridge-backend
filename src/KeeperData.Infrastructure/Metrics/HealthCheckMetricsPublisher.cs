@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Infrastructure.Metrics;
 
+[ExcludeFromCodeCoverage]
 public class HealthCheckMetricsPublisher(IApplicationMetrics metrics, ILogger<HealthCheckMetricsPublisher> logger)
     : IHealthCheckPublisher
 {

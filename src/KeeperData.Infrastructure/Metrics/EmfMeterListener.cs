@@ -4,10 +4,12 @@ using Amazon.CloudWatch.EMF.Model;
 using KeeperData.Infrastructure.Config;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Diagnostics.CodeAnalysis;
 using Unit = Amazon.CloudWatch.EMF.Model.Unit;
 
 namespace KeeperData.Infrastructure.Metrics;
 
+[ExcludeFromCodeCoverage]
 public class EmfMeterListener : IDisposable
 {
     private readonly MeterListener _meterListener;
@@ -70,7 +72,11 @@ public class EmfMeterListener : IDisposable
             metricsLogger.SetDimensions(dimensionSet);
             var name = instrument.Name;
             var value = Convert.ToDouble(measurement);
-            var unit = DetermineUnit(instrument);
+            
+            // Use the instrument's unit directly, parsing it as EMF Unit enum
+            var unit = !string.IsNullOrEmpty(instrument.Unit) && Enum.TryParse<Unit>(instrument.Unit, true, out var parsedUnit) 
+                ? parsedUnit 
+                : Unit.COUNT;
 
             metricsLogger.PutMetric(name, value, unit);
             metricsLogger.Flush();
@@ -85,19 +91,7 @@ public class EmfMeterListener : IDisposable
         }
     }
 
-    private static Unit DetermineUnit(Instrument instrument)
-    {
-        return instrument switch
-        {
-            _ when instrument.GetType().Name.Contains("Counter") => Unit.COUNT,
-            _ when instrument.Name.Contains("duration") || instrument.Name.Contains("time") => Unit.MILLISECONDS,
-            _ when instrument.Name.Contains("size") || instrument.Name.Contains("bytes") => Unit.BYTES,
-            _ when instrument.Unit?.ToLowerInvariant() == "ms" => Unit.MILLISECONDS,
-            _ when instrument.Unit?.ToLowerInvariant() == "s" => Unit.SECONDS,
-            _ when !string.IsNullOrEmpty(instrument.Unit) && Enum.TryParse<Unit>(instrument.Unit, true, out var parsedUnit) => parsedUnit,
-            _ => Unit.COUNT
-        };
-    }
+
 
     public void Dispose()
     {

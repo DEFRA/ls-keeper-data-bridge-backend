@@ -5,6 +5,7 @@ using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Infrastructure.Database.Setup;
 using KeeperData.Infrastructure.Messaging.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
+using KeeperData.Infrastructure.Metrics;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace KeeperData.Bridge.Setup
@@ -34,6 +35,12 @@ namespace KeeperData.Bridge.Setup
         private static void ConfigureHealthChecks(this IServiceCollection services)
         {
             services.AddHealthChecks();
+            
+            // Register EMF health check metrics
+            services.AddSingleton<IHealthCheckMetrics, EmfHealthCheckMetrics>();
+            services.AddSingleton<HealthCheckMetricsPublisher>();
+            services.AddSingleton<IHealthCheckPublisher>(serviceProvider => 
+                serviceProvider.GetRequiredService<HealthCheckMetricsPublisher>());
         }
     }
 }

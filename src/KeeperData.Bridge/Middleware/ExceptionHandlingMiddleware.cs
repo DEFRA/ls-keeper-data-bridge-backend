@@ -1,6 +1,5 @@
 using KeeperData.Core.Exceptions;
 using KeeperData.Infrastructure;
-using KeeperData.Infrastructure.Metrics;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
@@ -9,12 +8,10 @@ namespace KeeperData.Bridge.Middleware;
 public sealed class ExceptionHandlingMiddleware(
         RequestDelegate next,
         ILogger<ExceptionHandlingMiddleware> logger,
-        IConfiguration cfg,
-        IApplicationMetrics metrics)
+        IConfiguration cfg)
 {
     private readonly RequestDelegate _next = next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger = logger;
-    private readonly IApplicationMetrics _metrics = metrics;
     private readonly string _traceHeader = cfg.GetValue<string>("TraceHeader") ?? "x-correlation-id";
 
     public async Task InvokeAsync(HttpContext context)
@@ -28,38 +25,20 @@ public sealed class ExceptionHandlingMiddleware(
         }
         catch (FluentValidation.ValidationException ex)
         {
-            RecordExceptionMetrics(ex, 422, context.Request.Method, context.Request.Path);
             await HandleExceptionAsync(context, ex, correlationId, 422, "Unprocessable Content");
         }
         catch (NotFoundException ex)
         {
-            RecordExceptionMetrics(ex, 404, context.Request.Method, context.Request.Path);
             await HandleExceptionAsync(context, ex, correlationId, 404);
         }
         catch (DomainException ex)
         {
-            RecordExceptionMetrics(ex, 400, context.Request.Method, context.Request.Path);
             await HandleExceptionAsync(context, ex, correlationId, 400);
         }
         catch (Exception ex)
         {
-            RecordExceptionMetrics(ex, 500, context.Request.Method, context.Request.Path);
             await HandleExceptionAsync(context, ex, correlationId, 500, "An error occurred");
         }
-    }
-
-    private void RecordExceptionMetrics(Exception exception, int statusCode, string method, PathString path)
-    {
-        var exceptionType = exception.GetType().Name;
-        var severity = statusCode >= 500 ? "error" : "warning";
-        
-        _metrics.RecordCount("http_exceptions_total", 1, 
-            ("exception_type", exceptionType),
-            ("status_code", statusCode.ToString()),
-            ("method", method),
-            ("path", path.Value?.Split('?')[0] ?? "/"), // Remove query parameters
-            ("severity", severity)
-        );
     }
 
     private Task HandleExceptionAsync(

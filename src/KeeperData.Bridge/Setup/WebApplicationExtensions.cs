@@ -24,8 +24,7 @@ public static class WebApplicationExtensions
         applicationLifetime.ApplicationStopped.Register(() =>
             logger.LogInformation("{applicationName} stopped", env.ApplicationName));
 
-        // Initialize the MeterListener to start capturing metrics
-        _ = app.Services.GetRequiredService<EmfMeterListener>();
+        // CloudWatch MeterListener is automatically started as a hosted service
 
         app.UseMiddleware<ExceptionHandlingMiddleware>();
 

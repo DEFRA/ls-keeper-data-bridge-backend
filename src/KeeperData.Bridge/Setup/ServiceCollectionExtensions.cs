@@ -9,7 +9,6 @@ using KeeperData.Infrastructure.Metrics;
 using KeeperData.Infrastructure.Storage.Setup;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
-using System.Diagnostics.Metrics;
 
 namespace KeeperData.Bridge.Setup
 {
@@ -22,10 +21,10 @@ namespace KeeperData.Bridge.Setup
             
             services.ConfigureHealthChecks();
 
-            services.AddSingleton<IMetricsService, EmfMetricsService>();
-            services.AddSingleton<MeterListener>();
+            services.AddAWSService<Amazon.CloudWatch.IAmazonCloudWatch>();
+            services.AddSingleton<IMetricsService, CloudWatchMetricsService>();
             services.AddSingleton<IApplicationMetrics, ApplicationMetrics>();
-            services.AddSingleton<EmfMeterListener>();
+            services.AddHostedService<CloudWatchMeterListener>();
 
             services.AddApplicationLayer();
 

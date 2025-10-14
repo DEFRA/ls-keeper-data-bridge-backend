@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
-using Amazon.CloudWatch.EMF.Model;
 using KeeperData.Infrastructure.Config;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
@@ -31,10 +30,10 @@ public class ApplicationMetrics : IApplicationMetrics, IDisposable
         
         _meter = meterFactory.Create(meterName, version);
         
-        _requestCounter = _meter.CreateCounter<long>("requests_total", nameof(Unit.COUNT), "Total number of requests");
-        _requestDuration = _meter.CreateHistogram<double>("request_duration_ms", nameof(Unit.MILLISECONDS), "Request duration in milliseconds");
-        _genericCounter = _meter.CreateCounter<long>("counter", nameof(Unit.COUNT), "Generic counter");
-        _genericHistogram = _meter.CreateHistogram<double>("histogram", nameof(Unit.COUNT), "Generic histogram");
+        _requestCounter = _meter.CreateCounter<long>("requests_total", "count", "Total number of requests");
+        _requestDuration = _meter.CreateHistogram<double>("request_duration_ms", "milliseconds", "Request duration in milliseconds");
+        _genericCounter = _meter.CreateCounter<long>("counter", "count", "Generic counter");
+        _genericHistogram = _meter.CreateHistogram<double>("histogram", "count", "Generic histogram");
     }
 
     public void RecordRequest(string operation, string status)

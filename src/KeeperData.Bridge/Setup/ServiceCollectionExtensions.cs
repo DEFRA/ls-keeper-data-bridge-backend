@@ -4,6 +4,10 @@ using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Infrastructure.Database.Setup;
 using KeeperData.Infrastructure.Messaging.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
+using KeeperData.Infrastructure.Extensions;
+using KeeperData.Infrastructure.Telemetry;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using OpenTelemetry.Metrics;
 
 namespace KeeperData.Bridge.Setup
 {
@@ -26,11 +30,21 @@ namespace KeeperData.Bridge.Setup
             services.AddCrypto(configuration);
 
             services.AddBackgroundJobDependencies(configuration);
+
+            services.AddKeeperDataMetrics();
+
+            // Configure OpenTelemetry for metrics
+            services.AddOpenTelemetry()
+                .WithMetrics(metrics =>
+                {
+                    metrics.AddMeter(MetricNames.MeterName);
+                });
         }
 
         private static void ConfigureHealthChecks(this IServiceCollection services)
         {
             services.AddHealthChecks();
+            services.AddSingleton<IHealthCheckPublisher, HealthCheckMetricsPublisher>();
         }
     }
 }

@@ -1,6 +1,7 @@
-namespace KeeperData.Core.ETL.Abstract;
+﻿
+namespace KeeperData.Core.ETL.Impl;
 
-public interface IImportPipeline
+public interface IImportOrchestrator
 {
     Task StartAsync(Guid importId, string sourceType, CancellationToken ct);
 }

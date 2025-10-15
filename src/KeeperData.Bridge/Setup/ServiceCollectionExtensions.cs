@@ -4,13 +4,13 @@ using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Infrastructure.Database.Setup;
 using KeeperData.Infrastructure.Messaging.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
-using KeeperData.Infrastructure.ETL.Setup;
 using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
+using KeeperData.Core.ETL.Setup;
 
 namespace KeeperData.Bridge.Setup
 {

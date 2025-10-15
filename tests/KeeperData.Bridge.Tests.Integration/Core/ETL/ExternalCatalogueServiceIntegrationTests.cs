@@ -11,24 +11,24 @@ using Xunit.Abstractions;
 namespace KeeperData.Bridge.Tests.Integration.Core.ETL;
 
 /// <summary>
-/// Integration tests for SourceDataService using TestContainers.LocalStack.
+/// Integration tests for ExternalCatalogueService using TestContainers.LocalStack.
 /// Tests the ability to discover files within S3 based on date ranges and dataset definitions.
 /// </summary>
 [Collection("LocalStack"), Trait("Dependence", "docker")]
-public class SourceDataServiceIntegrationTests : IAsyncLifetime
+public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _testOutputHelper;
     private readonly LocalStackFixture _localStackFixture;
     private readonly Mock<ILogger<S3BlobStorageServiceReadOnly>> _loggerMock;
     private readonly S3BlobStorageServiceReadOnly _blobService;
     private readonly TestDataSetDefinitions _testDataSetDefinitions;
-    private readonly SourceDataService _sourceDataService;
+    private readonly ExternalCatalogueService _ExternalCatalogueService;
     private readonly FakeTimeProvider _timeProvider;
     private readonly List<string> _createdTestFileKeys = new();
 
     private const string TestTopLevelFolder = "litprd";
 
-    public SourceDataServiceIntegrationTests(ITestOutputHelper testOutputHelper, LocalStackFixture localStackFixture)
+    public ExternalCatalogueServiceIntegrationTests(ITestOutputHelper testOutputHelper, LocalStackFixture localStackFixture)
     {
         _testOutputHelper = testOutputHelper;
         _localStackFixture = localStackFixture;
@@ -48,7 +48,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         _timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 12, 15, 10, 0, 0, TimeSpan.Zero));
 
         // Create the service under test
-        _sourceDataService = new SourceDataService(_blobService, _timeProvider, _testDataSetDefinitions);
+        _ExternalCatalogueService = new ExternalCatalogueService(_blobService, _timeProvider, _testDataSetDefinitions);
     }
 
     public async Task InitializeAsync()
@@ -69,7 +69,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var definition = _testDataSetDefinitions.SamCPHHolding;
 
         // Act
-        var result = await _sourceDataService.GetFileSetAsync(definition, date, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetAsync(definition, date, CancellationToken.None);
 
         // Assert
         result.Should().NotBeNull();
@@ -89,7 +89,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var definition = _testDataSetDefinitions.SamCPHHolding;
 
         // Act
-        var result = await _sourceDataService.GetFileSetAsync(definition, fromDate, toDate, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetAsync(definition, fromDate, toDate, CancellationToken.None);
 
         // Assert
         result.Should().NotBeNull();
@@ -110,7 +110,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var definitions = _testDataSetDefinitions.All;
 
         // Act
-        var result = await _sourceDataService.GetFileSetsAsync(definitions, date, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetsAsync(definitions, date, CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(3); // Three test definitions
@@ -135,7 +135,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var definitions = _testDataSetDefinitions.All;
 
         // Act
-        var result = await _sourceDataService.GetFileSetsAsync(definitions, fromDate, toDate, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetsAsync(definitions, fromDate, toDate, CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(3); // Three test definitions
@@ -162,7 +162,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         // Arrange - TimeProvider is set to 2024-12-15
 
         // Act
-        var result = await _sourceDataService.GetFileSetsAsync(CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetsAsync(CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(3); // Three test definitions
@@ -181,7 +181,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var days = 5; // Should get files from 2024-12-11 to 2024-12-15 (inclusive)
 
         // Act
-        var result = await _sourceDataService.GetFileSetsAsync(days, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetsAsync(days, CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(3); // Three test definitions
@@ -204,7 +204,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var toDate = new DateOnly(2024, 11, 5);
 
         // Act
-        var result = await _sourceDataService.GetFileSetsAsync(fromDate, toDate, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetsAsync(fromDate, toDate, CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(3); // Three test definitions
@@ -227,7 +227,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var specificDate = new DateOnly(2024, 11, 15);
 
         // Act
-        var result = await _sourceDataService.GetFileSetsAsync(specificDate, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetsAsync(specificDate, CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(3); // Three test definitions
@@ -242,7 +242,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var pastDate = new DateOnly(2024, 1, 1); // Well before our test data range
 
         // Act
-        var result = await _sourceDataService.GetFileSetsAsync(pastDate, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetsAsync(pastDate, CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(3); // Three test definitions
@@ -257,7 +257,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var definition = _testDataSetDefinitions.SamCPHHolding;
 
         // Act
-        var result = await _sourceDataService.GetFileSetAsync(definition, date, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetAsync(definition, date, CancellationToken.None);
 
         // Assert
         result.Should().NotBeNull();
@@ -281,7 +281,7 @@ public class SourceDataServiceIntegrationTests : IAsyncLifetime
         var definitions = _testDataSetDefinitions.All.Take(1).ToImmutableArray(); // Just one definition for clarity
 
         // Act
-        var result = await _sourceDataService.GetFileSetsAsync(definitions, fromDate, toDate, CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetsAsync(definitions, fromDate, toDate, CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(1);
@@ -442,9 +442,9 @@ public class TestDataSetDefinitions : IDataSetDefinitions
     public TestDataSetDefinitions()
     {
         // Use the datetime pattern as specified in the requirements (yyyyMMddHHmmss)
-        SamCPHHolding = new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMddHHmmss");
-        TradingData = new DataSetDefinition("trading_data", "LITP_TRADING_{0}", "yyyyMMddHHmmss");
-        DailyReports = new DataSetDefinition("daily_reports", "LITP_REPORTS_{0}", "yyyyMMddHHmmss");
+        SamCPHHolding = new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMddHHmmss", "CPH", ChangeType.HeaderName);
+        TradingData = new DataSetDefinition("trading_data", "LITP_TRADING_{0}", "yyyyMMddHHmmss", "TradeId", ChangeType.HeaderName);
+        DailyReports = new DataSetDefinition("daily_reports", "LITP_REPORTS_{0}", "yyyyMMddHHmmss", "ReportId", ChangeType.HeaderName);
 
         All = [SamCPHHolding, TradingData, DailyReports];
     }

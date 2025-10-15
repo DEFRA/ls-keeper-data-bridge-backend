@@ -8,9 +8,9 @@ namespace KeeperData.Core.ETL.Impl;
 
 public record FileSet(DataSetDefinition Definition, StorageObjectInfo[] Files);
 
-public class SourceDataService(IBlobStorageServiceReadOnly sourceBlobs,
+public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     TimeProvider timeProvider,
-    IDataSetDefinitions dataSetDefinitions) : ISourceDataService
+    IDataSetDefinitions dataSetDefinitions) : IExternalCatalogueService
 {
     public async Task<ImmutableList<FileSet>> GetFileSetsAsync(CancellationToken ct)
     {
@@ -133,5 +133,5 @@ public class SourceDataService(IBlobStorageServiceReadOnly sourceBlobs,
         return string.Format(definition.FilePrefixFormat, formattedDate);
     }
 
-    public override string ToString() => $"{nameof(SourceDataService)}[{sourceBlobs}]";
+    public override string ToString() => $"{nameof(ExternalCatalogueService)}[{sourceBlobs}]";
 }

@@ -15,7 +15,7 @@ namespace KeeperData.Bridge.Controllers;
 [Route("api/[controller]")]
 [FeatureFlag(nameof(FeatureFlags.SourceDataController))]
 public class SourceDataController(
-    ISourceDataServiceFactory sourceDataServiceFactory,
+    IExternalCatalogueServiceFactory ExternalCatalogueServiceFactory,
     IBlobStorageServiceFactory blobStorageServiceFactory,
     IDataSetDefinitions dataSetDefinitions) : ControllerBase
 {
@@ -43,11 +43,11 @@ public class SourceDataController(
 
         try
         {
-            var sourceDataService = sourceDataServiceFactory.Create(sourceType);
+            var ExternalCatalogueService = ExternalCatalogueServiceFactory.Create(sourceType);
 
-            var fileSets = await sourceDataService.GetFileSetsAsync(days, cancellationToken);
+            var fileSets = await ExternalCatalogueService.GetFileSetsAsync(days, cancellationToken);
 
-            var report = GenerateReport(sourceType, fileSets, sourceDataService.ToString());
+            var report = GenerateReport(sourceType, fileSets, ExternalCatalogueService.ToString());
 
             return Content(report, "text/plain", Encoding.UTF8);
         }

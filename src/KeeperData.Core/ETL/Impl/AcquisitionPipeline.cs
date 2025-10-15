@@ -1,17 +1,20 @@
-using Amazon.Runtime.Internal.Util;
 using KeeperData.Core.Crypto;
 using KeeperData.Core.ETL.Abstract;
+using KeeperData.Core.Reporting;
+using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 
 namespace KeeperData.Core.ETL.Impl;
 
-public class ImportPipeline(IBlobStorageServiceFactory blobStorageServiceFactory,
-    ISourceDataServiceFactory sourceDataServiceFactory,
+public class AcquisitionPipeline(
+    IBlobStorageServiceFactory blobStorageServiceFactory,
+    IExternalCatalogueServiceFactory ExternalCatalogueServiceFactory,
     IAesCryptoTransform aesCryptoTransform,
     IPasswordSaltService passwordSalt,
-    ILogger<ImportPipeline> logger) : IImportPipeline
+    IImportReportingService reportingService,
+    ILogger<AcquisitionPipeline> logger) : IAcquisitionPipeline
 {
     private const string MimeTypeTextCsv = "text/csv";
 
@@ -23,23 +26,34 @@ public class ImportPipeline(IBlobStorageServiceFactory blobStorageServiceFactory
         try
         {
             var sourceBlobs = blobStorageServiceFactory.GetSource(sourceType);
-            var sourceDataService = sourceDataServiceFactory.Create(sourceBlobs);
+            var ExternalCatalogueService = ExternalCatalogueServiceFactory.Create(sourceBlobs);
             var blobs = blobStorageServiceFactory.Get();
 
             logger.LogDebug("Initialized blob storage services for ImportId: {ImportId}", importId);
 
             // step 1: discover files that may need processing
             logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
-            var fileSets = await sourceDataService.GetFileSetsAsync(20, ct);
+            var fileSets = await ExternalCatalogueService.GetFileSetsAsync(20, ct);
+            var totalFiles = fileSets.Sum(fs => fs.Files.Length);
+            
             logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",
                 fileSets.Count,
-                fileSets.Sum(fs => fs.Files.Length),
+                totalFiles,
                 importId);
+
+            // Update acquisition phase - started
+            await reportingService.UpdateAcquisitionPhaseAsync(importId, new AcquisitionPhaseUpdate
+            {
+                Status = PhaseStatus.Started,
+                FilesDiscovered = totalFiles,
+                FilesProcessed = 0,
+                FilesFailed = 0
+            }, ct);
 
             // step 2: for each file, stream/decrypt into the target 
             logger.LogInformation("Step 2: Processing and decrypting files for ImportId: {ImportId}", importId);
             var processedFileCount = 0;
-            var totalFiles = fileSets.Sum(fs => fs.Files.Length);
+            var failedFileCount = 0;
 
             foreach (var fileSet in fileSets)
             {
@@ -62,7 +76,6 @@ public class ImportPipeline(IBlobStorageServiceFactory blobStorageServiceFactory
                     try
                     {
                         await using var encryptedStream = await sourceBlobs.OpenReadAsync(file.Key, ct);
-                        await using var decryptedUploadStream = await blobs.OpenWriteAsync(file.Key, MimeTypeTextCsv, cancellationToken: ct);
                         var encryptedMetadata = await sourceBlobs.GetMetadataAsync(file.Key, ct);
                         var cred = passwordSalt.Get(file.Key);
 
@@ -71,15 +84,55 @@ public class ImportPipeline(IBlobStorageServiceFactory blobStorageServiceFactory
                             encryptedMetadata.ContentLength,
                             importId);
 
+                        // Decrypt to memory stream first to calculate MD5
+                        using var decryptedStream = new MemoryStream();
                         await aesCryptoTransform.DecryptStreamAsync(encryptedStream,
-                                                                    decryptedUploadStream,
+                                                                    decryptedStream,
                                                                     cred.Password,
                                                                     cred.Salt,
                                                                     encryptedMetadata.ContentLength,
                                                                     null,
                                                                     ct);
 
+                        // Calculate MD5 hash
+                        decryptedStream.Position = 0;
+                        var md5Hash = await Md5HashHelper.CalculateMd5Async(decryptedStream, ct);
+                        
+                        // Check if file was already processed
+                        var isAlreadyProcessed = await reportingService.IsFileProcessedAsync(file.Key, md5Hash, ct);
+                        
+                        if (isAlreadyProcessed)
+                        {
+                            logger.LogInformation("File {FileKey} with MD5 {Md5Hash} was already processed, skipping for ImportId: {ImportId}",
+                                file.Key,
+                                md5Hash,
+                                importId);
+                            
+                            fileStopwatch.Stop();
+                            continue;
+                        }
+
+                        // Upload decrypted content
+                        decryptedStream.Position = 0;
+                        await using var uploadStream = await blobs.OpenWriteAsync(file.Key, MimeTypeTextCsv, cancellationToken: ct);
+                        await decryptedStream.CopyToAsync(uploadStream, ct);
+
                         fileStopwatch.Stop();
+
+                        // Record successful acquisition
+                        await reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
+                        {
+                            FileName = Path.GetFileName(file.Key),
+                            FileKey = file.Key,
+                            DatasetName = fileSet.Definition.Name,
+                            Md5Hash = md5Hash,
+                            FileSize = decryptedStream.Length,
+                            SourceKey = file.Key,
+                            DecryptionDurationMs = fileStopwatch.ElapsedMilliseconds,
+                            AcquiredAtUtc = DateTime.UtcNow,
+                            Status = FileProcessingStatus.Acquired
+                        }, ct);
+
                         logger.LogInformation("Successfully processed file: {FileKey} in {Duration}ms for ImportId: {ImportId}",
                             file.Key,
                             fileStopwatch.ElapsedMilliseconds,
@@ -88,10 +141,35 @@ public class ImportPipeline(IBlobStorageServiceFactory blobStorageServiceFactory
                     catch (Exception ex)
                     {
                         fileStopwatch.Stop();
+                        failedFileCount++;
+                        
                         logger.LogError(ex, "Failed to process file: {FileKey} after {Duration}ms for ImportId: {ImportId}",
                             file.Key,
                             fileStopwatch.ElapsedMilliseconds,
                             importId);
+
+                        // Record failed acquisition
+                        try
+                        {
+                            await reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
+                            {
+                                FileName = Path.GetFileName(file.Key),
+                                FileKey = file.Key,
+                                DatasetName = fileSet.Definition.Name,
+                                Md5Hash = string.Empty,
+                                FileSize = 0,
+                                SourceKey = file.Key,
+                                DecryptionDurationMs = fileStopwatch.ElapsedMilliseconds,
+                                AcquiredAtUtc = DateTime.UtcNow,
+                                Status = FileProcessingStatus.Failed,
+                                Error = ex.Message
+                            }, ct);
+                        }
+                        catch (Exception reportEx)
+                        {
+                            logger.LogError(reportEx, "Failed to record acquisition failure for file: {FileKey}", file.Key);
+                        }
+                        
                         throw;
                     }
                 }
@@ -100,6 +178,16 @@ public class ImportPipeline(IBlobStorageServiceFactory blobStorageServiceFactory
             logger.LogInformation("Step 2 completed: Processed {ProcessedFileCount} file(s) for ImportId: {ImportId}",
                 processedFileCount,
                 importId);
+
+            // Update acquisition phase - completed
+            await reportingService.UpdateAcquisitionPhaseAsync(importId, new AcquisitionPhaseUpdate
+            {
+                Status = failedFileCount > 0 ? PhaseStatus.Failed : PhaseStatus.Completed,
+                FilesDiscovered = totalFiles,
+                FilesProcessed = processedFileCount - failedFileCount,
+                FilesFailed = failedFileCount,
+                CompletedAtUtc = DateTime.UtcNow
+            }, ct);
 
             // step 3: stream-read all the transferred files and stream into mongo
             logger.LogInformation("Step 3: Stream-read and import to database (TODO) for ImportId: {ImportId}", importId);

@@ -1,4 +1,4 @@
-using KeeperData.Core.ETL.Abstract;
+using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Locking;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.Extensions.Hosting;
@@ -9,7 +9,7 @@ namespace KeeperData.Bridge.Worker.Tasks.Implementations;
 public class TaskProcessBulkFiles(
     ILogger<TaskProcessBulkFiles> logger,
     IDistributedLock distributedLock,
-    IImportPipeline importPipeline,
+    IImportOrchestrator importOrchestrator,
     IHostApplicationLifetime applicationLifetime) : ITaskProcessBulkFiles
 {
     private const string LockName = nameof(TaskProcessBulkFiles);
@@ -97,7 +97,7 @@ public class TaskProcessBulkFiles(
 
         try
         {
-            await importPipeline.StartAsync(importId, sourceType, linkedCts.Token);
+            await importOrchestrator.StartAsync(importId, sourceType, linkedCts.Token);
 
             logger.LogInformation("Import completed successfully at {endTime}, (importid={importId})", DateTime.UtcNow, importId);
         }

@@ -9,6 +9,7 @@ public class HealthCheckMetrics
     private readonly Counter<long> _healthCheckTotal;
     private readonly Counter<long> _healthCheckFailures;
     private readonly Histogram<double> _healthCheckDuration;
+    private readonly UpDownCounter<int> _healthCheckStatus;
 
     public HealthCheckMetrics(IMeterFactory meterFactory)
     {
@@ -28,6 +29,11 @@ public class HealthCheckMetrics
             "keeperdata.health.checks.duration", 
             "ms", 
             "Health check execution duration in milliseconds");
+            
+        _healthCheckStatus = meter.CreateUpDownCounter<int>(
+            "keeperdata.health.status", 
+            "status", 
+            "Current health check status (2=Healthy, 1=Degraded, 0=Unhealthy)");
     }
 
     public void RecordHealthCheck(string healthCheckName, HealthStatus status, double durationMs)
@@ -46,5 +52,15 @@ public class HealthCheckMetrics
         {
             _healthCheckFailures.Add(1, tagList);
         }
+
+        // Record current health status as numeric value
+        var statusValue = status switch 
+        {
+            HealthStatus.Healthy => 2,
+            HealthStatus.Degraded => 1,
+            HealthStatus.Unhealthy => 0,
+            _ => -1 // Unknown status
+        };
+        _healthCheckStatus.Add(statusValue, tagList);
     }
 }

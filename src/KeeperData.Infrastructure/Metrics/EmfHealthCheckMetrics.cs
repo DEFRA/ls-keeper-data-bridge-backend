@@ -43,8 +43,6 @@ public class EmfHealthCheckMetrics : IHealthCheckMetrics
             // Record overall health status
             var overallStatusValue = report.Status == HealthStatus.Healthy ? 1.0 : 0.0;
             metricsLogger.PutMetric("health_check_status", overallStatusValue, Unit.COUNT);
-
-            // Record total duration
             metricsLogger.PutMetric("health_check_duration_ms", report.TotalDuration.TotalMilliseconds, Unit.MILLISECONDS);
 
             // Record individual check results

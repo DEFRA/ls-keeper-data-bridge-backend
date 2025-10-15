@@ -63,6 +63,15 @@ public class ImportReportingService : IImportReportingService
         _logger.LogDebug("Updating acquisition phase for ImportId: {ImportId}", importId);
 
         var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
+        
+        // First, check if StartedAtUtc needs to be set
+        bool needsStartTime = false;
+        if (update.Status == PhaseStatus.Started)
+        {
+            var currentDoc = await _importReports.Find(filter).FirstOrDefaultAsync(ct);
+            needsStartTime = currentDoc?.AcquisitionPhase?.StartedAtUtc == null;
+        }
+
         var updateBuilder = Builders<ImportReportDocument>.Update;
         
         var updates = new List<UpdateDefinition<ImportReportDocument>>
@@ -73,7 +82,7 @@ public class ImportReportingService : IImportReportingService
             updateBuilder.Set("AcquisitionPhase.FilesFailed", update.FilesFailed)
         };
 
-        if (update.Status == PhaseStatus.Started && update.FilesDiscovered == 0)
+        if (needsStartTime)
         {
             updates.Add(updateBuilder.Set("AcquisitionPhase.StartedAtUtc", DateTime.UtcNow));
         }
@@ -92,6 +101,15 @@ public class ImportReportingService : IImportReportingService
         _logger.LogDebug("Updating ingestion phase for ImportId: {ImportId}", importId);
 
         var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
+        
+        // First, check if StartedAtUtc needs to be set
+        bool needsStartTime = false;
+        if (update.Status == PhaseStatus.Started)
+        {
+            var currentDoc = await _importReports.Find(filter).FirstOrDefaultAsync(ct);
+            needsStartTime = currentDoc?.IngestionPhase?.StartedAtUtc == null;
+        }
+
         var updateBuilder = Builders<ImportReportDocument>.Update;
         
         var updates = new List<UpdateDefinition<ImportReportDocument>>
@@ -103,7 +121,7 @@ public class ImportReportingService : IImportReportingService
             updateBuilder.Set("IngestionPhase.RecordsDeleted", update.RecordsDeleted)
         };
 
-        if (update.Status == PhaseStatus.Started && update.FilesProcessed == 0)
+        if (needsStartTime)
         {
             updates.Add(updateBuilder.Set("IngestionPhase.StartedAtUtc", DateTime.UtcNow));
         }
@@ -246,8 +264,7 @@ public class ImportReportingService : IImportReportingService
                 .SetOnInsert(x => x.RecordId, lineageEvent.RecordId)
                 .SetOnInsert(x => x.CollectionName, lineageEvent.CollectionName)
                 .SetOnInsert(x => x.CreatedByImport, lineageEvent.ImportId)
-                .SetOnInsert(x => x.CreatedAtUtc, lineageEvent.EventDateUtc)
-                .SetOnInsert(x => x.Events, new List<LineageEventDocument>());
+                .SetOnInsert(x => x.CreatedAtUtc, lineageEvent.EventDateUtc);
 
             bulkOps.Add(new UpdateOneModel<RecordLineageDocument>(filter, update) { IsUpsert = true });
         }

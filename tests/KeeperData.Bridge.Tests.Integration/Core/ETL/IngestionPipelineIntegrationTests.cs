@@ -4,6 +4,7 @@ using KeeperData.Bridge.Tests.Integration.Helpers;
 using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.Reporting;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Storage;
@@ -65,11 +66,14 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         });
 
         // Create the pipeline under test
+        var reportingServiceMock = new Mock<IImportReportingService>();
+        
         _ingestionPipeline = new IngestionPipeline(
             blobStorageFactory,
             externalCatalogueServiceFactory,
             _mongoClient,
             mongoConfig,
+            reportingServiceMock.Object,
             _loggerMock.Object);
     }
 

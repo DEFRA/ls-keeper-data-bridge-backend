@@ -12,7 +12,6 @@ public class ImportOrchestrator(
 {
     public async Task StartAsync(Guid importId, string sourceType, CancellationToken ct)
     {
-        // Start import reporting
         await reportingService.StartImportAsync(importId, sourceType, ct);
         
         try
@@ -20,14 +19,12 @@ public class ImportOrchestrator(
             await acquisitionPipeline.StartAsync(importId, sourceType, ct);
             await ingestionPipeline.StartAsync(importId, ct);
             
-            // Complete import successfully
             await reportingService.CompleteImportAsync(importId, ImportStatus.Completed, null, ct);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Import failed for ImportId: {ImportId}", importId);
             
-            // Mark import as failed
             await reportingService.CompleteImportAsync(importId, ImportStatus.Failed, ex.Message, ct);
             throw;
         }

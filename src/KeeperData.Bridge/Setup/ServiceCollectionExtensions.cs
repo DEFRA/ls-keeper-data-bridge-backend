@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Mvc.Authorization;
 using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 using KeeperData.Core.ETL.Setup;
+using KeeperData.Core.Querying.Setup;
 
 namespace KeeperData.Bridge.Setup
 {
@@ -41,6 +42,8 @@ namespace KeeperData.Bridge.Setup
             services.AddCrypto(configuration);
 
             services.AddBackgroundJobDependencies(configuration);
+
+            services.AddMongoQueryService();
         }
 
         private static void ConfigureHealthChecks(this IServiceCollection services)

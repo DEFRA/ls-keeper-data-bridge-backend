@@ -3,10 +3,11 @@ using System.Diagnostics.Metrics;
 using Amazon.CloudWatch.EMF.Logger;
 using Amazon.CloudWatch.EMF.Model;
 using Humanizer;
+using KeeperData.Infrastructure.Config;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace KeeperData.Infrastructure.Telemetry;
 
@@ -14,9 +15,9 @@ public static class EmfExportExtensions
 {
     public static IApplicationBuilder UseEmfExporter(this IApplicationBuilder builder)
     {
-        var config = builder.ApplicationServices.GetRequiredService<IConfiguration>();
-        var ns = config.GetValue<string>("AWS_EMF_NAMESPACE");
-        EmfExporter.Init(builder.ApplicationServices.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(EmfExporter)), ns);
+        var awsConfig = builder.ApplicationServices.GetRequiredService<IOptions<AwsConfig>>();
+        EmfExporter.Init(builder.ApplicationServices.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(EmfExporter)), 
+                        awsConfig.Value.EMF.Namespace);
         return builder;
     }
 }

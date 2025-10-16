@@ -1,4 +1,5 @@
 using KeeperData.Application.Setup;
+using KeeperData.Infrastructure.Config;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Infrastructure.Database.Setup;
@@ -16,6 +17,7 @@ namespace KeeperData.Bridge.Setup
         public static void ConfigureApi(this IServiceCollection services, IConfiguration configuration)
         {
             services.AddDefaultAWSOptions(configuration.GetAWSOptions());
+            services.Configure<AwsConfig>(configuration.GetSection(AwsConfig.SectionName));
 
             services.ConfigureHealthChecks();
 

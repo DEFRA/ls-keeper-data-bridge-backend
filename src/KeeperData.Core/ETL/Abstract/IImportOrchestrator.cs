@@ -1,4 +1,4 @@
-﻿
+
 namespace KeeperData.Core.ETL.Impl;
 
 public interface IImportOrchestrator

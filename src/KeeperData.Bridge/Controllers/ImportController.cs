@@ -111,7 +111,7 @@ public class ImportController(
                 });
             }
 
-            logger.LogInformation("Successfully retrieved import report for importId={importId}, status={status}", 
+            logger.LogInformation("Successfully retrieved import report for importId={importId}, status={status}",
                 importId, report.Status);
 
             return Ok(report);
@@ -157,7 +157,7 @@ public class ImportController(
         {
             // First check if the import exists
             var importReport = await importReportingService.GetImportReportAsync(importId, cancellationToken);
-            
+
             if (importReport == null)
             {
                 logger.LogWarning("Import not found for importId={importId}", importId);
@@ -171,7 +171,7 @@ public class ImportController(
 
             var fileReports = await importReportingService.GetFileReportsAsync(importId, cancellationToken);
 
-            logger.LogInformation("Successfully retrieved {fileCount} file report(s) for importId={importId}", 
+            logger.LogInformation("Successfully retrieved {fileCount} file report(s) for importId={importId}",
                 fileReports.Count, importId);
 
             return Ok(new

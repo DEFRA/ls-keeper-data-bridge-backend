@@ -16,7 +16,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IIngestionPipeline, IngestionPipeline>();
         services.AddTransient<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddTransient<IImportOrchestrator, ImportOrchestrator>();
-        
+
         // Add reporting dependencies
         services.AddReportingDependencies();
     }

@@ -43,9 +43,9 @@ internal class ODataOrderByParser
         }
 
         var fieldName = match.Groups[1].Value;
-        var direction = match.Groups[2].Success 
-            ? match.Groups[2].Value.ToLowerInvariant() 
-            : "asc";    
+        var direction = match.Groups[2].Success
+            ? match.Groups[2].Value.ToLowerInvariant()
+            : "asc";
 
         return direction == "desc"
             ? Builders<BsonDocument>.Sort.Descending(fieldName)

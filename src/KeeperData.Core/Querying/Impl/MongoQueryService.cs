@@ -67,7 +67,7 @@ public class MongoQueryService : IMongoQueryService
             sanitizedTop,
             cancellationToken);
 
-        var totalCount = count 
+        var totalCount = count
             ? await GetTotalCountAsync(collection, filterDefinition, cancellationToken)
             : (long?)null;
 

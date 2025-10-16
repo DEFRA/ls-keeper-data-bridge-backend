@@ -10,20 +10,20 @@ public class ImportFileDocument
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
     public string? Id { get; init; }
-    
+
     [BsonRepresentation(BsonType.String)]
     public required Guid ImportId { get; init; }
-    
+
     public required string FileName { get; init; }
     public required string FileKey { get; init; }
     public required string DatasetName { get; init; }
     public required string Md5Hash { get; init; }
     public long FileSize { get; init; }
     public required string Status { get; init; }
-    
+
     public FileAcquisitionDetailsDocument? AcquisitionDetails { get; init; }
     public FileIngestionDetailsDocument? IngestionDetails { get; init; }
-    
+
     public string? Error { get; init; }
 }
 

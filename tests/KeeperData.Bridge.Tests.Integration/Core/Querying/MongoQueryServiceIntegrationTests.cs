@@ -26,7 +26,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
     private readonly MongoQueryService _queryService;
     private readonly string _testDatabaseName = "test-query-service";
     private readonly string _testCollectionName = "test_products";
-    
+
     private const int TotalTestRecords = 150; // Enough for pagination tests
 
     public MongoQueryServiceIntegrationTests(
@@ -602,7 +602,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
         // Assert
         page1.Data.Should().HaveCount(20);
         page2.Data.Should().HaveCount(20);
-        
+
         // Verify pages don't overlap by checking product IDs
         var page1Ids = page1.Data.Select(d => d["_id"]?.ToString()).ToHashSet();
         var page2Ids = page2.Data.Select(d => d["_id"]?.ToString()).ToHashSet();
@@ -891,7 +891,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
         result.Data.Should().NotBeEmpty();
         var firstRecord = result.Data.First();
         firstRecord.Should().ContainKey("Metadata");
-        
+
         var metadata = firstRecord["Metadata"] as Dictionary<string, object?>;
         metadata.Should().NotBeNull();
         metadata!.Should().ContainKey("Supplier");
@@ -917,7 +917,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
         result.Data.Should().NotBeEmpty();
         var firstRecord = result.Data.First();
         firstRecord.Should().ContainKey("Tags");
-        
+
         var tags = firstRecord["Tags"];
         tags.Should().NotBeNull();
         tags.Should().BeAssignableTo<IEnumerable<object>>();

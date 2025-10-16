@@ -27,7 +27,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
     public EndToEndImportScenarioTests(ITestOutputHelper output)
     {
         _output = output;
-        
+
         _localStackFixture = new LocalStackFixture();
         _mongoDbFixture = new MongoDbFixture();
     }
@@ -36,7 +36,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
     {
         await _localStackFixture.InitializeAsync();
         await _mongoDbFixture.InitializeAsync();
-        
+
         await _mongoDbFixture.MongoClient.DropDatabaseAsync(TestDatabaseName);
         _output.WriteLine($"Initialized test database: {TestDatabaseName}");
     }
@@ -50,7 +50,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
 
         await CleanupS3FilesAsync();
         await _mongoDbFixture.MongoClient.DropDatabaseAsync(TestDatabaseName);
-        
+
         await _localStackFixture.DisposeAsync();
         await _mongoDbFixture.DisposeAsync();
     }
@@ -102,7 +102,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
 
         return new DataSetDefinition(
             Name: CollectionName,
-            FilePrefixFormat: $"LITP_TEST_PERSONS_{{0}}",      
+            FilePrefixFormat: $"LITP_TEST_PERSONS_{{0}}",
             DatePattern: "yyyyMMdd",
             PrimaryKeyHeaderName: "PersonId",
             ChangeTypeHeaderName: "CHANGETYPE");
@@ -118,7 +118,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
     {
         var dataSetDefinitions = new DataSetDefinitions
         {
-            SamCPHHolding = dataSetDefinition,    
+            SamCPHHolding = dataSetDefinition,
             All = [dataSetDefinition]
         };
 
@@ -296,7 +296,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
 
         var result = await queryService.QueryAsync(
             collectionName: CollectionName,
-            filter: null,        
+            filter: null,
             orderBy: "FirstName asc",
             skip: 0,
             top: 100,

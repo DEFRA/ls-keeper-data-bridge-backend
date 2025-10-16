@@ -21,7 +21,7 @@ public static class Md5HashHelper
         }
 
         var originalPosition = stream.Position;
-        
+
         try
         {
             stream.Position = 0;
@@ -33,22 +33,22 @@ public static class Md5HashHelper
             stream.Position = originalPosition;
         }
     }
-    
+
     /// <summary>
     /// Calculates MD5 hash while copying data from source to destination stream.
     /// This is useful for calculating hash during file transfer operations.
     /// </summary>
     public static async Task<string> CalculateMd5WhileCopyingAsync(
-        Stream source, 
-        Stream destination, 
+        Stream source,
+        Stream destination,
         CancellationToken ct = default)
     {
         using var md5 = MD5.Create();
         using var cryptoStream = new CryptoStream(destination, md5, CryptoStreamMode.Write, leaveOpen: true);
-        
+
         await source.CopyToAsync(cryptoStream, ct);
         await cryptoStream.FlushFinalBlockAsync(ct);
-        
+
         return Convert.ToHexString(md5.Hash ?? Array.Empty<byte>()).ToLowerInvariant();
     }
 }

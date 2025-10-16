@@ -40,18 +40,18 @@ public class IngestionPipeline(
         try
         {
             var storageServices = InitializeStorageServices(importId);
-            
+
             var fileSets = await DiscoverFilesAsync(importId, storageServices.CatalogueService, ct);
-            
+
             await UpdateIngestionPhaseStartedAsync(importId, ct);
-            
+
             var ingestionResults = await ProcessAllFilesAsync(
                 importId,
                 fileSets.FileSets,
                 fileSets.TotalFiles,
                 storageServices.BlobStorage,
                 ct);
-            
+
             await UpdateIngestionPhaseCompletedAsync(
                 importId,
                 ingestionResults.FilesProcessed,
@@ -85,10 +85,10 @@ public class IngestionPipeline(
         CancellationToken ct)
     {
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
-        
+
         var fileSets = await catalogueService.GetFileSetsAsync(20, ct);
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
-        
+
         logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",
             fileSets.Count,
             totalFiles,
@@ -117,7 +117,7 @@ public class IngestionPipeline(
         CancellationToken ct)
     {
         logger.LogInformation("Step 2: Processing and ingesting files for ImportId: {ImportId}", importId);
-        
+
         var totals = new IngestionTotals();
         var processedFileCount = 0;
 
@@ -131,7 +131,7 @@ public class IngestionPipeline(
             foreach (var file in fileSet.Files)
             {
                 processedFileCount++;
-                
+
                 var fileResult = await ProcessSingleFileAsync(
                     importId,
                     fileSet,
@@ -206,7 +206,7 @@ public class IngestionPipeline(
                 importId);
 
             await RecordFailedIngestionAsync(importId, file, fileStopwatch.ElapsedMilliseconds, ex, ct);
-            
+
             throw;
         }
     }
@@ -221,14 +221,14 @@ public class IngestionPipeline(
         var stopwatch = Stopwatch.StartNew();
         var collectionName = fileSet.Definition.Name;
 
-        logger.LogInformation("Starting ingestion of file {FileKey} into collection {CollectionName}", 
+        logger.LogInformation("Starting ingestion of file {FileKey} into collection {CollectionName}",
             file.Key, collectionName);
 
         var collection = await EnsureCollectionExistsAsync(collectionName, ct);
         await EnsureWildcardIndexExistsAsync(collection, ct);
 
         var csvContext = await OpenCsvFileAsync(blobs, file.Key, ct);
-        
+
         var headers = await ReadAndValidateHeadersAsync(
             csvContext.Csv,
             file.Key,
@@ -247,11 +247,11 @@ public class IngestionPipeline(
 
         stopwatch.Stop();
         logger.LogInformation("Completed ingestion of file {FileKey}. Total records: {TotalRecords}, Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms",
-            file.Key, 
-            metrics.RecordsProcessed, 
-            metrics.RecordsCreated, 
-            metrics.RecordsUpdated, 
-            metrics.RecordsDeleted, 
+            file.Key,
+            metrics.RecordsProcessed,
+            metrics.RecordsCreated,
+            metrics.RecordsUpdated,
+            metrics.RecordsDeleted,
             stopwatch.ElapsedMilliseconds);
 
         return metrics;
@@ -293,7 +293,7 @@ public class IngestionPipeline(
         ValidatePrimaryKeyHeader(headers, primaryKeyHeaderName);
         ValidateChangeTypeHeader(headers, changeTypeHeaderName);
 
-        logger.LogInformation("CSV headers read successfully. Total columns: {ColumnCount}, Primary Key: {PrimaryKey}, Change Type: {ChangeType}", 
+        logger.LogInformation("CSV headers read successfully. Total columns: {ColumnCount}, Primary Key: {PrimaryKey}, Change Type: {ChangeType}",
             headers.Length, primaryKeyHeaderName, changeTypeHeaderName);
 
         return new CsvHeaders(headers, primaryKeyHeaderName, changeTypeHeaderName);
@@ -334,7 +334,7 @@ public class IngestionPipeline(
         while (await csv.ReadAsync())
         {
             var changeType = csv.GetField(headers.ChangeTypeHeaderName)?.ToUpperInvariant() ?? string.Empty;
-            
+
             if (!IsValidChangeType(changeType))
             {
                 logger.LogWarning("Invalid change type '{ChangeType}' for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
@@ -356,11 +356,11 @@ public class IngestionPipeline(
                     collectionName,
                     lineageEvents,
                     ct);
-                
+
                 metrics.AddBatch(batchMetrics);
-                
+
                 LogProgressIfNeeded(metrics.RecordsProcessed, fileKey);
-                
+
                 batch.Clear();
 
                 await FlushLineageEventsIfNeededAsync(lineageEvents, ct);
@@ -378,7 +378,7 @@ public class IngestionPipeline(
                 collectionName,
                 lineageEvents,
                 ct);
-            
+
             metrics.AddBatch(batchMetrics);
         }
 
@@ -390,8 +390,8 @@ public class IngestionPipeline(
 
     private bool IsValidChangeType(string changeType)
     {
-        return changeType == ChangeType.Delete || 
-               changeType == ChangeType.Update || 
+        return changeType == ChangeType.Delete ||
+               changeType == ChangeType.Update ||
                changeType == ChangeType.Insert;
     }
 
@@ -399,7 +399,7 @@ public class IngestionPipeline(
     {
         if (recordsProcessed % (LogInterval * BatchSize) == 0 || recordsProcessed % LogInterval == 0)
         {
-            logger.LogInformation("Imported {RecordsProcessed} records from file {FileKey}", 
+            logger.LogInformation("Imported {RecordsProcessed} records from file {FileKey}",
                 recordsProcessed, fileKey);
         }
     }
@@ -487,7 +487,7 @@ public class IngestionPipeline(
         IMongoCollection<BsonDocument> collection,
         CancellationToken ct)
     {
-        logger.LogInformation("Creating wildcard index on collection {CollectionName}", 
+        logger.LogInformation("Creating wildcard index on collection {CollectionName}",
             collection.CollectionNamespace.CollectionName);
 
         var wildcardIndexKeys = Builders<BsonDocument>.IndexKeys.Wildcard("$**");
@@ -565,7 +565,7 @@ public class IngestionPipeline(
                     fileKey,
                     collectionName,
                     changeType);
-                
+
                 metrics.Deleted++;
                 metrics.Processed++;
             }
@@ -573,13 +573,13 @@ public class IngestionPipeline(
             {
                 if (softDeletedIds.Contains(docId))
                 {
-                    logger.LogDebug("Skipping {ChangeType} operation for soft-deleted record with _id: {DocId}", 
+                    logger.LogDebug("Skipping {ChangeType} operation for soft-deleted record with _id: {DocId}",
                         changeType, docId);
                     continue;
                 }
 
                 var isCreate = existingDoc == null;
-                
+
                 ProcessUpsertOperation(
                     bulkOps,
                     lineageEvents,
@@ -643,7 +643,7 @@ public class IngestionPipeline(
         string changeType)
     {
         var eventTime = DateTime.UtcNow;
-        
+
         var deleteFilter = Builders<BsonDocument>.Filter.Eq("_id", docId);
         var deleteUpdate = Builders<BsonDocument>.Update
             .Set("IsDeleted", true)
@@ -680,9 +680,9 @@ public class IngestionPipeline(
         string changeType)
     {
         var eventTime = DateTime.UtcNow;
-        
+
         var upsertFilter = Builders<BsonDocument>.Filter.Eq("_id", docId);
-        
+
         document["IsDeleted"] = false;
 
         var update = Builders<BsonDocument>.Update

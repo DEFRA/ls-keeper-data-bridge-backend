@@ -123,15 +123,15 @@ internal class ODataToMongoFilterTranslator
             "contains" => Builders<BsonDocument>.Filter.Regex(
                 fieldName,
                 new BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(searchString), "i")),
-            
+
             "startswith" => Builders<BsonDocument>.Filter.Regex(
                 fieldName,
                 new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(searchString)}", "i")),
-            
+
             "endswith" => Builders<BsonDocument>.Filter.Regex(
                 fieldName,
                 new BsonRegularExpression($"{System.Text.RegularExpressions.Regex.Escape(searchString)}$", "i")),
-            
+
             _ => throw new NotSupportedException($"Function '{functionName}' is not supported")
         };
     }

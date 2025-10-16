@@ -14,7 +14,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddMongoQueryService(this IServiceCollection services)
     {
         services.AddScoped<IMongoQueryService, MongoQueryService>();
-        
+
         return services;
     }
 }

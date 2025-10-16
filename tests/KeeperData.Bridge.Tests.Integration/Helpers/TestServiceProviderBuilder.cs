@@ -55,7 +55,7 @@ public static class TestServiceProviderBuilder
             EnableTransactions = false,
             HealthcheckEnabled = false
         };
-        
+
         services.AddSingleton<IOptions<MongoConfig>>(Options.Create(mongoConfig));
         services.AddSingleton<IOptions<IDatabaseConfig>>(Options.Create<IDatabaseConfig>(mongoConfig));
         services.AddSingleton(mongoClient);

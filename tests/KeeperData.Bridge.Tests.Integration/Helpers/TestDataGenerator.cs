@@ -21,7 +21,7 @@ public static class TestDataGenerator
             .RuleFor(p => p.Salary, f => f.Random.Int(25000, 150000))
             .RuleFor(p => p.Department, f => f.PickRandom("Engineering", "Sales", "Marketing", "HR", "Finance", "Operations"))
             .RuleFor(p => p.IsActive, f => f.Random.Bool(0.9f))
-            .RuleFor(p => p.ChangeType, _ => "I");    
+            .RuleFor(p => p.ChangeType, _ => "I");
 
         var records = faker.Generate(recordCount);
 

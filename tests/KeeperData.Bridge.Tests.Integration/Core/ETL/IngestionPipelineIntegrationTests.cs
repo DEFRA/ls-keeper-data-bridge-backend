@@ -67,7 +67,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
 
         // Create the pipeline under test
         var reportingServiceMock = new Mock<IImportReportingService>();
-        
+
         _ingestionPipeline = new IngestionPipeline(
             blobStorageFactory,
             externalCatalogueServiceFactory,
@@ -673,7 +673,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             .Returns(new Mock<ILogger>().Object);
 
         var s3ClientFactory = new Mock<IS3ClientFactory>();
-        
+
         // Setup for destination storage (Get method)
         s3ClientFactory.Setup(x => x.GetClientInfo<InternalStorageClient>())
             .Returns(new S3ClientFactory.ClientInfo(

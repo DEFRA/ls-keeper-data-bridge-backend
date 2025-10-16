@@ -10,15 +10,15 @@ public class ImportReportDocument
     [BsonId]
     [BsonRepresentation(BsonType.String)]
     public required Guid ImportId { get; init; }
-    
+
     public required string SourceType { get; init; }
     public required string Status { get; init; }
     public DateTime StartedAtUtc { get; init; }
     public DateTime? CompletedAtUtc { get; init; }
-    
+
     public AcquisitionPhaseDocument? AcquisitionPhase { get; init; }
     public IngestionPhaseDocument? IngestionPhase { get; init; }
-    
+
     public string? Error { get; init; }
 }
 

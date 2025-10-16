@@ -9,16 +9,16 @@ public interface IImportReportingService
     Task UpdateAcquisitionPhaseAsync(Guid importId, AcquisitionPhaseUpdate update, CancellationToken ct);
     Task UpdateIngestionPhaseAsync(Guid importId, IngestionPhaseUpdate update, CancellationToken ct);
     Task CompleteImportAsync(Guid importId, ImportStatus status, string? error, CancellationToken ct);
-    
+
     // File-level operations
     Task<bool> IsFileProcessedAsync(string fileKey, string md5Hash, CancellationToken ct);
     Task RecordFileAcquisitionAsync(Guid importId, FileAcquisitionRecord record, CancellationToken ct);
     Task RecordFileIngestionAsync(Guid importId, FileIngestionRecord record, CancellationToken ct);
-    
+
     // Record-level operations
     Task RecordLineageEventAsync(RecordLineageEvent lineageEvent, CancellationToken ct);
     Task RecordLineageEventsBatchAsync(IEnumerable<RecordLineageEvent> lineageEvents, CancellationToken ct);
-    
+
     // Reporting queries
     Task<ImportReport?> GetImportReportAsync(Guid importId, CancellationToken ct);
     Task<IReadOnlyList<FileProcessingReport>> GetFileReportsAsync(Guid importId, CancellationToken ct);

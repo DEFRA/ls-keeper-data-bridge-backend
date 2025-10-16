@@ -32,7 +32,7 @@ public static class ServiceCollectionExtensions
 
         var mongoConfig = configuration.GetSection("Mongo").Get<MongoConfig>()!;
         services.Configure<MongoConfig>(configuration.GetSection("Mongo"));
-        
+
         // Register IDatabaseConfig which wraps MongoConfig
         services.AddSingleton<IOptions<IDatabaseConfig>>(sp =>
         {

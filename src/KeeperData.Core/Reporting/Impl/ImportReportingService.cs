@@ -63,7 +63,7 @@ public class ImportReportingService : IImportReportingService
         _logger.LogDebug("Updating acquisition phase for ImportId: {ImportId}", importId);
 
         var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
-        
+
         // First, check if StartedAtUtc needs to be set
         bool needsStartTime = false;
         if (update.Status == PhaseStatus.Started)
@@ -73,7 +73,7 @@ public class ImportReportingService : IImportReportingService
         }
 
         var updateBuilder = Builders<ImportReportDocument>.Update;
-        
+
         var updates = new List<UpdateDefinition<ImportReportDocument>>
         {
             updateBuilder.Set("AcquisitionPhase.Status", update.Status.ToString()),
@@ -101,7 +101,7 @@ public class ImportReportingService : IImportReportingService
         _logger.LogDebug("Updating ingestion phase for ImportId: {ImportId}", importId);
 
         var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
-        
+
         // First, check if StartedAtUtc needs to be set
         bool needsStartTime = false;
         if (update.Status == PhaseStatus.Started)
@@ -111,7 +111,7 @@ public class ImportReportingService : IImportReportingService
         }
 
         var updateBuilder = Builders<ImportReportDocument>.Update;
-        
+
         var updates = new List<UpdateDefinition<ImportReportDocument>>
         {
             updateBuilder.Set("IngestionPhase.Status", update.Status.ToString()),
@@ -157,7 +157,7 @@ public class ImportReportingService : IImportReportingService
         var filter = Builders<ImportFileDocument>.Filter.And(
             Builders<ImportFileDocument>.Filter.Eq(x => x.FileKey, fileKey),
             Builders<ImportFileDocument>.Filter.Eq(x => x.Md5Hash, md5Hash),
-            Builders<ImportFileDocument>.Filter.In(x => x.Status, 
+            Builders<ImportFileDocument>.Filter.In(x => x.Status,
                 new[] { FileProcessingStatus.Acquired.ToString(), FileProcessingStatus.Ingested.ToString() })
         );
 

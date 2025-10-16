@@ -29,24 +29,24 @@ public class AcquisitionPipeline(
         try
         {
             var storageServices = InitializeStorageServices(importId, sourceType);
-            
+
             var fileSets = await DiscoverFilesAsync(importId, storageServices.ExternalCatalogueService, ct);
-            
+
             await UpdateAcquisitionPhaseStartedAsync(importId, fileSets.TotalFiles, ct);
-            
+
             var processingResults = await ProcessAllFilesAsync(
-                importId, 
-                fileSets.FileSets, 
+                importId,
+                fileSets.FileSets,
                 fileSets.TotalFiles,
-                storageServices.SourceBlobs, 
-                storageServices.DestinationBlobs, 
+                storageServices.SourceBlobs,
+                storageServices.DestinationBlobs,
                 ct);
-            
+
             await UpdateAcquisitionPhaseCompletedAsync(
-                importId, 
-                fileSets.TotalFiles, 
-                processingResults.ProcessedCount, 
-                processingResults.FailedCount, 
+                importId,
+                fileSets.TotalFiles,
+                processingResults.ProcessedCount,
+                processingResults.FailedCount,
                 ct);
 
             LogPipelineCompletion(importId, stopwatch);
@@ -58,7 +58,7 @@ public class AcquisitionPipeline(
         }
     }
 
-    private (IBlobStorageServiceReadOnly SourceBlobs, ExternalCatalogueService ExternalCatalogueService, IBlobStorageService DestinationBlobs) 
+    private (IBlobStorageServiceReadOnly SourceBlobs, ExternalCatalogueService ExternalCatalogueService, IBlobStorageService DestinationBlobs)
         InitializeStorageServices(Guid importId, string sourceType)
     {
         var sourceBlobs = blobStorageServiceFactory.GetSource(sourceType);
@@ -71,15 +71,15 @@ public class AcquisitionPipeline(
     }
 
     private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(
-        Guid importId, 
-        IExternalCatalogueService catalogueService, 
+        Guid importId,
+        IExternalCatalogueService catalogueService,
         CancellationToken ct)
     {
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
-        
+
         var fileSets = await catalogueService.GetFileSetsAsync(20, ct);
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
-        
+
         logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",
             fileSets.Count,
             totalFiles,
@@ -108,7 +108,7 @@ public class AcquisitionPipeline(
         CancellationToken ct)
     {
         logger.LogInformation("Step 2: Processing and decrypting files for ImportId: {ImportId}", importId);
-        
+
         var processedFileCount = 0;
         var failedFileCount = 0;
 
@@ -122,7 +122,7 @@ public class AcquisitionPipeline(
             foreach (var file in fileSet.Files)
             {
                 processedFileCount++;
-                
+
                 var result = await ProcessSingleFileAsync(
                     importId,
                     fileSet,
@@ -168,18 +168,18 @@ public class AcquisitionPipeline(
         try
         {
             var fileContext = await PrepareFileContextAsync(file, sourceBlobs, destinationBlobs, ct);
-            
+
             var transferDecision = await DetermineFileTransferRequirementAsync(
-                file.Key, 
-                fileContext.EncryptedMetadata.ContentLength, 
-                destinationBlobs, 
-                importId, 
+                file.Key,
+                fileContext.EncryptedMetadata.ContentLength,
+                destinationBlobs,
+                importId,
                 ct);
 
             var acquisitionResult = await AcquireFileAsync(
-                fileContext, 
-                transferDecision, 
-                destinationBlobs, 
+                fileContext,
+                transferDecision,
+                destinationBlobs,
                 ct);
 
             fileStopwatch.Stop();
@@ -187,11 +187,11 @@ public class AcquisitionPipeline(
             await CheckForDuplicateProcessingAsync(file.Key, acquisitionResult.Md5Hash, importId, ct);
 
             await RecordSuccessfulAcquisitionAsync(
-                importId, 
-                fileSet, 
-                file, 
-                acquisitionResult, 
-                fileStopwatch.ElapsedMilliseconds, 
+                importId,
+                fileSet,
+                file,
+                acquisitionResult,
+                fileStopwatch.ElapsedMilliseconds,
                 ct);
 
             return true;
@@ -205,7 +205,7 @@ public class AcquisitionPipeline(
                 importId);
 
             await RecordFailedAcquisitionAsync(importId, fileSet, file, fileStopwatch.ElapsedMilliseconds, ex, ct);
-            
+
             throw;
         }
     }
@@ -240,14 +240,14 @@ public class AcquisitionPipeline(
         CancellationToken ct)
     {
         var targetExists = await destinationBlobs.ExistsAsync(fileKey, ct);
-        
+
         if (!targetExists)
         {
             return FileTransferDecision.TransferRequired();
         }
 
         var targetMetadata = await destinationBlobs.GetMetadataAsync(fileKey, ct);
-        
+
         if (!targetMetadata.UserMetadata.TryGetValue("SourceEncryptedLength", out var storedSourceLength))
         {
             return FileTransferDecision.TransferRequired();
@@ -295,10 +295,10 @@ public class AcquisitionPipeline(
             ct);
 
         await StoreFileMetadataAsync(
-            destinationBlobs, 
-            fileContext.FileKey, 
-            fileContext.EncryptedMetadata.ContentLength, 
-            md5Hash, 
+            destinationBlobs,
+            fileContext.FileKey,
+            fileContext.EncryptedMetadata.ContentLength,
+            md5Hash,
             ct);
 
         logger.LogInformation("Successfully processed file: {FileKey} ({SizeMB:F2} MB, MD5: {Md5Hash})",
@@ -337,7 +337,7 @@ public class AcquisitionPipeline(
         }
 
         var isAlreadyProcessed = await reportingService.IsFileProcessedAsync(fileKey, md5Hash, ct);
-        
+
         if (isAlreadyProcessed)
         {
             logger.LogWarning("File {FileKey} with MD5 {Md5Hash} was already processed in a previous import for ImportId: {ImportId}",
@@ -450,14 +450,14 @@ public class AcquisitionPipeline(
     {
         // Create upload stream
         await using var uploadStream = await targetStorage.OpenWriteAsync(fileKey, MimeTypeTextCsv, cancellationToken: ct);
-        
+
         // Wrap with byte counter to track file size
         await using var byteCounter = new ByteCountingStream(uploadStream);
-        
+
         // Wrap with MD5 calculation
         using var md5 = MD5.Create();
         await using var cryptoStream = new CryptoStream(byteCounter, md5, CryptoStreamMode.Write, leaveOpen: true);
-        
+
         // Decrypt directly into the MD5+counting+upload stream pipeline
         // Pipeline: Decrypted data → CryptoStream (MD5) → ByteCountingStream (size) → Upload Stream (S3)
         await aesCryptoTransform.DecryptStreamAsync(
@@ -468,16 +468,16 @@ public class AcquisitionPipeline(
             encryptedContentLength,
             null,
             ct);
-        
+
         // Ensure all data is written and MD5 is finalized
         await cryptoStream.FlushFinalBlockAsync(ct);
         await byteCounter.FlushAsync(ct);
-        
+
         // Get the computed hash and file size
         var hashBytes = md5.Hash ?? throw new InvalidOperationException("MD5 hash computation failed");
         var md5Hash = Convert.ToHexString(hashBytes).ToLowerInvariant();
         var fileSize = byteCounter.BytesWritten;
-        
+
         return (md5Hash, fileSize);
     }
 
@@ -502,7 +502,7 @@ public class AcquisitionPipeline(
         public string ExistingMd5Hash { get; init; } = string.Empty;
 
         public static FileTransferDecision TransferRequired() => new() { ShouldSkip = false };
-        
+
         public static FileTransferDecision SkipTransfer(long fileSize, string md5Hash) => new()
         {
             ShouldSkip = true,

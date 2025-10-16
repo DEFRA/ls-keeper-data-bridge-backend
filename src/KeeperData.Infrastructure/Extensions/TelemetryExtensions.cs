@@ -8,6 +8,7 @@ public static class TelemetryExtensions
 {
     public static IServiceCollection AddKeeperDataMetrics(this IServiceCollection services)
     {
+        services.TryAddSingleton<IApplicationMetrics, ApplicationMetrics>();
         services.TryAddSingleton<HealthCheckMetrics>();
         services.TryAddSingleton<HealthCheckMetricsPublisher>();
         

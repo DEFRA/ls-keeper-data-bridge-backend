@@ -1,27 +1,24 @@
 using KeeperData.Application.Setup;
+using KeeperData.Bridge.Authentication;
+using KeeperData.Bridge.Config;
+using KeeperData.Bridge.Worker.Setup;
+using KeeperData.Core.ETL.Setup;
+using KeeperData.Core.Querying.Setup;
 using KeeperData.Infrastructure.Config;
 using KeeperData.Infrastructure.Crypto;
-using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Infrastructure.Database.Setup;
+using KeeperData.Infrastructure.Extensions;
 using KeeperData.Infrastructure.Messaging.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
-using KeeperData.Infrastructure.ETL.Setup;
-using KeeperData.Infrastructure.Extensions;
 using KeeperData.Infrastructure.Telemetry;
-using KeeperData.Bridge.Config;
-using KeeperData.Bridge.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using OpenTelemetry.Metrics;
-using System.Text.Encodings.Web;
-using System.Text.Json.Serialization;
-using KeeperData.Core.ETL.Setup;
-using KeeperData.Core.Querying.Setup;
-using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
 using System.Reflection;
+using System.Text.Encodings.Web;
+using System.Text.Json.Serialization;
 
 namespace KeeperData.Bridge.Setup
 {

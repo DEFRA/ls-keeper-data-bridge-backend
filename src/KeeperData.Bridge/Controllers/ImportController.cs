@@ -69,16 +69,6 @@ public class ImportController(
                 Timestamp = DateTime.UtcNow
             });
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error occurred while starting bulk import");
-            return StatusCode(500, new
-            {
-                Message = "An error occurred while starting the import process.",
-                Error = ex.Message,
-                Timestamp = DateTime.UtcNow
-            });
-        }
     }
 
     /// <summary>
@@ -91,7 +81,6 @@ public class ImportController(
     [HttpGet("{importId}")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetImportReport(Guid importId, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Received request to get import report for importId={importId}", importId);
@@ -125,17 +114,6 @@ public class ImportController(
                 Timestamp = DateTime.UtcNow
             });
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error occurred while retrieving import report for importId={importId}", importId);
-            return StatusCode(500, new
-            {
-                Message = "An error occurred while retrieving the import report.",
-                Error = ex.Message,
-                ImportId = importId,
-                Timestamp = DateTime.UtcNow
-            });
-        }
     }
 
     /// <summary>
@@ -148,7 +126,6 @@ public class ImportController(
     [HttpGet("{importId}/files")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetFileReports(Guid importId, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Received request to get file reports for importId={importId}", importId);
@@ -188,17 +165,6 @@ public class ImportController(
             return StatusCode(499, new
             {
                 Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error occurred while retrieving file reports for importId={importId}", importId);
-            return StatusCode(500, new
-            {
-                Message = "An error occurred while retrieving the file reports.",
-                Error = ex.Message,
-                ImportId = importId,
                 Timestamp = DateTime.UtcNow
             });
         }

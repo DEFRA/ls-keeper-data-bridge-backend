@@ -21,6 +21,7 @@ public class ExternalCatalogueController(
     /// Gets a plain text report of available files for a specified source type.
     /// </summary>
     /// <param name="sourceType">The source type - either 'internal' or 'external'</param>
+    /// <param name="days">Number of days to look back for files</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A plain text report of available files</returns>
     [HttpGet("files")]
@@ -39,24 +40,13 @@ public class ExternalCatalogueController(
             return BadRequest($"Invalid source type. Must be '{BlobStorageSources.Internal}' or '{BlobStorageSources.External}'.");
         }
 
-        try
-        {
-            var ExternalCatalogueService = ExternalCatalogueServiceFactory.Create(sourceType);
+        var ExternalCatalogueService = ExternalCatalogueServiceFactory.Create(sourceType);
 
-            var fileSets = await ExternalCatalogueService.GetFileSetsAsync(days, cancellationToken);
+        var fileSets = await ExternalCatalogueService.GetFileSetsAsync(days, cancellationToken);
 
-            var report = GenerateReport(sourceType, fileSets, ExternalCatalogueService.ToString());
+        var report = GenerateReport(sourceType, fileSets, ExternalCatalogueService.ToString());
 
-            return Content(report, "text/plain", Encoding.UTF8);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, $"An error occurred while retrieving files: {ex.Message}");
-        }
+        return Content(report, "text/plain", Encoding.UTF8);
     }
 
     /// <summary>
@@ -122,35 +112,28 @@ public class ExternalCatalogueController(
             return UnprocessableEntity(CreateValidationProblem(validationResult.ErrorMessage ?? "Filename validation failed.", "FileName"));
         }
 
-        try
+        var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
+
+        byte[] fileContent;
+        using (var memoryStream = new MemoryStream())
         {
-            var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
-
-            byte[] fileContent;
-            using (var memoryStream = new MemoryStream())
-            {
-                await file.CopyToAsync(memoryStream, cancellationToken);
-                fileContent = memoryStream.ToArray();
-            }
-
-            await blobStorageService.UploadAsync(
-                objectKey,
-                fileContent,
-                file.ContentType,
-                cancellationToken: cancellationToken);
-
-            return Ok(new
-            {
-                Message = "File uploaded successfully",
-                ObjectKey = objectKey,
-                Size = fileContent.Length,
-                ContentType = file.ContentType
-            });
+            await file.CopyToAsync(memoryStream, cancellationToken);
+            fileContent = memoryStream.ToArray();
         }
-        catch (Exception ex)
+
+        await blobStorageService.UploadAsync(
+            objectKey,
+            fileContent,
+            file.ContentType,
+            cancellationToken: cancellationToken);
+
+        return Ok(new
         {
-            return StatusCode(500, $"An error occurred while uploading the file: {ex.Message}");
-        }
+            Message = "File uploaded successfully",
+            ObjectKey = objectKey,
+            Size = fileContent.Length,
+            ContentType = file.ContentType
+        });
     }
 
     /// <summary>
@@ -191,40 +174,33 @@ public class ExternalCatalogueController(
             return UnprocessableEntity(CreateValidationProblem(validationResult.ErrorMessage ?? "Filename validation failed.", "FileName"));
         }
 
-        try
+        var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
+
+        byte[] fileContent;
+        using (var memoryStream = new MemoryStream())
         {
-            var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
-
-            byte[] fileContent;
-            using (var memoryStream = new MemoryStream())
-            {
-                await Request.Body.CopyToAsync(memoryStream, cancellationToken);
-                fileContent = memoryStream.ToArray();
-            }
-
-            if (fileContent.Length == 0)
-            {
-                return UnprocessableEntity(CreateValidationProblem("File content cannot be empty.", "File"));
-            }
-
-            await blobStorageService.UploadAsync(
-                objectKey,
-                fileContent,
-                Request.ContentType ?? "text/csv",
-                cancellationToken: cancellationToken);
-
-            return Ok(new
-            {
-                Message = "File uploaded successfully",
-                ObjectKey = objectKey,
-                Size = fileContent.Length,
-                ContentType = Request.ContentType ?? "text/csv"
-            });
+            await Request.Body.CopyToAsync(memoryStream, cancellationToken);
+            fileContent = memoryStream.ToArray();
         }
-        catch (Exception ex)
+
+        if (fileContent.Length == 0)
         {
-            return StatusCode(500, $"An error occurred while uploading the file: {ex.Message}");
+            return UnprocessableEntity(CreateValidationProblem("File content cannot be empty.", "File"));
         }
+
+        await blobStorageService.UploadAsync(
+            objectKey,
+            fileContent,
+            Request.ContentType ?? "text/csv",
+            cancellationToken: cancellationToken);
+
+        return Ok(new
+        {
+            Message = "File uploaded successfully",
+            ObjectKey = objectKey,
+            Size = fileContent.Length,
+            ContentType = Request.ContentType ?? "text/csv"
+        });
     }
 
     private static string GenerateReport(string sourceType, IReadOnlyList<FileSet> fileSets, string footer)

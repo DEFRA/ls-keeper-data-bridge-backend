@@ -26,6 +26,17 @@ public static class WebApplicationExtensions
 
         app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+        // Enable Swagger and Swagger UI
+        app.UseSwagger();
+        app.UseSwaggerUI(options =>
+        {
+            options.SwaggerEndpoint("/swagger/v1/swagger.json", "KeeperData Bridge API v1");
+            options.RoutePrefix = "swagger"; // Access Swagger UI at /swagger
+            options.DocumentTitle = "KeeperData Bridge API";
+            options.DisplayRequestDuration();
+            options.EnableTryItOutByDefault();
+        });
+
         app.UseHeaderPropagation();
         app.UseRouting();
 

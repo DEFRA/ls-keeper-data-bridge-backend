@@ -14,6 +14,8 @@ using System.Text.Json.Serialization;
 using KeeperData.Core.ETL.Setup;
 using KeeperData.Core.Querying.Setup;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi.Models;
+using System.Reflection;
 
 namespace KeeperData.Bridge.Setup
 {
@@ -30,6 +32,8 @@ namespace KeeperData.Bridge.Setup
             services.ConfigureAuthentication(configuration);
 
             services.ConfigureAuthorization(configuration);
+
+            services.ConfigureSwagger(configuration);
 
             services.AddApplicationLayer();
 
@@ -58,6 +62,64 @@ namespace KeeperData.Bridge.Setup
             services.Configure<FeatureFlags>(configuration.GetSection(FeatureFlags.SectionName));
         }
 
+        private static void ConfigureSwagger(this IServiceCollection services, IConfiguration configuration)
+        {
+            services.AddEndpointsApiExplorer();
+            services.AddSwaggerGen(options =>
+            {
+                options.SwaggerDoc("v1", new OpenApiInfo
+                {
+                    Title = "KeeperData Bridge API",
+                    Version = "v1",
+                    Description = "API for managing data imports, querying MongoDB collections, and managing external catalogue files",
+                    Contact = new OpenApiContact
+                    {
+                        Name = "DEFRA",
+                        Url = new Uri("https://github.com/DEFRA/ls-keeper-data-bridge-backend")
+                    }
+                });
+
+                // Include XML comments for better documentation
+                var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+                if (File.Exists(xmlPath))
+                {
+                    options.IncludeXmlComments(xmlPath);
+                }
+
+                // Check if authentication is enabled
+                var featureFlags = configuration.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
+
+                if (featureFlags.AuthenticationEnabled)
+                {
+                    // Add API Key authentication support in Swagger UI
+                    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+                    {
+                        Description = "API Key authentication. Enter your API key in the 'X-API-Key' header.",
+                        Name = "X-API-Key",
+                        In = ParameterLocation.Header,
+                        Type = SecuritySchemeType.ApiKey,
+                        Scheme = "ApiKeyScheme"
+                    });
+
+                    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+                    {
+                        {
+                            new OpenApiSecurityScheme
+                            {
+                                Reference = new OpenApiReference
+                                {
+                                    Type = ReferenceType.SecurityScheme,
+                                    Id = "ApiKey"
+                                }
+                            },
+                            Array.Empty<string>()
+                        }
+                    });
+                }
+            });
+        }
+
         private static void ConfigureAuthentication(this IServiceCollection services, IConfiguration configuration)
         {
             // Read feature flag configuration
@@ -72,7 +134,7 @@ namespace KeeperData.Bridge.Setup
                     options.DefaultChallengeScheme = "NoAuth";
                 })
                 .AddScheme<AuthenticationSchemeOptions, NoAuthenticationHandler>("NoAuth", options => { });
-                
+
                 return;
             }
 

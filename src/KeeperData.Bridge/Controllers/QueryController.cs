@@ -96,55 +96,5 @@ public class QueryController : ControllerBase
                 Timestamp = DateTime.UtcNow
             });
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error executing query on collection '{CollectionName}'", collectionName);
-            return StatusCode(500, new
-            {
-                Message = "An error occurred while executing the query",
-                Error = ex.Message,
-                CollectionName = collectionName,
-                Timestamp = DateTime.UtcNow
-            });
-        }
-    }
-
-    /// <summary>
-    /// Get list of available collections that can be queried.
-    /// </summary>
-    /// <returns>List of queryable collection names</returns>
-    /// <response code="200">List of collections retrieved successfully</response>
-    [HttpGet]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    public IActionResult GetCollections()
-    {
-        _logger.LogInformation("Received request for available collections");
-
-        try
-        {
-            // This would need to be implemented by injecting IDataSetDefinitions
-            // For now, return a simple message
-            return Ok(new
-            {
-                Message = "Use GET /api/query/{collectionName} to query a specific collection",
-                Examples = new[]
-                {
-                    "/api/query/sam_cph_holdings?$filter=CPH eq 'ABC123'",
-                    "/api/query/sam_cph_holdings?$filter=IsDeleted eq false&$orderby=UpdatedAtUtc desc&$top=50",
-                    "/api/query/sam_cph_holdings?$filter=contains(CPH,'ABC')&$skip=20&$top=10"
-                },
-                Timestamp = DateTime.UtcNow
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving collections list");
-            return StatusCode(500, new
-            {
-                Message = "An error occurred while retrieving the collections list",
-                Error = ex.Message,
-                Timestamp = DateTime.UtcNow
-            });
-        }
     }
 }

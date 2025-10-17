@@ -3,11 +3,13 @@ using FluentValidation.Results;
 using KeeperData.Bridge.Middleware;
 using KeeperData.Core.Exceptions;
 using KeeperData.Infrastructure;
+using KeeperData.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
+using Moq;
 using System.Text.Json;
 
 namespace KeeperData.Bridge.Tests.Component.Middleware;
@@ -83,7 +85,8 @@ public class ExceptionHandlingMiddlewareTests
             .AddInMemoryCollection(initialData)
             .Build();
 
-        return new ExceptionHandlingMiddleware(next, _testLogger, config);
+        var mockMetrics = new Mock<IApplicationMetrics>();
+        return new ExceptionHandlingMiddleware(next, _testLogger, config, mockMetrics.Object);
     }
 
     private DefaultHttpContext CreateHttpContext(string path = "/test", string? traceHeaderValue = null)
@@ -398,5 +401,99 @@ public class ExceptionHandlingMiddlewareTests
 
         nextCalled.Should().BeTrue();
         context.Response.StatusCode.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenRequestSucceeds_ShouldRecordSuccessMetrics()
+    {
+        // Arrange
+        var context = CreateHttpContext("/api/test");
+        var mockMetrics = new Mock<IApplicationMetrics>();
+
+        var sut = new ExceptionHandlingMiddleware(
+            _ => Task.CompletedTask,
+            _testLogger,
+            new ConfigurationBuilder()
+                .AddInMemoryCollection([new KeyValuePair<string, string?>("TraceHeader", _traceHeader)])
+                .Build(),
+            mockMetrics.Object);
+
+        // Act
+        await sut.InvokeAsync(context);
+
+        // Assert
+        mockMetrics.Verify(m => m.RecordRequest("http_request", "success"), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(typeof(NotFoundException), "Test not found", 404)]
+    [InlineData(typeof(DomainException), "Domain rule violated", 400)]
+    [InlineData(typeof(InvalidOperationException), "Something went wrong", 500)]
+    [InlineData(typeof(ArgumentNullException), "Value cannot be null. (Parameter 'parameter')", 500)]
+    public async Task InvokeAsync_WhenExceptionThrown_ShouldRecordErrorMetrics(
+        Type exceptionType,
+        string exceptionMessage,
+        int expectedStatusCode)
+    {
+        // Arrange
+        var context = CreateHttpContext("/api/test");
+        var mockMetrics = new Mock<IApplicationMetrics>();
+
+        var exception = exceptionType.Name switch
+        {
+            nameof(NotFoundException) => new NotFoundException(exceptionMessage),
+            nameof(DomainException) => new DomainException(exceptionMessage),
+            nameof(InvalidOperationException) => new InvalidOperationException(exceptionMessage),
+            nameof(ArgumentNullException) => (Exception)new ArgumentNullException("parameter"),
+            _ => throw new NotSupportedException($"Exception type {exceptionType.Name} not supported in test")
+        };
+
+        var sut = new ExceptionHandlingMiddleware(
+            _ => throw exception,
+            _testLogger,
+            new ConfigurationBuilder()
+                .AddInMemoryCollection([new KeyValuePair<string, string?>("TraceHeader", _traceHeader)])
+                .Build(),
+            mockMetrics.Object);
+
+        // Act
+        await sut.InvokeAsync(context);
+
+        // Assert
+        mockMetrics.Verify(m => m.RecordRequest("http_request", "error"), Times.Once);
+        mockMetrics.Verify(m => m.RecordCount("http_errors", 1,
+            It.Is<(string Key, string Value)[]>(tags =>
+                tags.Any(t => t.Key == "status_code" && t.Value == expectedStatusCode.ToString()))), Times.Once);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenValidationExceptionThrown_ShouldRecordValidationErrorMetrics()
+    {
+        // Arrange
+        var context = CreateHttpContext("/api/validation");
+        var mockMetrics = new Mock<IApplicationMetrics>();
+
+        var validationFailures = new List<FluentValidation.Results.ValidationFailure>
+        {
+            new("Email", "Email is required")
+        };
+        var validationException = new FluentValidation.ValidationException(validationFailures);
+
+        var sut = new ExceptionHandlingMiddleware(
+            _ => throw validationException,
+            _testLogger,
+            new ConfigurationBuilder()
+                .AddInMemoryCollection([new KeyValuePair<string, string?>("TraceHeader", _traceHeader)])
+                .Build(),
+            mockMetrics.Object);
+
+        // Act
+        await sut.InvokeAsync(context);
+
+        // Assert
+        mockMetrics.Verify(m => m.RecordRequest("http_request", "error"), Times.Once);
+        mockMetrics.Verify(m => m.RecordCount("http_errors", 1,
+            It.Is<(string Key, string Value)[]>(tags =>
+                tags.Any(t => t.Key == "status_code" && t.Value == "422"))), Times.Once);
     }
 }

@@ -18,23 +18,23 @@ public class ApplicationMetrics : IApplicationMetrics
     {
         var meterName = awsConfig.Value.Metrics.MeterName;
         _meter = new Meter(meterName);
-        
+
         // Create instruments for common metrics
         _requestCounter = _meter.CreateCounter<int>(
             name: "requests_total",
             unit: "ea",
             description: "Total number of requests by operation and status");
-            
+
         _durationHistogram = _meter.CreateHistogram<double>(
             name: "duration_milliseconds",
-            unit: "ms", 
+            unit: "ms",
             description: "Duration of operations in milliseconds");
-            
+
         _generalCounter = _meter.CreateCounter<int>(
             name: "count_total",
             unit: "ea",
             description: "General purpose counter with custom tags");
-            
+
         _generalHistogram = _meter.CreateHistogram<double>(
             name: "value_measurement",
             unit: "value",
@@ -43,7 +43,7 @@ public class ApplicationMetrics : IApplicationMetrics
 
     public void RecordRequest(string operation, string status)
     {
-        _requestCounter.Add(1, 
+        _requestCounter.Add(1,
             new KeyValuePair<string, object?>("operation", operation),
             new KeyValuePair<string, object?>("status", status));
     }
@@ -60,12 +60,12 @@ public class ApplicationMetrics : IApplicationMetrics
         {
             new("metric_name", name)
         };
-        
+
         foreach (var (key, val) in tags)
         {
             kvps.Add(new KeyValuePair<string, object?>(key, val));
         }
-        
+
         _generalCounter.Add(value, kvps.ToArray());
     }
 
@@ -75,12 +75,12 @@ public class ApplicationMetrics : IApplicationMetrics
         {
             new("metric_name", name)
         };
-        
+
         foreach (var (key, val) in tags)
         {
             kvps.Add(new KeyValuePair<string, object?>(key, val));
         }
-        
+
         _generalHistogram.Record(value, kvps.ToArray());
     }
 

@@ -11,7 +11,7 @@ public static class TelemetryExtensions
         services.TryAddSingleton<IApplicationMetrics, ApplicationMetrics>();
         services.TryAddSingleton<HealthCheckMetrics>();
         services.TryAddSingleton<HealthCheckMetricsPublisher>();
-        
+
         return services;
     }
 }

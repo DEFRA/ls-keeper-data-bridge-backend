@@ -28,12 +28,12 @@ public sealed class ExceptionHandlingMiddleware(
         try
         {
             await _next(context);
-            
+
             // Record successful request metrics
             stopwatch.Stop();
             _metrics.RecordRequest("http_request", "success");
             _metrics.RecordDuration("http_request", stopwatch.ElapsedMilliseconds);
-            _metrics.RecordCount("http_requests", 1, 
+            _metrics.RecordCount("http_requests", 1,
                 ("method", context.Request.Method),
                 ("endpoint", context.Request.Path.Value ?? "unknown"),
                 ("status_code", context.Response.StatusCode.ToString()),
@@ -130,7 +130,7 @@ public sealed class ExceptionHandlingMiddleware(
             // Record general error metrics
             _metrics.RecordRequest("http_request", "error");
             _metrics.RecordDuration("http_request", durationMs);
-            
+
             // Record detailed error metrics
             _metrics.RecordCount("http_errors", 1,
                 ("status_code", statusCode.ToString()),
@@ -152,13 +152,13 @@ public sealed class ExceptionHandlingMiddleware(
             _logger.LogWarning(ex, "Failed to record exception metrics for {ExceptionType}", exception.GetType().Name);
         }
     }
-    
+
     private static string GetStatusClass(int statusCode)
     {
         return statusCode switch
         {
             >= 200 and < 300 => "2xx_success",
-            >= 300 and < 400 => "3xx_redirection", 
+            >= 300 and < 400 => "3xx_redirection",
             >= 400 and < 500 => "4xx_client_error",
             >= 500 and < 600 => "5xx_server_error",
             _ => "unknown"

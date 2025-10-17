@@ -16,7 +16,7 @@ public static class EmfExportExtensions
     public static IApplicationBuilder UseEmfExporter(this IApplicationBuilder builder)
     {
         var awsConfig = builder.ApplicationServices.GetRequiredService<IOptions<AwsConfig>>();
-        EmfExporter.Init(builder.ApplicationServices.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(EmfExporter)), 
+        EmfExporter.Init(builder.ApplicationServices.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(EmfExporter)),
                         awsConfig.Value.EMF.Namespace);
         return builder;
     }
@@ -27,12 +27,12 @@ public static class EmfExporter
     private static readonly MeterListener meterListener = new();
     private static ILogger log = null!;
     private static string awsNamespace = string.Empty;
-    
+
     public static void Init(ILogger logger, string? awsNamespace)
     {
         log = logger;
         EmfExporter.awsNamespace = awsNamespace ?? string.Empty;
-        
+
         meterListener.InstrumentPublished = (instrument, listener) =>
         {
             if (instrument.Meter.Name is "KeeperData")
@@ -58,7 +58,7 @@ public static class EmfExporter
             using var metricsLogger = new MetricsLogger();
             metricsLogger.SetNamespace(awsNamespace);
             var dimensionSet = new DimensionSet();
-            
+
             foreach (var tag in tags)
             {
                 dimensionSet.AddDimension(tag.Key, tag.Value?.ToString());
@@ -74,10 +74,10 @@ public static class EmfExporter
             {
                 metricsLogger.PutProperty("TraceState", Activity.Current.TraceStateString);
             }
-            
+
             metricsLogger.SetDimensions(dimensionSet);
             var name = instrument.Name.Dehumanize().Camelize();
-            metricsLogger.PutMetric(name, Convert.ToDouble(measurement), 
+            metricsLogger.PutMetric(name, Convert.ToDouble(measurement),
                 instrument.Unit == "ea" ? Unit.COUNT : Unit.MILLISECONDS);
             metricsLogger.Flush();
         }

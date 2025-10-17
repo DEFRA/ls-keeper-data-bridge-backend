@@ -11,7 +11,7 @@ public class HealthCheckMetricsPublisher : IHealthCheckPublisher
     private readonly ILogger<HealthCheckMetricsPublisher> _logger;
 
     public HealthCheckMetricsPublisher(
-        HealthCheckMetrics healthMetrics, 
+        HealthCheckMetrics healthMetrics,
         IApplicationMetrics applicationMetrics,
         ILogger<HealthCheckMetricsPublisher> logger)
     {
@@ -37,13 +37,13 @@ public class HealthCheckMetricsPublisher : IHealthCheckPublisher
                 _applicationMetrics.RecordRequest("health_check", result.Status.ToString().ToLowerInvariant());
                 _applicationMetrics.RecordDuration("health_check", durationMs);
 
-                _logger.LogDebug("Published health check metric for {HealthCheck} with status {Status} in {Duration}ms", 
+                _logger.LogDebug("Published health check metric for {HealthCheck} with status {Status} in {Duration}ms",
                     healthCheckName, result.Status, durationMs);
             }
 
             // Record overall health status
             _healthMetrics.RecordHealthCheck("overall", report.Status, report.TotalDuration.TotalMilliseconds);
-            
+
             // Record summary metrics using IApplicationMetrics
             _applicationMetrics.RecordRequest("health_check_overall", report.Status.ToString().ToLowerInvariant());
             _applicationMetrics.RecordDuration("health_check_overall", report.TotalDuration.TotalMilliseconds);
@@ -53,7 +53,7 @@ public class HealthCheckMetricsPublisher : IHealthCheckPublisher
         {
             // Don't let metrics publishing fail health checks
             _logger.LogError(ex, "Failed to publish health check metrics");
-            
+
             // Record error metric
             _applicationMetrics.RecordRequest("health_check_publisher", "error");
         }

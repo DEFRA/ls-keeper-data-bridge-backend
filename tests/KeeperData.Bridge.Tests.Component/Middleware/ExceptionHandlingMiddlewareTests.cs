@@ -409,7 +409,7 @@ public class ExceptionHandlingMiddlewareTests
         // Arrange
         var context = CreateHttpContext("/api/test");
         var mockMetrics = new Mock<IApplicationMetrics>();
-        
+
         var sut = new ExceptionHandlingMiddleware(
             _ => Task.CompletedTask,
             _testLogger,
@@ -438,7 +438,7 @@ public class ExceptionHandlingMiddlewareTests
         // Arrange
         var context = CreateHttpContext("/api/test");
         var mockMetrics = new Mock<IApplicationMetrics>();
-        
+
         var exception = exceptionType.Name switch
         {
             nameof(NotFoundException) => new NotFoundException(exceptionMessage),
@@ -447,7 +447,7 @@ public class ExceptionHandlingMiddlewareTests
             nameof(ArgumentNullException) => (Exception)new ArgumentNullException("parameter"),
             _ => throw new NotSupportedException($"Exception type {exceptionType.Name} not supported in test")
         };
-        
+
         var sut = new ExceptionHandlingMiddleware(
             _ => throw exception,
             _testLogger,
@@ -461,8 +461,8 @@ public class ExceptionHandlingMiddlewareTests
 
         // Assert
         mockMetrics.Verify(m => m.RecordRequest("http_request", "error"), Times.Once);
-        mockMetrics.Verify(m => m.RecordCount("http_errors", 1, 
-            It.Is<(string Key, string Value)[]>(tags => 
+        mockMetrics.Verify(m => m.RecordCount("http_errors", 1,
+            It.Is<(string Key, string Value)[]>(tags =>
                 tags.Any(t => t.Key == "status_code" && t.Value == expectedStatusCode.ToString()))), Times.Once);
     }
 
@@ -472,13 +472,13 @@ public class ExceptionHandlingMiddlewareTests
         // Arrange
         var context = CreateHttpContext("/api/validation");
         var mockMetrics = new Mock<IApplicationMetrics>();
-        
+
         var validationFailures = new List<FluentValidation.Results.ValidationFailure>
         {
             new("Email", "Email is required")
         };
         var validationException = new FluentValidation.ValidationException(validationFailures);
-        
+
         var sut = new ExceptionHandlingMiddleware(
             _ => throw validationException,
             _testLogger,

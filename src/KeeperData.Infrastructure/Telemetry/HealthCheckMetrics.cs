@@ -14,25 +14,25 @@ public class HealthCheckMetrics
     public HealthCheckMetrics(IMeterFactory meterFactory)
     {
         var meter = meterFactory.Create(MetricNames.MeterName);
-        
+
         _healthCheckTotal = meter.CreateCounter<long>(
-            "keeperdata.health.checks.total", 
-            "ea", 
+            "keeperdata.health.checks.total",
+            "ea",
             "Total number of health checks performed");
-            
+
         _healthCheckFailures = meter.CreateCounter<long>(
-            "keeperdata.health.checks.failures", 
-            "ea", 
+            "keeperdata.health.checks.failures",
+            "ea",
             "Number of health check failures");
-            
+
         _healthCheckDuration = meter.CreateHistogram<double>(
-            "keeperdata.health.checks.duration", 
-            "ms", 
+            "keeperdata.health.checks.duration",
+            "ms",
             "Health check execution duration in milliseconds");
-            
+
         _healthCheckStatus = meter.CreateUpDownCounter<int>(
-            "keeperdata.health.status", 
-            "status", 
+            "keeperdata.health.status",
+            "status",
             "Current health check status (2=Healthy, 1=Degraded, 0=Unhealthy)");
     }
 
@@ -54,7 +54,7 @@ public class HealthCheckMetrics
         }
 
         // Record current health status as numeric value
-        var statusValue = status switch 
+        var statusValue = status switch
         {
             HealthStatus.Healthy => 2,
             HealthStatus.Degraded => 1,

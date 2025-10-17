@@ -6,12 +6,14 @@ using KeeperData.Infrastructure.Messaging.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
 using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 using KeeperData.Core.ETL.Setup;
 using KeeperData.Core.Querying.Setup;
+using Microsoft.Extensions.Options;
 
 namespace KeeperData.Bridge.Setup
 {
@@ -25,9 +27,9 @@ namespace KeeperData.Bridge.Setup
 
             services.ConfigureFeatureFlags(configuration);
 
-            services.ConfigureAuthentication();
+            services.ConfigureAuthentication(configuration);
 
-            services.ConfigureAuthorization();
+            services.ConfigureAuthorization(configuration);
 
             services.AddApplicationLayer();
 
@@ -56,8 +58,24 @@ namespace KeeperData.Bridge.Setup
             services.Configure<FeatureFlags>(configuration.GetSection(FeatureFlags.SectionName));
         }
 
-        private static void ConfigureAuthentication(this IServiceCollection services)
+        private static void ConfigureAuthentication(this IServiceCollection services, IConfiguration configuration)
         {
+            // Read feature flag configuration
+            var featureFlags = configuration.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
+
+            if (!featureFlags.AuthenticationEnabled)
+            {
+                // Authentication is disabled - configure a no-op authentication scheme
+                services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = "NoAuth";
+                    options.DefaultChallengeScheme = "NoAuth";
+                })
+                .AddScheme<AuthenticationSchemeOptions, NoAuthenticationHandler>("NoAuth", options => { });
+                
+                return;
+            }
+
             // UrlEncoder is required for authentication handlers
             services.AddSingleton<UrlEncoder>(_ => UrlEncoder.Default);
 
@@ -71,8 +89,32 @@ namespace KeeperData.Bridge.Setup
                 options => { });
         }
 
-        private static void ConfigureAuthorization(this IServiceCollection services)
+        private static void ConfigureAuthorization(this IServiceCollection services, IConfiguration configuration)
         {
+            // Read feature flag configuration
+            var featureFlags = configuration.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
+
+            if (!featureFlags.AuthenticationEnabled)
+            {
+                // Authentication is disabled - configure authorization to allow all requests
+                services.AddAuthorization(options =>
+                {
+                    options.DefaultPolicy = new AuthorizationPolicyBuilder()
+                        .RequireAssertion(_ => true) // Allow all requests
+                        .Build();
+                });
+
+                services.AddControllers()
+                    .AddJsonOptions(opts =>
+                    {
+                        var enumConverter = new JsonStringEnumConverter();
+                        opts.JsonSerializerOptions.Converters.Add(enumConverter);
+                    });
+
+                return;
+            }
+
+            // Authentication is enabled - configure standard authorization
             services.AddAuthorization(options =>
             {
                 // Create a default policy that requires API key authentication

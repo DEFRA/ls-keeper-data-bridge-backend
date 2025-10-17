@@ -1,23 +1,21 @@
+using KeeperData.Core.ETL.Abstract;
+using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Storage;
-using KeeperData.Bridge.Filters;
-using KeeperData.Bridge.Config;
 using Microsoft.AspNetCore.Mvc;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using KeeperData.Core.ETL.Impl;
-using KeeperData.Core.ETL.Abstract;
 
 namespace KeeperData.Bridge.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[FeatureFlag(nameof(FeatureFlags.SourceDataController))]
-public class SourceDataController(
+public class ExternalCatalogueController(
     IExternalCatalogueServiceFactory ExternalCatalogueServiceFactory,
     IBlobStorageServiceFactory blobStorageServiceFactory,
-    IDataSetDefinitions dataSetDefinitions) : ControllerBase
+    IDataSetDefinitions dataSetDefinitions,
+    ILogger<ExternalCatalogueController> logger) : ControllerBase
 {
     /// <summary>
     /// Gets a plain text report of available files for a specified source type.
@@ -76,8 +74,7 @@ public class SourceDataController(
         IFormFile file,
         CancellationToken cancellationToken = default)
     {
-        var logger = HttpContext.RequestServices.GetService<ILogger<SourceDataController>>();
-        logger?.LogInformation("Upload request received. ObjectKey: {ObjectKey}, ContentType: {ContentType}, FileName: {FileName}",
+        logger.LogInformation("Upload request received. ObjectKey: {ObjectKey}, ContentType: {ContentType}, FileName: {FileName}",
             objectKey, file?.ContentType, file?.FileName);
 
         if (string.IsNullOrWhiteSpace(objectKey))
@@ -170,8 +167,7 @@ public class SourceDataController(
         [FromQuery] string objectKey,
         CancellationToken cancellationToken = default)
     {
-        var logger = HttpContext.RequestServices.GetService<ILogger<SourceDataController>>();
-        logger?.LogInformation("Raw upload request received. ObjectKey: {ObjectKey}, ContentType: {ContentType}",
+        logger.LogInformation("Raw upload request received. ObjectKey: {ObjectKey}, ContentType: {ContentType}",
             objectKey, Request.ContentType);
 
         if (string.IsNullOrWhiteSpace(objectKey))

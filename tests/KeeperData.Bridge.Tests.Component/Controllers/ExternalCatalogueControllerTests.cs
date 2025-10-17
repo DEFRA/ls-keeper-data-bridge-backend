@@ -6,13 +6,13 @@ using System.Net.Http.Headers;
 
 namespace KeeperData.Bridge.Tests.Component.Controllers;
 
-public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
+public class ExternalCatalogueControllerTests : IClassFixture<AppWebApplicationFactory>
 {
     private readonly AppWebApplicationFactory _factory;
     private readonly HttpClient _client;
     private const string TestApiKey = "test-api-key-for-component-tests";
 
-    public SourceDataControllerTests(AppWebApplicationFactory factory)
+    public ExternalCatalogueControllerTests(AppWebApplicationFactory factory)
     {
         _factory = factory;
 
@@ -38,7 +38,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("ApiKey", TestApiKey);
 
         // Act
-        var response = await _client.GetAsync($"/api/sourcedata/files?sourceType={BlobStorageSources.Internal}");
+        var response = await _client.GetAsync($"/api/externalcatalogue/files?sourceType={BlobStorageSources.Internal}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -55,7 +55,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("ApiKey", TestApiKey);
 
         // Act
-        var response = await _client.GetAsync($"/api/sourcedata/files?sourceType={BlobStorageSources.External}");
+        var response = await _client.GetAsync($"/api/externalcatalogue/files?sourceType={BlobStorageSources.External}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -72,7 +72,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("ApiKey", TestApiKey);
 
         // Act
-        var response = await _client.GetAsync("/api/sourcedata/files?sourceType=invalid");
+        var response = await _client.GetAsync("/api/externalcatalogue/files?sourceType=invalid");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -87,7 +87,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("ApiKey", TestApiKey);
 
         // Act
-        var response = await _client.GetAsync("/api/sourcedata/files");
+        var response = await _client.GetAsync("/api/externalcatalogue/files");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -104,7 +104,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("ApiKey", TestApiKey);
 
         // Act
-        var response = await _client.GetAsync("/api/sourcedata/files?sourceType=");
+        var response = await _client.GetAsync("/api/externalcatalogue/files?sourceType=");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -118,7 +118,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
     public async Task GetFilesReport_WithMissingApiKey_ShouldReturnUnauthorized()
     {
         // Act (no Authorization header)
-        var response = await _client.GetAsync($"/api/sourcedata/files?sourceType={BlobStorageSources.Internal}");
+        var response = await _client.GetAsync($"/api/externalcatalogue/files?sourceType={BlobStorageSources.Internal}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -133,7 +133,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("ApiKey", "invalid-key");
 
         // Act
-        var response = await _client.GetAsync($"/api/sourcedata/files?sourceType={BlobStorageSources.Internal}");
+        var response = await _client.GetAsync($"/api/externalcatalogue/files?sourceType={BlobStorageSources.Internal}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -148,7 +148,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("ApiKey", "");
 
         // Act
-        var response = await _client.GetAsync($"/api/sourcedata/files?sourceType={BlobStorageSources.Internal}");
+        var response = await _client.GetAsync($"/api/externalcatalogue/files?sourceType={BlobStorageSources.Internal}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -163,7 +163,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TestApiKey);
 
         // Act
-        var response = await _client.GetAsync($"/api/sourcedata/files?sourceType={BlobStorageSources.Internal}");
+        var response = await _client.GetAsync($"/api/externalcatalogue/files?sourceType={BlobStorageSources.Internal}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -178,7 +178,7 @@ public class SourceDataControllerTests : IClassFixture<AppWebApplicationFactory>
         _client.DefaultRequestHeaders.Add("Authorization", "NotApiKey SomeValue");
 
         // Act
-        var response = await _client.GetAsync($"/api/sourcedata/files?sourceType={BlobStorageSources.Internal}");
+        var response = await _client.GetAsync($"/api/externalcatalogue/files?sourceType={BlobStorageSources.Internal}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

@@ -1,4 +1,5 @@
 using KeeperData.Bridge.Middleware;
+using KeeperData.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -23,6 +24,8 @@ public static class WebApplicationExtensions
             logger.LogInformation("{applicationName} stopping", env.ApplicationName));
         applicationLifetime.ApplicationStopped.Register(() =>
             logger.LogInformation("{applicationName} stopped", env.ApplicationName));
+
+        app.UseEmfExporter();
 
         app.UseMiddleware<ExceptionHandlingMiddleware>();
 

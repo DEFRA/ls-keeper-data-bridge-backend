@@ -1,14 +1,20 @@
 using KeeperData.Application.Setup;
+using KeeperData.Infrastructure.Config;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Infrastructure.Database.Setup;
 using KeeperData.Infrastructure.Messaging.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
+using KeeperData.Infrastructure.ETL.Setup;
+using KeeperData.Infrastructure.Extensions;
+using KeeperData.Infrastructure.Telemetry;
 using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using OpenTelemetry.Metrics;
 using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 using KeeperData.Core.ETL.Setup;
@@ -24,6 +30,7 @@ namespace KeeperData.Bridge.Setup
         public static void ConfigureApi(this IServiceCollection services, IConfiguration configuration)
         {
             services.AddDefaultAWSOptions(configuration.GetAWSOptions());
+            services.Configure<AwsConfig>(configuration.GetSection(AwsConfig.SectionName));
 
             services.ConfigureHealthChecks();
 
@@ -49,12 +56,22 @@ namespace KeeperData.Bridge.Setup
 
             services.AddBackgroundJobDependencies(configuration);
 
+            services.AddKeeperDataMetrics();
+
+            // Configure OpenTelemetry for metrics
+            services.AddOpenTelemetry()
+                .WithMetrics(metrics =>
+                {
+                    metrics.AddMeter(MetricNames.MeterName);
+                });
+
             services.AddMongoQueryService();
         }
 
         private static void ConfigureHealthChecks(this IServiceCollection services)
         {
             services.AddHealthChecks();
+            services.AddSingleton<IHealthCheckPublisher, HealthCheckMetricsPublisher>();
         }
 
         private static void ConfigureFeatureFlags(this IServiceCollection services, IConfiguration configuration)

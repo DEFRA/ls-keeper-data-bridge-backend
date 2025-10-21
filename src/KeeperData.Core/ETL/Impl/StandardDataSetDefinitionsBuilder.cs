@@ -8,7 +8,7 @@ public static class StandardDataSetDefinitionsBuilder
     public static DataSetDefinitions Build()
     {
         var list = new List<DataSetDefinition>();
-        var samCPHHolding = list.With(new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", DatePattern));
+        var samCPHHolding = list.With(new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", DatePattern, "CPH", ChangeType.HeaderName));
 
         return new DataSetDefinitions
         {

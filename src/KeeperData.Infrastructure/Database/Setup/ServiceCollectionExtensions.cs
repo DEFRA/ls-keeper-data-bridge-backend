@@ -16,6 +16,8 @@ using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Conventions;
 using MongoDB.Bson.Serialization.Serializers;
 using System.Diagnostics.CodeAnalysis;
+using KeeperData.Core.Database;
+using Microsoft.Extensions.Options;
 
 namespace KeeperData.Infrastructure.Database.Setup;
 
@@ -30,6 +32,13 @@ public static class ServiceCollectionExtensions
 
         var mongoConfig = configuration.GetSection("Mongo").Get<MongoConfig>()!;
         services.Configure<MongoConfig>(configuration.GetSection("Mongo"));
+
+        // Register IDatabaseConfig which wraps MongoConfig
+        services.AddSingleton<IOptions<IDatabaseConfig>>(sp =>
+        {
+            var mongoConfigOptions = sp.GetRequiredService<IOptions<MongoConfig>>();
+            return Options.Create<IDatabaseConfig>(mongoConfigOptions.Value);
+        });
 
         services.AddSingleton<IMongoDbClientFactory, MongoDbClientFactory>();
         services.AddScoped<IMongoSessionFactory, MongoSessionFactory>();

@@ -1,0 +1,906 @@
+using KeeperData.Core.ETL.Abstract;
+using KeeperData.Core.Reporting;
+using KeeperData.Core.Reporting.Dtos;
+using KeeperData.Core.Storage;
+using KeeperData.Core.Storage.Dtos;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+using MongoDB.Driver;
+using MongoDB.Bson;
+using CsvHelper;
+using System.Globalization;
+using CsvHelper.Configuration;
+using Microsoft.Extensions.Options;
+using KeeperData.Core.Database;
+using System.Collections.Immutable;
+
+namespace KeeperData.Core.ETL.Impl;
+
+/// <summary>
+/// This class is responsible for ingesting csv files into mongo.
+/// </summary>
+public class IngestionPipeline(
+    IBlobStorageServiceFactory blobStorageServiceFactory,
+    IExternalCatalogueServiceFactory ExternalCatalogueServiceFactory,
+    IMongoClient mongoClient,
+    IOptions<IDatabaseConfig> databaseConfig,
+    IImportReportingService reportingService,
+    ILogger<IngestionPipeline> logger) : IIngestionPipeline
+{
+    private const int BatchSize = 1000;
+    private const int LogInterval = 100;
+    private const int LineageEventBatchSize = 500;
+    private readonly IDatabaseConfig _databaseConfig = databaseConfig.Value;
+
+    public async Task StartAsync(Guid importId, CancellationToken ct)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation("Starting ingest pipeline for ImportId: {ImportId}", importId);
+
+        try
+        {
+            var storageServices = InitializeStorageServices(importId);
+
+            var fileSets = await DiscoverFilesAsync(importId, storageServices.CatalogueService, ct);
+
+            await UpdateIngestionPhaseStartedAsync(importId, ct);
+
+            var ingestionResults = await ProcessAllFilesAsync(
+                importId,
+                fileSets.FileSets,
+                fileSets.TotalFiles,
+                storageServices.BlobStorage,
+                ct);
+
+            await UpdateIngestionPhaseCompletedAsync(
+                importId,
+                ingestionResults.FilesProcessed,
+                ingestionResults.RecordsCreated,
+                ingestionResults.RecordsUpdated,
+                ingestionResults.RecordsDeleted,
+                ct);
+
+            LogPipelineCompletion(importId, stopwatch);
+        }
+        catch (Exception ex)
+        {
+            LogPipelineFailure(importId, stopwatch, ex);
+            throw;
+        }
+    }
+
+    private (IBlobStorageService BlobStorage, ExternalCatalogueService CatalogueService) InitializeStorageServices(Guid importId)
+    {
+        var blobs = blobStorageServiceFactory.Get();
+        var catalogueService = ExternalCatalogueServiceFactory.Create(blobs);
+
+        logger.LogDebug("Initialized blob storage services for ImportId: {ImportId}", importId);
+
+        return (blobs, catalogueService);
+    }
+
+    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(
+        Guid importId,
+        ExternalCatalogueService catalogueService,
+        CancellationToken ct)
+    {
+        logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
+
+        var fileSets = await catalogueService.GetFileSetsAsync(20, ct);
+        var totalFiles = fileSets.Sum(fs => fs.Files.Length);
+
+        logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",
+            fileSets.Count,
+            totalFiles,
+            importId);
+
+        return (fileSets, totalFiles);
+    }
+
+    private async Task UpdateIngestionPhaseStartedAsync(Guid importId, CancellationToken ct)
+    {
+        await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
+        {
+            Status = PhaseStatus.Started,
+            FilesProcessed = 0,
+            RecordsCreated = 0,
+            RecordsUpdated = 0,
+            RecordsDeleted = 0
+        }, ct);
+    }
+
+    private async Task<IngestionTotals> ProcessAllFilesAsync(
+        Guid importId,
+        ImmutableList<FileSet> fileSets,
+        int totalFiles,
+        IBlobStorageService blobStorage,
+        CancellationToken ct)
+    {
+        logger.LogInformation("Step 2: Processing and ingesting files for ImportId: {ImportId}", importId);
+
+        var totals = new IngestionTotals();
+        var processedFileCount = 0;
+
+        foreach (var fileSet in fileSets)
+        {
+            logger.LogDebug("Processing file set for definition: {DefinitionName} with {FileCount} file(s) for ImportId: {ImportId}",
+                fileSet.Definition.Name,
+                fileSet.Files.Length,
+                importId);
+
+            foreach (var file in fileSet.Files)
+            {
+                processedFileCount++;
+
+                var fileResult = await ProcessSingleFileAsync(
+                    importId,
+                    fileSet,
+                    file,
+                    processedFileCount,
+                    totalFiles,
+                    blobStorage,
+                    ct);
+
+                totals = totals.Add(fileResult);
+
+                // Update progress after each file
+                await UpdateIngestionPhaseProgressAsync(
+                    importId,
+                    processedFileCount,
+                    totals,
+                    ct);
+            }
+        }
+
+        logger.LogInformation("Step 2 completed: Processed {ProcessedFileCount} file(s) for ImportId: {ImportId}",
+            processedFileCount,
+            importId);
+
+        return totals with { FilesProcessed = processedFileCount };
+    }
+
+    private async Task<IngestionTotals> ProcessSingleFileAsync(
+        Guid importId,
+        FileSet fileSet,
+        StorageObjectInfo file,
+        int currentFileNumber,
+        int totalFiles,
+        IBlobStorageService blobStorage,
+        CancellationToken ct)
+    {
+        var fileStopwatch = Stopwatch.StartNew();
+
+        logger.LogInformation("Processing file {CurrentFile}/{TotalFiles}: {FileKey} for ImportId: {ImportId}",
+            currentFileNumber,
+            totalFiles,
+            file.Key,
+            importId);
+
+        try
+        {
+            var fileMetrics = await IngestFileAsync(importId, blobStorage, fileSet, file, ct);
+            fileStopwatch.Stop();
+
+            await RecordSuccessfulIngestionAsync(importId, file, fileMetrics, fileStopwatch.ElapsedMilliseconds, ct);
+
+            logger.LogInformation("Successfully ingested file: {FileKey} - Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms",
+                file.Key,
+                fileMetrics.RecordsCreated,
+                fileMetrics.RecordsUpdated,
+                fileMetrics.RecordsDeleted,
+                fileStopwatch.ElapsedMilliseconds);
+
+            return new IngestionTotals
+            {
+                RecordsCreated = fileMetrics.RecordsCreated,
+                RecordsUpdated = fileMetrics.RecordsUpdated,
+                RecordsDeleted = fileMetrics.RecordsDeleted
+            };
+        }
+        catch (Exception ex)
+        {
+            fileStopwatch.Stop();
+            logger.LogError(ex, "Failed to ingest file: {FileKey} after {Duration}ms for ImportId: {ImportId}",
+                file.Key,
+                fileStopwatch.ElapsedMilliseconds,
+                importId);
+
+            await RecordFailedIngestionAsync(importId, file, fileStopwatch.ElapsedMilliseconds, ex, ct);
+
+            throw;
+        }
+    }
+
+    private async Task<FileIngestionMetrics> IngestFileAsync(
+        Guid importId,
+        IBlobStorageService blobs,
+        FileSet fileSet,
+        StorageObjectInfo file,
+        CancellationToken ct)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var collectionName = fileSet.Definition.Name;
+
+        logger.LogInformation("Starting ingestion of file {FileKey} into collection {CollectionName}",
+            file.Key, collectionName);
+
+        var collection = await EnsureCollectionExistsAsync(collectionName, ct);
+        await EnsureWildcardIndexExistsAsync(collection, ct);
+
+        var csvContext = await OpenCsvFileAsync(blobs, file.Key, ct);
+
+        var headers = await ReadAndValidateHeadersAsync(
+            csvContext.Csv,
+            file.Key,
+            fileSet.Definition.PrimaryKeyHeaderName,
+            fileSet.Definition.ChangeTypeHeaderName);
+
+        var metrics = await ProcessCsvRecordsAsync(
+            importId,
+            collection,
+            csvContext.Csv,
+            headers,
+            file.Key,
+            collectionName,
+            fileSet.Definition,
+            ct);
+
+        stopwatch.Stop();
+        logger.LogInformation("Completed ingestion of file {FileKey}. Total records: {TotalRecords}, Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms",
+            file.Key,
+            metrics.RecordsProcessed,
+            metrics.RecordsCreated,
+            metrics.RecordsUpdated,
+            metrics.RecordsDeleted,
+            stopwatch.ElapsedMilliseconds);
+
+        return metrics;
+    }
+
+    private async Task<CsvContext> OpenCsvFileAsync(
+        IBlobStorageService blobs,
+        string fileKey,
+        CancellationToken ct)
+    {
+        var stream = await blobs.OpenReadAsync(fileKey, ct);
+        var reader = new StreamReader(stream);
+        var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            HasHeaderRecord = true,
+            TrimOptions = TrimOptions.Trim,
+            BadDataFound = null // Ignore bad data
+        });
+
+        return new CsvContext(stream, reader, csv);
+    }
+
+    private async Task<CsvHeaders> ReadAndValidateHeadersAsync(
+        CsvReader csv,
+        string fileKey,
+        string primaryKeyHeaderName,
+        string changeTypeHeaderName)
+    {
+        await csv.ReadAsync();
+        csv.ReadHeader();
+        var headers = csv.HeaderRecord;
+
+        if (headers == null || headers.Length == 0)
+        {
+            logger.LogWarning("No headers found in file {FileKey}, skipping ingestion", fileKey);
+            throw new InvalidOperationException($"No headers found in file {fileKey}");
+        }
+
+        ValidatePrimaryKeyHeader(headers, primaryKeyHeaderName);
+        ValidateChangeTypeHeader(headers, changeTypeHeaderName);
+
+        logger.LogInformation("CSV headers read successfully. Total columns: {ColumnCount}, Primary Key: {PrimaryKey}, Change Type: {ChangeType}",
+            headers.Length, primaryKeyHeaderName, changeTypeHeaderName);
+
+        return new CsvHeaders(headers, primaryKeyHeaderName, changeTypeHeaderName);
+    }
+
+    private void ValidatePrimaryKeyHeader(string[] headers, string primaryKeyHeaderName)
+    {
+        if (!headers.Contains(primaryKeyHeaderName))
+        {
+            throw new InvalidOperationException(
+                $"Primary key header '{primaryKeyHeaderName}' not found in CSV headers. Available headers: {string.Join(", ", headers)}");
+        }
+    }
+
+    private void ValidateChangeTypeHeader(string[] headers, string changeTypeHeaderName)
+    {
+        if (!headers.Contains(changeTypeHeaderName))
+        {
+            throw new InvalidOperationException(
+                $"Change type header '{changeTypeHeaderName}' not found in CSV headers. Available headers: {string.Join(", ", headers)}");
+        }
+    }
+
+    private async Task<FileIngestionMetrics> ProcessCsvRecordsAsync(
+        Guid importId,
+        IMongoCollection<BsonDocument> collection,
+        CsvReader csv,
+        CsvHeaders headers,
+        string fileKey,
+        string collectionName,
+        DataSetDefinition definition,
+        CancellationToken ct)
+    {
+        var metrics = new RecordMetricsAccumulator();
+        var batch = new List<(BsonDocument Document, string ChangeType)>();
+        var lineageEvents = new List<RecordLineageEvent>();
+
+        while (await csv.ReadAsync())
+        {
+            var changeType = csv.GetField(headers.ChangeTypeHeaderName)?.ToUpperInvariant() ?? string.Empty;
+
+            if (!IsValidChangeType(changeType))
+            {
+                logger.LogWarning("Invalid change type '{ChangeType}' for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
+                    changeType, csv.GetField(headers.PrimaryKeyHeaderName), fileKey);
+                metrics.RecordsSkipped++;
+                continue;
+            }
+
+            var document = CreateDocumentFromCsvRecord(csv, headers);
+            batch.Add((document, changeType));
+
+            if (batch.Count >= BatchSize)
+            {
+                var batchMetrics = await ProcessBatchAsync(
+                    importId,
+                    collection,
+                    batch,
+                    fileKey,
+                    collectionName,
+                    lineageEvents,
+                    ct);
+
+                metrics.AddBatch(batchMetrics);
+
+                LogProgressIfNeeded(metrics.RecordsProcessed, fileKey);
+
+                batch.Clear();
+
+                await FlushLineageEventsIfNeededAsync(lineageEvents, ct);
+            }
+        }
+
+        // Process remaining records
+        if (batch.Count > 0)
+        {
+            var batchMetrics = await ProcessBatchAsync(
+                importId,
+                collection,
+                batch,
+                fileKey,
+                collectionName,
+                lineageEvents,
+                ct);
+
+            metrics.AddBatch(batchMetrics);
+        }
+
+        // Flush remaining lineage events
+        await FlushLineageEventsAsync(lineageEvents, ct);
+
+        return metrics.ToFileMetrics();
+    }
+
+    private bool IsValidChangeType(string changeType)
+    {
+        return changeType == ChangeType.Delete ||
+               changeType == ChangeType.Update ||
+               changeType == ChangeType.Insert;
+    }
+
+    private void LogProgressIfNeeded(int recordsProcessed, string fileKey)
+    {
+        if (recordsProcessed % (LogInterval * BatchSize) == 0 || recordsProcessed % LogInterval == 0)
+        {
+            logger.LogInformation("Imported {RecordsProcessed} records from file {FileKey}",
+                recordsProcessed, fileKey);
+        }
+    }
+
+    private async Task FlushLineageEventsIfNeededAsync(
+        List<RecordLineageEvent> lineageEvents,
+        CancellationToken ct)
+    {
+        if (lineageEvents.Count >= LineageEventBatchSize)
+        {
+            await reportingService.RecordLineageEventsBatchAsync(lineageEvents, ct);
+            lineageEvents.Clear();
+        }
+    }
+
+    private async Task FlushLineageEventsAsync(
+        List<RecordLineageEvent> lineageEvents,
+        CancellationToken ct)
+    {
+        if (lineageEvents.Count > 0)
+        {
+            await reportingService.RecordLineageEventsBatchAsync(lineageEvents, ct);
+        }
+    }
+
+    private async Task<IMongoCollection<BsonDocument>> EnsureCollectionExistsAsync(
+        string collectionName,
+        CancellationToken ct)
+    {
+        var database = mongoClient.GetDatabase(_databaseConfig.DatabaseName);
+
+        var collections = await database.ListCollectionNamesAsync(cancellationToken: ct);
+        var collectionList = await collections.ToListAsync(ct);
+
+        if (!collectionList.Contains(collectionName))
+        {
+            logger.LogInformation("Creating collection {CollectionName}", collectionName);
+            await database.CreateCollectionAsync(collectionName, cancellationToken: ct);
+        }
+
+        return database.GetCollection<BsonDocument>(collectionName);
+    }
+
+    private async Task EnsureWildcardIndexExistsAsync(
+        IMongoCollection<BsonDocument> collection,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (await WildcardIndexExistsAsync(collection, ct))
+            {
+                logger.LogDebug("Wildcard index already exists on collection {CollectionName}",
+                    collection.CollectionNamespace.CollectionName);
+                return;
+            }
+
+            await CreateWildcardIndexAsync(collection, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to create wildcard index on collection {CollectionName}. Continuing with ingestion.",
+                collection.CollectionNamespace.CollectionName);
+        }
+    }
+
+    private async Task<bool> WildcardIndexExistsAsync(
+        IMongoCollection<BsonDocument> collection,
+        CancellationToken ct)
+    {
+        var indexes = await collection.Indexes.ListAsync(ct);
+        var indexList = await indexes.ToListAsync(ct);
+
+        return indexList.Any(index =>
+        {
+            if (index.TryGetValue("key", out var key) && key.IsBsonDocument)
+            {
+                var keyDoc = key.AsBsonDocument;
+                return keyDoc.Contains("$**");
+            }
+            return false;
+        });
+    }
+
+    private async Task CreateWildcardIndexAsync(
+        IMongoCollection<BsonDocument> collection,
+        CancellationToken ct)
+    {
+        logger.LogInformation("Creating wildcard index on collection {CollectionName}",
+            collection.CollectionNamespace.CollectionName);
+
+        var wildcardIndexKeys = Builders<BsonDocument>.IndexKeys.Wildcard("$**");
+        var indexModel = new CreateIndexModel<BsonDocument>(wildcardIndexKeys);
+
+        await collection.Indexes.CreateOneAsync(indexModel, cancellationToken: ct);
+
+        logger.LogInformation("Wildcard index created successfully on collection {CollectionName}",
+            collection.CollectionNamespace.CollectionName);
+    }
+
+    private BsonDocument CreateDocumentFromCsvRecord(
+        CsvReader csv,
+        CsvHeaders headers)
+    {
+        var document = new BsonDocument();
+        var now = DateTime.UtcNow;
+
+        foreach (var header in headers.AllHeaders)
+        {
+            var value = csv.GetField(header);
+
+            if (header == headers.PrimaryKeyHeaderName)
+            {
+                document["_id"] = value ?? string.Empty;
+            }
+
+            // Add all fields verbatim - treat empty strings as null
+            document[header] = string.IsNullOrEmpty(value) ? BsonNull.Value : value;
+        }
+
+        // Add audit fields
+        document["CreatedAtUtc"] = now;
+        document["UpdatedAtUtc"] = now;
+
+        return document;
+    }
+
+    private async Task<BatchProcessingMetrics> ProcessBatchAsync(
+        Guid importId,
+        IMongoCollection<BsonDocument> collection,
+        List<(BsonDocument Document, string ChangeType)> batch,
+        string fileKey,
+        string collectionName,
+        List<RecordLineageEvent> lineageEvents,
+        CancellationToken ct)
+    {
+        if (batch.Count == 0)
+        {
+            return new BatchProcessingMetrics();
+        }
+
+        var documentIds = batch.Select(b => b.Document["_id"]).ToList();
+        var existingDocsDict = await FetchExistingDocumentsAsync(collection, documentIds, ct);
+        var softDeletedIds = GetSoftDeletedIds(existingDocsDict);
+
+        var bulkOps = new List<WriteModel<BsonDocument>>();
+        var metrics = new BatchMetricsAccumulator();
+
+        foreach (var (document, changeType) in batch)
+        {
+            var docId = document["_id"];
+            var recordId = docId.ToString() ?? string.Empty;
+            var existingDoc = existingDocsDict.GetValueOrDefault(docId);
+
+            if (changeType == ChangeType.Delete)
+            {
+                ProcessDeleteOperation(
+                    bulkOps,
+                    lineageEvents,
+                    docId,
+                    recordId,
+                    existingDoc,
+                    importId,
+                    fileKey,
+                    collectionName,
+                    changeType);
+
+                metrics.Deleted++;
+                metrics.Processed++;
+            }
+            else if (changeType == ChangeType.Insert || changeType == ChangeType.Update)
+            {
+                if (softDeletedIds.Contains(docId))
+                {
+                    logger.LogDebug("Skipping {ChangeType} operation for soft-deleted record with _id: {DocId}",
+                        changeType, docId);
+                    continue;
+                }
+
+                var isCreate = existingDoc == null;
+
+                ProcessUpsertOperation(
+                    bulkOps,
+                    lineageEvents,
+                    document,
+                    docId,
+                    recordId,
+                    existingDoc,
+                    isCreate,
+                    importId,
+                    fileKey,
+                    collectionName,
+                    changeType);
+
+                if (isCreate)
+                {
+                    metrics.Created++;
+                }
+                else
+                {
+                    metrics.Updated++;
+                }
+                metrics.Processed++;
+            }
+        }
+
+        if (bulkOps.Count > 0)
+        {
+            await collection.BulkWriteAsync(bulkOps, new BulkWriteOptions { IsOrdered = false }, ct);
+        }
+
+        return metrics.ToMetrics();
+    }
+
+    private async Task<Dictionary<BsonValue, BsonDocument>> FetchExistingDocumentsAsync(
+        IMongoCollection<BsonDocument> collection,
+        List<BsonValue> documentIds,
+        CancellationToken ct)
+    {
+        var filter = Builders<BsonDocument>.Filter.In("_id", documentIds);
+        var existingDocs = await collection.Find(filter).ToListAsync(ct);
+        return existingDocs.ToDictionary(doc => doc["_id"], doc => doc);
+    }
+
+    private HashSet<BsonValue> GetSoftDeletedIds(Dictionary<BsonValue, BsonDocument> existingDocsDict)
+    {
+        return existingDocsDict
+            .Where(kvp => kvp.Value.Contains("IsDeleted") && kvp.Value["IsDeleted"].AsBoolean)
+            .Select(kvp => kvp.Key)
+            .ToHashSet();
+    }
+
+    private void ProcessDeleteOperation(
+        List<WriteModel<BsonDocument>> bulkOps,
+        List<RecordLineageEvent> lineageEvents,
+        BsonValue docId,
+        string recordId,
+        BsonDocument? existingDoc,
+        Guid importId,
+        string fileKey,
+        string collectionName,
+        string changeType)
+    {
+        var eventTime = DateTime.UtcNow;
+
+        var deleteFilter = Builders<BsonDocument>.Filter.Eq("_id", docId);
+        var deleteUpdate = Builders<BsonDocument>.Update
+            .Set("IsDeleted", true)
+            .Set("DeletedAtUtc", eventTime)
+            .Set("UpdatedAtUtc", eventTime);
+
+        bulkOps.Add(new UpdateOneModel<BsonDocument>(deleteFilter, deleteUpdate));
+
+        lineageEvents.Add(new RecordLineageEvent
+        {
+            RecordId = recordId,
+            CollectionName = collectionName,
+            EventType = RecordEventType.Deleted,
+            ImportId = importId,
+            FileKey = fileKey,
+            EventDateUtc = eventTime,
+            ChangeType = changeType,
+            PreviousValues = existingDoc,
+            NewValues = null
+        });
+    }
+
+    private void ProcessUpsertOperation(
+        List<WriteModel<BsonDocument>> bulkOps,
+        List<RecordLineageEvent> lineageEvents,
+        BsonDocument document,
+        BsonValue docId,
+        string recordId,
+        BsonDocument? existingDoc,
+        bool isCreate,
+        Guid importId,
+        string fileKey,
+        string collectionName,
+        string changeType)
+    {
+        var eventTime = DateTime.UtcNow;
+
+        var upsertFilter = Builders<BsonDocument>.Filter.Eq("_id", docId);
+
+        document["IsDeleted"] = false;
+
+        var update = Builders<BsonDocument>.Update
+            .SetOnInsert("CreatedAtUtc", document["CreatedAtUtc"])
+            .Set("UpdatedAtUtc", document["UpdatedAtUtc"]);
+
+        // Set all other fields
+        foreach (var element in document.Elements)
+        {
+            if (element.Name != "_id" && element.Name != "CreatedAtUtc")
+            {
+                update = update.Set(element.Name, element.Value);
+            }
+        }
+
+        bulkOps.Add(new UpdateOneModel<BsonDocument>(upsertFilter, update)
+        {
+            IsUpsert = true
+        });
+
+        lineageEvents.Add(new RecordLineageEvent
+        {
+            RecordId = recordId,
+            CollectionName = collectionName,
+            EventType = isCreate ? RecordEventType.Created : RecordEventType.Updated,
+            ImportId = importId,
+            FileKey = fileKey,
+            EventDateUtc = eventTime,
+            ChangeType = changeType,
+            PreviousValues = existingDoc,
+            NewValues = document
+        });
+    }
+
+    private async Task RecordSuccessfulIngestionAsync(
+        Guid importId,
+        StorageObjectInfo file,
+        FileIngestionMetrics metrics,
+        long durationMs,
+        CancellationToken ct)
+    {
+        await reportingService.RecordFileIngestionAsync(importId, new FileIngestionRecord
+        {
+            FileKey = file.Key,
+            RecordsProcessed = metrics.RecordsProcessed,
+            RecordsCreated = metrics.RecordsCreated,
+            RecordsUpdated = metrics.RecordsUpdated,
+            RecordsDeleted = metrics.RecordsDeleted,
+            IngestionDurationMs = durationMs,
+            IngestedAtUtc = DateTime.UtcNow,
+            Status = FileProcessingStatus.Ingested
+        }, ct);
+    }
+
+    private async Task RecordFailedIngestionAsync(
+        Guid importId,
+        StorageObjectInfo file,
+        long durationMs,
+        Exception ex,
+        CancellationToken ct)
+    {
+        try
+        {
+            await reportingService.RecordFileIngestionAsync(importId, new FileIngestionRecord
+            {
+                FileKey = file.Key,
+                RecordsProcessed = 0,
+                RecordsCreated = 0,
+                RecordsUpdated = 0,
+                RecordsDeleted = 0,
+                IngestionDurationMs = durationMs,
+                IngestedAtUtc = DateTime.UtcNow,
+                Status = FileProcessingStatus.Failed,
+                Error = ex.Message
+            }, ct);
+        }
+        catch (Exception reportEx)
+        {
+            logger.LogError(reportEx, "Failed to record ingestion failure for file: {FileKey}", file.Key);
+        }
+    }
+
+    private async Task UpdateIngestionPhaseProgressAsync(
+        Guid importId,
+        int filesProcessed,
+        IngestionTotals totals,
+        CancellationToken ct)
+    {
+        await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
+        {
+            Status = PhaseStatus.Started,
+            FilesProcessed = filesProcessed,
+            RecordsCreated = totals.RecordsCreated,
+            RecordsUpdated = totals.RecordsUpdated,
+            RecordsDeleted = totals.RecordsDeleted
+        }, ct);
+    }
+
+    private async Task UpdateIngestionPhaseCompletedAsync(
+        Guid importId,
+        int filesProcessed,
+        int recordsCreated,
+        int recordsUpdated,
+        int recordsDeleted,
+        CancellationToken ct)
+    {
+        await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
+        {
+            Status = PhaseStatus.Completed,
+            FilesProcessed = filesProcessed,
+            RecordsCreated = recordsCreated,
+            RecordsUpdated = recordsUpdated,
+            RecordsDeleted = recordsDeleted,
+            CompletedAtUtc = DateTime.UtcNow
+        }, ct);
+    }
+
+    private void LogPipelineCompletion(Guid importId, Stopwatch stopwatch)
+    {
+        stopwatch.Stop();
+        logger.LogInformation("Import pipeline completed successfully for ImportId: {ImportId}. Total duration: {Duration}ms ({DurationSeconds}s)",
+            importId,
+            stopwatch.ElapsedMilliseconds,
+            stopwatch.Elapsed.TotalSeconds);
+    }
+
+    private void LogPipelineFailure(Guid importId, Stopwatch stopwatch, Exception ex)
+    {
+        stopwatch.Stop();
+        logger.LogError(ex, "Import pipeline failed for ImportId: {ImportId} after {Duration}ms ({DurationSeconds}s)",
+            importId,
+            stopwatch.ElapsedMilliseconds,
+            stopwatch.Elapsed.TotalSeconds);
+    }
+
+    // Helper records and classes for internal state management
+    private record CsvContext(Stream Stream, StreamReader Reader, CsvReader Csv) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            Csv?.Dispose();
+            Reader?.Dispose();
+            await (Stream?.DisposeAsync() ?? ValueTask.CompletedTask);
+        }
+    }
+
+    private record CsvHeaders(string[] AllHeaders, string PrimaryKeyHeaderName, string ChangeTypeHeaderName);
+
+    private record IngestionTotals
+    {
+        public int FilesProcessed { get; init; }
+        public int RecordsCreated { get; init; }
+        public int RecordsUpdated { get; init; }
+        public int RecordsDeleted { get; init; }
+
+        public IngestionTotals Add(IngestionTotals other) => new()
+        {
+            FilesProcessed = FilesProcessed + other.FilesProcessed,
+            RecordsCreated = RecordsCreated + other.RecordsCreated,
+            RecordsUpdated = RecordsUpdated + other.RecordsUpdated,
+            RecordsDeleted = RecordsDeleted + other.RecordsDeleted
+        };
+    }
+
+    private class RecordMetricsAccumulator
+    {
+        public int RecordsProcessed { get; set; }
+        public int RecordsSkipped { get; set; }
+        public int RecordsCreated { get; set; }
+        public int RecordsUpdated { get; set; }
+        public int RecordsDeleted { get; set; }
+
+        public void AddBatch(BatchProcessingMetrics batchMetrics)
+        {
+            RecordsProcessed += batchMetrics.RecordsProcessed;
+            RecordsCreated += batchMetrics.RecordsCreated;
+            RecordsUpdated += batchMetrics.RecordsUpdated;
+            RecordsDeleted += batchMetrics.RecordsDeleted;
+        }
+
+        public FileIngestionMetrics ToFileMetrics() => new()
+        {
+            RecordsProcessed = RecordsProcessed,
+            RecordsCreated = RecordsCreated,
+            RecordsUpdated = RecordsUpdated,
+            RecordsDeleted = RecordsDeleted
+        };
+    }
+
+    private class BatchMetricsAccumulator
+    {
+        public int Processed { get; set; }
+        public int Created { get; set; }
+        public int Updated { get; set; }
+        public int Deleted { get; set; }
+
+        public BatchProcessingMetrics ToMetrics() => new()
+        {
+            RecordsProcessed = Processed,
+            RecordsCreated = Created,
+            RecordsUpdated = Updated,
+            RecordsDeleted = Deleted
+        };
+    }
+
+    private record FileIngestionMetrics
+    {
+        public int RecordsProcessed { get; init; }
+        public int RecordsCreated { get; init; }
+        public int RecordsUpdated { get; init; }
+        public int RecordsDeleted { get; init; }
+    }
+
+    private record BatchProcessingMetrics
+    {
+        public int RecordsProcessed { get; init; }
+        public int RecordsCreated { get; init; }
+        public int RecordsUpdated { get; init; }
+        public int RecordsDeleted { get; init; }
+    }
+}

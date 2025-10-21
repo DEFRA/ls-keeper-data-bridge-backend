@@ -1,6 +1,7 @@
 using FluentAssertions;
 using KeeperData.Bridge.Tests.Integration.Helpers;
 using KeeperData.Core.Crypto;
+using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.Extensions.Logging;
@@ -8,8 +9,6 @@ using Moq;
 using System.Security.Cryptography;
 using System.Text;
 using Xunit.Abstractions;
-using Amazon.S3;
-using KeeperData.Core.Storage;
 
 namespace KeeperData.Bridge.Tests.Integration.Scenarios;
 

@@ -15,7 +15,6 @@ public class FeatureFlagAttribute(string featureName) : ActionFilterAttribute
 
         var isEnabled = featureName switch
         {
-            nameof(FeatureFlags.SourceDataController) => featureFlags.Value.SourceDataController,
             _ => false
         };
 

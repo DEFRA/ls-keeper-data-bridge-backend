@@ -1,28 +1,27 @@
+using KeeperData.Core.ETL.Abstract;
+using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Storage;
-using KeeperData.Bridge.Filters;
-using KeeperData.Bridge.Config;
 using Microsoft.AspNetCore.Mvc;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using KeeperData.Core.ETL.Impl;
-using KeeperData.Core.ETL.Abstract;
 
 namespace KeeperData.Bridge.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[FeatureFlag(nameof(FeatureFlags.SourceDataController))]
-public class SourceDataController(
-    ISourceDataServiceFactory sourceDataServiceFactory,
+public class ExternalCatalogueController(
+    IExternalCatalogueServiceFactory ExternalCatalogueServiceFactory,
     IBlobStorageServiceFactory blobStorageServiceFactory,
-    IDataSetDefinitions dataSetDefinitions) : ControllerBase
+    IDataSetDefinitions dataSetDefinitions,
+    ILogger<ExternalCatalogueController> logger) : ControllerBase
 {
     /// <summary>
     /// Gets a plain text report of available files for a specified source type.
     /// </summary>
     /// <param name="sourceType">The source type - either 'internal' or 'external'</param>
+    /// <param name="days">Number of days to look back for files</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A plain text report of available files</returns>
     [HttpGet("files")]
@@ -41,24 +40,13 @@ public class SourceDataController(
             return BadRequest($"Invalid source type. Must be '{BlobStorageSources.Internal}' or '{BlobStorageSources.External}'.");
         }
 
-        try
-        {
-            var sourceDataService = sourceDataServiceFactory.Create(sourceType);
+        var ExternalCatalogueService = ExternalCatalogueServiceFactory.Create(sourceType);
 
-            var fileSets = await sourceDataService.GetFileSetsAsync(days, cancellationToken);
+        var fileSets = await ExternalCatalogueService.GetFileSetsAsync(days, cancellationToken);
 
-            var report = GenerateReport(sourceType, fileSets, sourceDataService.ToString());
+        var report = GenerateReport(sourceType, fileSets, ExternalCatalogueService.ToString());
 
-            return Content(report, "text/plain", Encoding.UTF8);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, $"An error occurred while retrieving files: {ex.Message}");
-        }
+        return Content(report, "text/plain", Encoding.UTF8);
     }
 
     /// <summary>
@@ -76,8 +64,7 @@ public class SourceDataController(
         IFormFile file,
         CancellationToken cancellationToken = default)
     {
-        var logger = HttpContext.RequestServices.GetService<ILogger<SourceDataController>>();
-        logger?.LogInformation("Upload request received. ObjectKey: {ObjectKey}, ContentType: {ContentType}, FileName: {FileName}",
+        logger.LogInformation("Upload request received. ObjectKey: {ObjectKey}, ContentType: {ContentType}, FileName: {FileName}",
             objectKey, file?.ContentType, file?.FileName);
 
         if (string.IsNullOrWhiteSpace(objectKey))
@@ -125,35 +112,28 @@ public class SourceDataController(
             return UnprocessableEntity(CreateValidationProblem(validationResult.ErrorMessage ?? "Filename validation failed.", "FileName"));
         }
 
-        try
+        var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
+
+        byte[] fileContent;
+        using (var memoryStream = new MemoryStream())
         {
-            var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
-
-            byte[] fileContent;
-            using (var memoryStream = new MemoryStream())
-            {
-                await file.CopyToAsync(memoryStream, cancellationToken);
-                fileContent = memoryStream.ToArray();
-            }
-
-            await blobStorageService.UploadAsync(
-                objectKey,
-                fileContent,
-                file.ContentType,
-                cancellationToken: cancellationToken);
-
-            return Ok(new
-            {
-                Message = "File uploaded successfully",
-                ObjectKey = objectKey,
-                Size = fileContent.Length,
-                ContentType = file.ContentType
-            });
+            await file.CopyToAsync(memoryStream, cancellationToken);
+            fileContent = memoryStream.ToArray();
         }
-        catch (Exception ex)
+
+        await blobStorageService.UploadAsync(
+            objectKey,
+            fileContent,
+            file.ContentType,
+            cancellationToken: cancellationToken);
+
+        return Ok(new
         {
-            return StatusCode(500, $"An error occurred while uploading the file: {ex.Message}");
-        }
+            Message = "File uploaded successfully",
+            ObjectKey = objectKey,
+            Size = fileContent.Length,
+            ContentType = file.ContentType
+        });
     }
 
     /// <summary>
@@ -170,8 +150,7 @@ public class SourceDataController(
         [FromQuery] string objectKey,
         CancellationToken cancellationToken = default)
     {
-        var logger = HttpContext.RequestServices.GetService<ILogger<SourceDataController>>();
-        logger?.LogInformation("Raw upload request received. ObjectKey: {ObjectKey}, ContentType: {ContentType}",
+        logger.LogInformation("Raw upload request received. ObjectKey: {ObjectKey}, ContentType: {ContentType}",
             objectKey, Request.ContentType);
 
         if (string.IsNullOrWhiteSpace(objectKey))
@@ -195,40 +174,33 @@ public class SourceDataController(
             return UnprocessableEntity(CreateValidationProblem(validationResult.ErrorMessage ?? "Filename validation failed.", "FileName"));
         }
 
-        try
+        var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
+
+        byte[] fileContent;
+        using (var memoryStream = new MemoryStream())
         {
-            var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
-
-            byte[] fileContent;
-            using (var memoryStream = new MemoryStream())
-            {
-                await Request.Body.CopyToAsync(memoryStream, cancellationToken);
-                fileContent = memoryStream.ToArray();
-            }
-
-            if (fileContent.Length == 0)
-            {
-                return UnprocessableEntity(CreateValidationProblem("File content cannot be empty.", "File"));
-            }
-
-            await blobStorageService.UploadAsync(
-                objectKey,
-                fileContent,
-                Request.ContentType ?? "text/csv",
-                cancellationToken: cancellationToken);
-
-            return Ok(new
-            {
-                Message = "File uploaded successfully",
-                ObjectKey = objectKey,
-                Size = fileContent.Length,
-                ContentType = Request.ContentType ?? "text/csv"
-            });
+            await Request.Body.CopyToAsync(memoryStream, cancellationToken);
+            fileContent = memoryStream.ToArray();
         }
-        catch (Exception ex)
+
+        if (fileContent.Length == 0)
         {
-            return StatusCode(500, $"An error occurred while uploading the file: {ex.Message}");
+            return UnprocessableEntity(CreateValidationProblem("File content cannot be empty.", "File"));
         }
+
+        await blobStorageService.UploadAsync(
+            objectKey,
+            fileContent,
+            Request.ContentType ?? "text/csv",
+            cancellationToken: cancellationToken);
+
+        return Ok(new
+        {
+            Message = "File uploaded successfully",
+            ObjectKey = objectKey,
+            Size = fileContent.Length,
+            ContentType = Request.ContentType ?? "text/csv"
+        });
     }
 
     private static string GenerateReport(string sourceType, IReadOnlyList<FileSet> fileSets, string footer)

@@ -3,7 +3,7 @@ using System.Collections.Immutable;
 
 namespace KeeperData.Core.ETL.Abstract;
 
-public interface ISourceDataService
+public interface IExternalCatalogueService
 {
     /// <summary>
     /// Gets the file sets for a specific dataset for a specific date

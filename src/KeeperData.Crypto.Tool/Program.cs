@@ -114,15 +114,15 @@ generateCsvCommand.SetAction(async (parseResult) =>
     var outputDir = parseResult.GetValue<string>("--output") ?? "generated-csv";
     var recordCount = parseResult.GetValue<int>("--records");
     if (recordCount == 0) recordCount = 1000;
-    
+
     var deltaPercentage = parseResult.GetValue<double>("--delta-percentage");
     if (deltaPercentage == 0) deltaPercentage = 0.1;
-    
+
     var updatePercentage = parseResult.GetValue<double>("--update-percentage");
     if (updatePercentage == 0) updatePercentage = 0.8;
-    
+
     var seed = parseResult.GetValue<int?>("--seed");
-    
+
     var columns = parseResult.GetValue<int>("--columns");
     if (columns == 0) columns = 5;
 
@@ -191,15 +191,15 @@ generateSingleCsvCommand.SetAction(async (parseResult) =>
     var outputDir = parseResult.GetValue<string>("--output") ?? "generated-csv";
     var recordCount = parseResult.GetValue<int>("--records");
     if (recordCount == 0) recordCount = 1000;
-    
+
     var deltaPercentage = parseResult.GetValue<double>("--delta-percentage");
     if (deltaPercentage == 0) deltaPercentage = 0.1;
-    
+
     var updatePercentage = parseResult.GetValue<double>("--update-percentage");
     if (updatePercentage == 0) updatePercentage = 0.8;
-    
+
     var seed = parseResult.GetValue<int?>("--seed");
-    
+
     var columns = parseResult.GetValue<int>("--columns");
     if (columns == 0) columns = 5;
 

@@ -8,6 +8,8 @@ var app = CreateWebApplication(args);
 await app.RunAsync();
 return;
 
+// Just adding in an insubstantial change to bump version and force a build 
+
 [ExcludeFromCodeCoverage]
 static WebApplication CreateWebApplication(string[] args)
 {

@@ -19,10 +19,9 @@ public class AwsSnsHealthCheck(IAmazonSimpleNotificationService snsClient, IServ
 
         try
         {
-            var result = !string.IsNullOrEmpty(defaultTopicArn) ?
-                 await CheckByTopicArn(defaultTopicName, defaultTopicArn, cancellationToken)
-                 : await CheckByTopicName(defaultTopicName, cancellationToken);
-            return HealthCheckResult.Degraded($"SNS topic '{defaultTopicName}' is probably fine actually, result was '{result}'");
+            return !string.IsNullOrEmpty(defaultTopicArn) ?
+                await CheckByTopicArn(defaultTopicName, defaultTopicArn, cancellationToken)
+                : await CheckByTopicName(defaultTopicName, cancellationToken);
         }
         catch (NotFoundException ex)
         {

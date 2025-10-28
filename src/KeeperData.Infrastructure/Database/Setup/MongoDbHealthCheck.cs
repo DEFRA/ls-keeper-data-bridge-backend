@@ -22,7 +22,7 @@ public class MongoDbHealthCheck(IMongoClient mongoClient, IOptions<MongoConfig> 
                 .RunCommandAsync(s_command, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            return HealthCheckResult.Healthy("MongoDB is reachable");
+            return HealthCheckResult.Unhealthy("MongoDB health check is probably fine actually");
         }
         catch (Exception ex)
         {

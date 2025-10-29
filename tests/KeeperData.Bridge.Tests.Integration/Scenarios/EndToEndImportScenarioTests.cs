@@ -104,8 +104,9 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
             Name: CollectionName,
             FilePrefixFormat: $"LITP_TEST_PERSONS_{{0}}",
             DatePattern: "yyyyMMdd",
-            PrimaryKeyHeaderName: "PersonId",
-            ChangeTypeHeaderName: "CHANGETYPE");
+            PrimaryKeyHeaderNames: ["PersonId"],
+            ChangeTypeHeaderName: "CHANGETYPE",
+            Accumulators: []);
     }
 
     private (string CsvContent, List<PersonRecord> Records) GenerateTestCsvData(int recordCount)
@@ -119,6 +120,11 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
         var dataSetDefinitions = new DataSetDefinitions
         {
             SamCPHHolding = dataSetDefinition,
+            CTSCPHHolding = dataSetDefinition,
+            CTSKeeper = dataSetDefinition,
+            SamCPHHolder = dataSetDefinition,
+            SamHerd = dataSetDefinition,
+            SamParty = dataSetDefinition,
             All = [dataSetDefinition]
         };
 

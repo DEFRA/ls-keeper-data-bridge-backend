@@ -32,6 +32,13 @@ public class IngestionPipeline(
     private const int LineageEventBatchSize = 500;
     private readonly IDatabaseConfig _databaseConfig = databaseConfig.Value;
 
+    // MongoDB field name constants
+    private const string FieldId = "_id";
+    private const string FieldCreatedAtUtc = "CreatedAtUtc";
+    private const string FieldUpdatedAtUtc = "UpdatedAtUtc";
+    private const string FieldIsDeleted = "IsDeleted";
+    private const string FieldDeletedAtUtc = "DeletedAtUtc";
+
     public async Task StartAsync(Guid importId, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -114,7 +121,8 @@ public class IngestionPipeline(
         ImmutableList<FileSet> fileSets,
         int totalFiles,
         IBlobStorageService blobStorage,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         logger.LogInformation("Step 2: Processing and ingesting files for ImportId: {ImportId}", importId);
 
@@ -232,7 +240,7 @@ public class IngestionPipeline(
         var headers = await ReadAndValidateHeadersAsync(
             csvContext.Csv,
             file.Key,
-            fileSet.Definition.PrimaryKeyHeaderName,
+            fileSet.Definition.PrimaryKeyHeaderNames,
             fileSet.Definition.ChangeTypeHeaderName);
 
         var metrics = await ProcessCsvRecordsAsync(
@@ -277,7 +285,7 @@ public class IngestionPipeline(
     private async Task<CsvHeaders> ReadAndValidateHeadersAsync(
         CsvReader csv,
         string fileKey,
-        string primaryKeyHeaderName,
+        string[] primaryKeyHeaderNames,
         string changeTypeHeaderName)
     {
         await csv.ReadAsync();
@@ -290,21 +298,23 @@ public class IngestionPipeline(
             throw new InvalidOperationException($"No headers found in file {fileKey}");
         }
 
-        ValidatePrimaryKeyHeader(headers, primaryKeyHeaderName);
+        ValidatePrimaryKeyHeaders(headers, primaryKeyHeaderNames);
         ValidateChangeTypeHeader(headers, changeTypeHeaderName);
 
-        logger.LogInformation("CSV headers read successfully. Total columns: {ColumnCount}, Primary Key: {PrimaryKey}, Change Type: {ChangeType}",
-            headers.Length, primaryKeyHeaderName, changeTypeHeaderName);
+        logger.LogInformation("CSV headers read successfully. Total columns: {ColumnCount}, Primary Keys: {PrimaryKeys}, Change Type: {ChangeType}",
+            headers.Length, string.Join(", ", primaryKeyHeaderNames), changeTypeHeaderName);
 
-        return new CsvHeaders(headers, primaryKeyHeaderName, changeTypeHeaderName);
+        return new CsvHeaders(headers, primaryKeyHeaderNames, changeTypeHeaderName);
     }
 
-    private void ValidatePrimaryKeyHeader(string[] headers, string primaryKeyHeaderName)
+    private void ValidatePrimaryKeyHeaders(string[] headers, string[] primaryKeyHeaderNames)
     {
-        if (!headers.Contains(primaryKeyHeaderName))
+        var missingHeaders = primaryKeyHeaderNames.Where(pk => !headers.Contains(pk)).ToList();
+
+        if (missingHeaders.Count > 0)
         {
             throw new InvalidOperationException(
-                $"Primary key header '{primaryKeyHeaderName}' not found in CSV headers. Available headers: {string.Join(", ", headers)}");
+        $"Primary key header(s) '{string.Join(", ", missingHeaders)}' not found in CSV headers. Available headers: {string.Join(", ", headers)}");
         }
     }
 
@@ -313,9 +323,11 @@ public class IngestionPipeline(
         if (!headers.Contains(changeTypeHeaderName))
         {
             throw new InvalidOperationException(
-                $"Change type header '{changeTypeHeaderName}' not found in CSV headers. Available headers: {string.Join(", ", headers)}");
+     $"Change type header '{changeTypeHeaderName}' not found in CSV headers. Available headers: {string.Join(", ", headers)}");
         }
     }
+
+    private const string CompositeKeyDelimiter = "__";
 
     private async Task<FileIngestionMetrics> ProcessCsvRecordsAsync(
         Guid importId,
@@ -337,13 +349,14 @@ public class IngestionPipeline(
 
             if (!IsValidChangeType(changeType))
             {
+                var primaryKeyValue = string.Join(CompositeKeyDelimiter, headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty));
                 logger.LogWarning("Invalid change type '{ChangeType}' for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
-                    changeType, csv.GetField(headers.PrimaryKeyHeaderName), fileKey);
+                    changeType, primaryKeyValue, fileKey);
                 metrics.RecordsSkipped++;
                 continue;
             }
 
-            var document = CreateDocumentFromCsvRecord(csv, headers);
+            var document = CreateDocumentFromCsvRecord(csv, headers, definition);
             batch.Add((document, changeType));
 
             if (batch.Count >= BatchSize)
@@ -354,6 +367,7 @@ public class IngestionPipeline(
                     batch,
                     fileKey,
                     collectionName,
+                    definition,
                     lineageEvents,
                     ct);
 
@@ -376,6 +390,7 @@ public class IngestionPipeline(
                 batch,
                 fileKey,
                 collectionName,
+                definition,
                 lineageEvents,
                 ct);
 
@@ -501,27 +516,44 @@ public class IngestionPipeline(
 
     private BsonDocument CreateDocumentFromCsvRecord(
         CsvReader csv,
-        CsvHeaders headers)
+        CsvHeaders headers,
+        DataSetDefinition definition)
     {
         var document = new BsonDocument();
         var now = DateTime.UtcNow;
+        var accumulatorSet = new HashSet<string>(definition.Accumulators ?? []);
+
+        // Create composite primary key for _id
+        var compositeKeyParts = headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty);
+        document[FieldId] = string.Join(CompositeKeyDelimiter, compositeKeyParts);
 
         foreach (var header in headers.AllHeaders)
         {
             var value = csv.GetField(header);
 
-            if (header == headers.PrimaryKeyHeaderName)
+            // Check if this field is an accumulator
+            if (accumulatorSet.Contains(header))
             {
-                document["_id"] = value ?? string.Empty;
+                // Initialize accumulator fields as arrays with single value (if not empty/null)
+                if (!string.IsNullOrEmpty(value))
+                {
+                    document[header] = new BsonArray { value };
+                }
+                else
+                {
+                    document[header] = new BsonArray(); // Empty array for null/empty values
+                }
             }
-
-            // Add all fields verbatim - treat empty strings as null
-            document[header] = string.IsNullOrEmpty(value) ? BsonNull.Value : value;
+            else
+            {
+                // Add non-accumulator fields verbatim - treat empty strings as null
+                document[header] = string.IsNullOrEmpty(value) ? BsonNull.Value : value;
+            }
         }
 
         // Add audit fields
-        document["CreatedAtUtc"] = now;
-        document["UpdatedAtUtc"] = now;
+        document[FieldCreatedAtUtc] = now;
+        document[FieldUpdatedAtUtc] = now;
 
         return document;
     }
@@ -532,6 +564,7 @@ public class IngestionPipeline(
         List<(BsonDocument Document, string ChangeType)> batch,
         string fileKey,
         string collectionName,
+        DataSetDefinition definition,
         List<RecordLineageEvent> lineageEvents,
         CancellationToken ct)
     {
@@ -540,7 +573,7 @@ public class IngestionPipeline(
             return new BatchProcessingMetrics();
         }
 
-        var documentIds = batch.Select(b => b.Document["_id"]).ToList();
+        var documentIds = batch.Select(b => b.Document[FieldId]).ToList();
         var existingDocsDict = await FetchExistingDocumentsAsync(collection, documentIds, ct);
         var softDeletedIds = GetSoftDeletedIds(existingDocsDict);
 
@@ -549,49 +582,43 @@ public class IngestionPipeline(
 
         foreach (var (document, changeType) in batch)
         {
-            var docId = document["_id"];
+            var docId = document[FieldId];
             var recordId = docId.ToString() ?? string.Empty;
             var existingDoc = existingDocsDict.GetValueOrDefault(docId);
 
             if (changeType == ChangeType.Delete)
             {
-                ProcessDeleteOperation(
-                    bulkOps,
-                    lineageEvents,
-                    docId,
-                    recordId,
-                    existingDoc,
-                    importId,
-                    fileKey,
-                    collectionName,
-                    changeType);
+                ProcessDeleteOperation(bulkOps,
+                                       lineageEvents,
+                                       docId,
+                                       recordId,
+                                       existingDoc,
+                                       importId,
+                                       fileKey,
+                                       collectionName,
+                                       changeType);
 
                 metrics.Deleted++;
                 metrics.Processed++;
             }
             else if (changeType == ChangeType.Insert || changeType == ChangeType.Update)
             {
-                if (softDeletedIds.Contains(docId))
-                {
-                    logger.LogDebug("Skipping {ChangeType} operation for soft-deleted record with _id: {DocId}",
-                        changeType, docId);
-                    continue;
-                }
-
+                var isSoftDeleted = softDeletedIds.Contains(docId);
                 var isCreate = existingDoc == null;
 
-                ProcessUpsertOperation(
-                    bulkOps,
-                    lineageEvents,
-                    document,
-                    docId,
-                    recordId,
-                    existingDoc,
-                    isCreate,
-                    importId,
-                    fileKey,
-                    collectionName,
-                    changeType);
+                ProcessUpsertOperation(bulkOps,
+                                       lineageEvents,
+                                       document,
+                                       docId,
+                                       recordId,
+                                       existingDoc,
+                                       isCreate,
+                                       isSoftDeleted,
+                                       importId,
+                                       fileKey,
+                                       collectionName,
+                                       changeType,
+                                       definition);
 
                 if (isCreate)
                 {
@@ -615,40 +642,39 @@ public class IngestionPipeline(
 
     private async Task<Dictionary<BsonValue, BsonDocument>> FetchExistingDocumentsAsync(
         IMongoCollection<BsonDocument> collection,
-        List<BsonValue> documentIds,
-        CancellationToken ct)
+     List<BsonValue> documentIds,
+      CancellationToken ct)
     {
-        var filter = Builders<BsonDocument>.Filter.In("_id", documentIds);
+        var filter = Builders<BsonDocument>.Filter.In(FieldId, documentIds);
         var existingDocs = await collection.Find(filter).ToListAsync(ct);
-        return existingDocs.ToDictionary(doc => doc["_id"], doc => doc);
+        return existingDocs.ToDictionary(doc => doc[FieldId], doc => doc);
     }
 
     private HashSet<BsonValue> GetSoftDeletedIds(Dictionary<BsonValue, BsonDocument> existingDocsDict)
     {
         return existingDocsDict
-            .Where(kvp => kvp.Value.Contains("IsDeleted") && kvp.Value["IsDeleted"].AsBoolean)
-            .Select(kvp => kvp.Key)
-            .ToHashSet();
+   .Where(kvp => kvp.Value.Contains(FieldIsDeleted) && kvp.Value[FieldIsDeleted].AsBoolean)
+     .Select(kvp => kvp.Key)
+   .ToHashSet();
     }
 
-    private void ProcessDeleteOperation(
-        List<WriteModel<BsonDocument>> bulkOps,
-        List<RecordLineageEvent> lineageEvents,
-        BsonValue docId,
-        string recordId,
-        BsonDocument? existingDoc,
-        Guid importId,
-        string fileKey,
-        string collectionName,
-        string changeType)
+    private void ProcessDeleteOperation(List<WriteModel<BsonDocument>> bulkOps,
+                                        List<RecordLineageEvent> lineageEvents,
+                                        BsonValue docId,
+                                        string recordId,
+                                        BsonDocument? existingDoc,
+                                        Guid importId,
+                                        string fileKey,
+                                        string collectionName,
+                                        string changeType)
     {
         var eventTime = DateTime.UtcNow;
 
-        var deleteFilter = Builders<BsonDocument>.Filter.Eq("_id", docId);
+        var deleteFilter = Builders<BsonDocument>.Filter.Eq(FieldId, docId);
         var deleteUpdate = Builders<BsonDocument>.Update
-            .Set("IsDeleted", true)
-            .Set("DeletedAtUtc", eventTime)
-            .Set("UpdatedAtUtc", eventTime);
+            .Set(FieldIsDeleted, true)
+            .Set(FieldDeletedAtUtc, eventTime)
+            .Set(FieldUpdatedAtUtc, eventTime);
 
         bulkOps.Add(new UpdateOneModel<BsonDocument>(deleteFilter, deleteUpdate));
 
@@ -666,35 +692,70 @@ public class IngestionPipeline(
         });
     }
 
-    private void ProcessUpsertOperation(
-        List<WriteModel<BsonDocument>> bulkOps,
-        List<RecordLineageEvent> lineageEvents,
-        BsonDocument document,
-        BsonValue docId,
-        string recordId,
-        BsonDocument? existingDoc,
-        bool isCreate,
-        Guid importId,
-        string fileKey,
-        string collectionName,
-        string changeType)
+    private void ProcessUpsertOperation(List<WriteModel<BsonDocument>> bulkOps,
+                                        List<RecordLineageEvent> lineageEvents,
+                                        BsonDocument document,
+                                        BsonValue docId,
+                                        string recordId,
+                                        BsonDocument? existingDoc,
+                                        bool isCreate,
+                                        bool isSoftDeleted,
+                                        Guid importId,
+                                        string fileKey,
+                                        string collectionName,
+                                        string changeType,
+                                        DataSetDefinition definition)
     {
         var eventTime = DateTime.UtcNow;
 
-        var upsertFilter = Builders<BsonDocument>.Filter.Eq("_id", docId);
+        var upsertFilter = Builders<BsonDocument>.Filter.Eq(FieldId, docId);
 
-        document["IsDeleted"] = false;
+        document[FieldIsDeleted] = false;
 
         var update = Builders<BsonDocument>.Update
-            .SetOnInsert("CreatedAtUtc", document["CreatedAtUtc"])
-            .Set("UpdatedAtUtc", document["UpdatedAtUtc"]);
+            .SetOnInsert(FieldCreatedAtUtc, document[FieldCreatedAtUtc])
+            .Set(FieldUpdatedAtUtc, document[FieldUpdatedAtUtc])
+            .Set(FieldIsDeleted, false)
+            .Unset(FieldDeletedAtUtc); // Unset DeletedAtUtc when undeleting
 
-        // Set all other fields
+        var accumulatorSet = new HashSet<string>(definition.Accumulators ?? []);
+
         foreach (var element in document.Elements)
         {
-            if (element.Name != "_id" && element.Name != "CreatedAtUtc")
+            if (element.Name != FieldId && element.Name != FieldCreatedAtUtc && element.Name != FieldUpdatedAtUtc && element.Name != FieldIsDeleted)
             {
-                update = update.Set(element.Name, element.Value);
+                if (accumulatorSet.Contains(element.Name))
+                {
+                    if (element.Value.IsBsonArray)
+                    {
+                        var arrayValue = element.Value.AsBsonArray;
+
+                        if (arrayValue.Count == 0)
+                        {
+                            update = update.SetOnInsert(element.Name, new BsonArray());
+                        }
+                        else
+                        {
+                            foreach (var item in arrayValue)
+                            {
+                                // Only add non-null values
+                                if (item != BsonNull.Value && !string.IsNullOrEmpty(item.ToString()))
+                                {
+                                    update = update.AddToSet(element.Name, item);
+                                }
+                            }
+                        }
+                    }
+                    else if (element.Value != BsonNull.Value && !string.IsNullOrEmpty(element.Value.ToString()))
+                    {
+                        update = update.AddToSet(element.Name, element.Value);
+                    }
+                }
+                else
+                {
+                    // For non-accumulator fields, use Set to overwrite
+                    update = update.Set(element.Name, element.Value);
+                }
             }
         }
 
@@ -703,11 +764,27 @@ public class IngestionPipeline(
             IsUpsert = true
         });
 
+        // Determine the correct event type based on the operation
+        RecordEventType eventType;
+        if (isSoftDeleted)
+        {
+            eventType = RecordEventType.Undeleted;
+            logger.LogInformation("Undeleting soft-deleted record with _id: {DocId} in file {FileKey}", docId, fileKey);
+        }
+        else if (isCreate)
+        {
+            eventType = RecordEventType.Created;
+        }
+        else
+        {
+            eventType = RecordEventType.Updated;
+        }
+
         lineageEvents.Add(new RecordLineageEvent
         {
             RecordId = recordId,
             CollectionName = collectionName,
-            EventType = isCreate ? RecordEventType.Created : RecordEventType.Updated,
+            EventType = eventType,
             ImportId = importId,
             FileKey = fileKey,
             EventDateUtc = eventTime,
@@ -829,7 +906,7 @@ public class IngestionPipeline(
         }
     }
 
-    private record CsvHeaders(string[] AllHeaders, string PrimaryKeyHeaderName, string ChangeTypeHeaderName);
+    private record CsvHeaders(string[] AllHeaders, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName);
 
     private record IngestionTotals
     {

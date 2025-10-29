@@ -262,7 +262,7 @@ listDatasetsCommand.SetAction((parseResult) =>
         logger.LogInformation("Name: {Name}", definition.Name);
         logger.LogInformation("  File Prefix: {Prefix}", definition.FilePrefixFormat);
         logger.LogInformation("  Date Pattern: {Pattern}", definition.DatePattern);
-        logger.LogInformation("  Primary Key Header: {Header}", definition.PrimaryKeyHeaderName);
+        logger.LogInformation("  Primary Key Headers: {Headers}", string.Join(", ", definition.PrimaryKeyHeaderNames));
         logger.LogInformation("  Change Type Header: {Header}", definition.ChangeTypeHeaderName);
         logger.LogInformation("");
     }

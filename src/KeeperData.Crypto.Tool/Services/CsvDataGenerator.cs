@@ -82,11 +82,15 @@ public class CsvDataGenerator
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var primaryKey = GeneratePrimaryKey(faker);
-            primaryKeys.Add(primaryKey);
+            var compositeKeyParts = GenerateCompositePrimaryKey(faker, definition.PrimaryKeyHeaderNames.Length);
+            var compositeKey = string.Join("__", compositeKeyParts);
+            primaryKeys.Add(compositeKey);
 
-            // Write primary key
-            csv.WriteField(primaryKey);
+            // Write primary key columns
+            foreach (var keyPart in compositeKeyParts)
+            {
+                csv.WriteField(keyPart);
+            }
 
             // Write change type (always 'I' for main file)
             csv.WriteField(ChangeType.Insert);
@@ -130,7 +134,7 @@ public class CsvDataGenerator
         var selectedKeys = _randomizer.Shuffle(availablePrimaryKeys).Take(deltaCount).ToList();
 
         var faker = new Faker();
-        foreach (var primaryKey in selectedKeys)
+        foreach (var compositeKey in selectedKeys)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -138,8 +142,12 @@ public class CsvDataGenerator
             var isUpdate = _randomizer.Double() < _options.DeltaUpdatePercentage;
             var changeType = isUpdate ? ChangeType.Update : ChangeType.Delete;
 
-            // Write primary key
-            csv.WriteField(primaryKey);
+            // Split composite key back into parts and write each column
+            var keyParts = compositeKey.Split("__");
+            foreach (var keyPart in keyParts)
+            {
+                csv.WriteField(keyPart);
+            }
 
             // Write change type
             csv.WriteField(changeType);
@@ -163,11 +171,13 @@ public class CsvDataGenerator
 
     private List<string> GenerateHeaders(DataSetDefinition definition)
     {
-        var headers = new List<string>
-        {
-            definition.PrimaryKeyHeaderName,
-            definition.ChangeTypeHeaderName
-        };
+        var headers = new List<string>();
+
+        // Add all primary key headers
+        headers.AddRange(definition.PrimaryKeyHeaderNames);
+
+        // Add change type header
+        headers.Add(definition.ChangeTypeHeaderName);
 
         // Add meaningful column names based on data type
         var columnNames = new[]
@@ -195,12 +205,26 @@ public class CsvDataGenerator
         return headers;
     }
 
-    private string GeneratePrimaryKey(Faker faker)
+    private List<string> GenerateCompositePrimaryKey(Faker faker, int keyCount)
     {
-        // Generate primary key in format like '1254/KJB4HIH678'
-        var number = faker.Random.Number(1000, 9999);
-        var code = faker.Random.String2(10, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
-        return $"{number}/{code}";
+        var keys = new List<string>();
+        for (int i = 0; i < keyCount; i++)
+        {
+            // Generate varied formats for different key parts
+            if (i == 0)
+            {
+                // First key: format like '1254/KJB4HIH678'
+                var number = faker.Random.Number(1000, 9999);
+                var code = faker.Random.String2(10, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+                keys.Add($"{number}/{code}");
+            }
+            else
+            {
+                // Additional keys: simpler alphanumeric
+                keys.Add(faker.Random.String2(8, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"));
+            }
+        }
+        return keys;
     }
 
     private object GenerateRandomValue(Faker faker, int columnIndex)

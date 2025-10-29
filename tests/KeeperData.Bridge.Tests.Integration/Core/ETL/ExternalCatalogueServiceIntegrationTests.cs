@@ -442,9 +442,9 @@ public class TestDataSetDefinitions : IDataSetDefinitions
     public TestDataSetDefinitions()
     {
         // Use the datetime pattern as specified in the requirements (yyyyMMddHHmmss)
-        SamCPHHolding = new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMddHHmmss", "CPH", ChangeType.HeaderName);
-        TradingData = new DataSetDefinition("trading_data", "LITP_TRADING_{0}", "yyyyMMddHHmmss", "TradeId", ChangeType.HeaderName);
-        DailyReports = new DataSetDefinition("daily_reports", "LITP_REPORTS_{0}", "yyyyMMddHHmmss", "ReportId", ChangeType.HeaderName);
+        SamCPHHolding = new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMddHHmmss", ["CPH"], ChangeType.HeaderName, []);
+        TradingData = new DataSetDefinition("trading_data", "LITP_TRADING_{0}", "yyyyMMddHHmmss", ["TradeId"], ChangeType.HeaderName, []);
+        DailyReports = new DataSetDefinition("daily_reports", "LITP_REPORTS_{0}", "yyyyMMddHHmmss", ["ReportId"], ChangeType.HeaderName, []);
 
         All = [SamCPHHolding, TradingData, DailyReports];
     }

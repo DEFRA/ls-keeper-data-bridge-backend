@@ -1,6 +1,8 @@
+using KeeperData.Core.Database;
+
 namespace KeeperData.Infrastructure.Database.Configuration;
 
-public record MongoConfig
+public record MongoConfig : IDatabaseConfig
 {
     public string DatabaseUri { get; init; } = default!;
     public string DatabaseName { get; init; } = default!;

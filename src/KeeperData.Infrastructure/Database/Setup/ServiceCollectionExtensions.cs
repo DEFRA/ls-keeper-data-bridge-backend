@@ -1,3 +1,4 @@
+using KeeperData.Core.Locking;
 using KeeperData.Core.Repositories;
 using KeeperData.Core.Transactions;
 using KeeperData.Infrastructure.Behaviors;
@@ -6,6 +7,7 @@ using KeeperData.Infrastructure.Database.Factories;
 using KeeperData.Infrastructure.Database.Factories.Implementations;
 using KeeperData.Infrastructure.Database.Repositories;
 using KeeperData.Infrastructure.Database.Transactions;
+using KeeperData.Infrastructure.Locking;
 using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +16,8 @@ using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Conventions;
 using MongoDB.Bson.Serialization.Serializers;
 using System.Diagnostics.CodeAnalysis;
+using KeeperData.Core.Database;
+using Microsoft.Extensions.Options;
 
 namespace KeeperData.Infrastructure.Database.Setup;
 
@@ -29,6 +33,13 @@ public static class ServiceCollectionExtensions
         var mongoConfig = configuration.GetSection("Mongo").Get<MongoConfig>()!;
         services.Configure<MongoConfig>(configuration.GetSection("Mongo"));
 
+        // Register IDatabaseConfig which wraps MongoConfig
+        services.AddSingleton<IOptions<IDatabaseConfig>>(sp =>
+        {
+            var mongoConfigOptions = sp.GetRequiredService<IOptions<MongoConfig>>();
+            return Options.Create<IDatabaseConfig>(mongoConfigOptions.Value);
+        });
+
         services.AddSingleton<IMongoDbClientFactory, MongoDbClientFactory>();
         services.AddScoped<IMongoSessionFactory, MongoSessionFactory>();
 
@@ -41,6 +52,8 @@ public static class ServiceCollectionExtensions
 
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(UnitOfWorkTransactionBehavior<,>));
+
+        services.AddSingleton<IDistributedLock, MongoDistributedLock>();
 
         if (mongoConfig.HealthcheckEnabled)
         {

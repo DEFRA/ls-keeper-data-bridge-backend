@@ -1,5 +1,6 @@
 using Amazon;
 using Amazon.S3;
+using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Storage.Clients;
 using KeeperData.Infrastructure.Storage.Configuration;
 using KeeperData.Infrastructure.Storage.Factories;
@@ -45,6 +46,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IS3ClientFactory>(factory);
 
         services.AddTransient<IStorageReader<ExternalStorageClient>, ExternalStorageReader>();
+
+        services.AddTransient<IBlobStorageServiceFactory, S3BlobStorageServiceFactory>();
+
     }
 
     private static AmazonS3Config GetDefaultAmazonS3Config(IConfiguration configuration)

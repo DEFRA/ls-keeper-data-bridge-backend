@@ -1,4 +1,6 @@
 using KeeperData.Bridge.Middleware;
+using KeeperData.Infrastructure.Telemetry;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.Diagnostics.CodeAnalysis;
@@ -23,11 +25,29 @@ public static class WebApplicationExtensions
         applicationLifetime.ApplicationStopped.Register(() =>
             logger.LogInformation("{applicationName} stopped", env.ApplicationName));
 
+        app.UseEmfExporter();
+
         app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+        // Enable Swagger and Swagger UI
+        app.UseSwagger();
+        app.UseSwaggerUI(options =>
+        {
+            options.SwaggerEndpoint("/swagger/v1/swagger.json", "KeeperData Bridge API v1");
+            options.RoutePrefix = "swagger"; // Access Swagger UI at /swagger
+            options.DocumentTitle = "KeeperData Bridge API";
+            options.DisplayRequestDuration();
+            options.EnableTryItOutByDefault();
+        });
 
         app.UseHeaderPropagation();
         app.UseRouting();
 
+        // Add authentication and authorization middleware
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        // Health check endpoint - allow anonymous access
         app.MapHealthChecks("/health", new HealthCheckOptions()
         {
             Predicate = _ => true,
@@ -38,14 +58,14 @@ public static class WebApplicationExtensions
                 [HealthStatus.Degraded] = StatusCodes.Status200OK,
                 [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
             }
-        });
+        }).AllowAnonymous();
 
-        app.MapGet("/", () => "Alive!");
+        // Root endpoint - allow anonymous access
+        app.MapGet("/", () => "Alive!").AllowAnonymous();
 
         app.MapControllers();
     }
 
-    [ExcludeFromCodeCoverage]
     private static Task WriteResponse(HttpContext context, HealthReport healthReport)
     {
         context.Response.ContentType = "application/json; charset=utf-8";

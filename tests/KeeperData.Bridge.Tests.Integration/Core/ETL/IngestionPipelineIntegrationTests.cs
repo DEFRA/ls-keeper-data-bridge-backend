@@ -416,7 +416,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
         var csvContent = "FarmName,Owner,Address,CHANGE_TYPE\n" + // Missing CPH column
-                        "Farm One,Owner A,Address 1,I\n";
+          "Farm One,Owner A,Address 1,I\n";
 
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
@@ -428,7 +428,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Primary key header 'CPH' not found*");
+        .WithMessage("*Primary key header(s)*CPH*not found*");
 
         _testOutputHelper.WriteLine("Successfully validated primary key requirement");
     }
@@ -486,7 +486,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task StartAsync_WithUpdateToSoftDeletedRecord_ShouldNotUpdate()
+    public async Task StartAsync_WithUpdateToSoftDeletedRecord_ShouldUndeleteAndUpdate()
     {
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
@@ -529,7 +529,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var database = _mongoClient.GetDatabase(_testDatabaseName);
         var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
         var originalDoc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
-        var originalUpdatedAt = originalDoc["UpdatedAtUtc"].ToUniversalTime();
+        var originalCreatedAt = originalDoc["CreatedAtUtc"].ToUniversalTime();
 
         await Task.Delay(100);
 
@@ -549,16 +549,19 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
 
         doc.Should().NotBeNull();
-        doc["IsDeleted"].AsBoolean.Should().BeTrue();
-        doc["FarmName"].Should().Be("Farm One"); // Should NOT be updated
-        doc["Owner"].Should().Be("Owner A"); // Should NOT be updated
-        doc["UpdatedAtUtc"].ToUniversalTime().Should().Be(originalUpdatedAt); // Should NOT change
+        doc["IsDeleted"].AsBoolean.Should().BeFalse(); // Should be undeleted
+        doc.Contains("DeletedAtUtc").Should().BeFalse(); // DeletedAtUtc should be removed
+        doc["FarmName"].Should().Be("Farm One Updated"); // Should be updated
+        doc["Owner"].Should().Be("Owner A Updated"); // Should be updated
+        doc["Address"].Should().Be("Address 1 Updated"); // Should be updated
+        doc["CreatedAtUtc"].ToUniversalTime().Should().Be(originalCreatedAt); // CreatedAtUtc should be preserved
+        doc["UpdatedAtUtc"].ToUniversalTime().Should().BeAfter(originalCreatedAt); // UpdatedAtUtc should be newer
 
-        _testOutputHelper.WriteLine("Successfully prevented update to soft-deleted record");
+        _testOutputHelper.WriteLine("Successfully undeleted and updated soft-deleted record");
     }
 
     [Fact]
-    public async Task StartAsync_WithInsertToSoftDeletedRecord_ShouldNotInsert()
+    public async Task StartAsync_WithInsertToSoftDeletedRecord_ShouldUndeleteAndInsert()
     {
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
@@ -583,7 +586,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         // Soft delete it
         var csvContent2 = GenerateSampleCsvContentWithChangeType(new[]
         {
-            ("CPH001", "Farm One", "Owner A", "Address 1", "D")
+       ("CPH001", "Farm One", "Owner A", "Address 1", "D")
         });
         var testDate2 = testDate.AddDays(-1);
         var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
@@ -601,7 +604,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var database = _mongoClient.GetDatabase(_testDatabaseName);
         var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
         var originalDoc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
-        var originalUpdatedAt = originalDoc["UpdatedAtUtc"].ToUniversalTime();
+        var originalCreatedAt = originalDoc["CreatedAtUtc"].ToUniversalTime();
 
         await Task.Delay(100);
 
@@ -621,12 +624,15 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
 
         doc.Should().NotBeNull();
-        doc["IsDeleted"].AsBoolean.Should().BeTrue();
-        doc["FarmName"].Should().Be("Farm One"); // Should NOT be changed
-        doc["Owner"].Should().Be("Owner A"); // Should NOT be changed
-        doc["UpdatedAtUtc"].ToUniversalTime().Should().Be(originalUpdatedAt); // Should NOT change
+        doc["IsDeleted"].AsBoolean.Should().BeFalse(); // Should be undeleted
+        doc.Contains("DeletedAtUtc").Should().BeFalse(); // DeletedAtUtc should be removed
+        doc["FarmName"].Should().Be("Farm One New"); // Should be updated with new data
+        doc["Owner"].Should().Be("Owner A New"); // Should be updated with new data
+        doc["Address"].Should().Be("Address 1 New"); // Should be updated with new data
+        doc["CreatedAtUtc"].ToUniversalTime().Should().Be(originalCreatedAt); // CreatedAtUtc should be preserved
+        doc["UpdatedAtUtc"].ToUniversalTime().Should().BeAfter(originalCreatedAt); // UpdatedAtUtc should be newer
 
-        _testOutputHelper.WriteLine("Successfully prevented re-insert of soft-deleted record");
+        _testOutputHelper.WriteLine("Successfully undeleted and re-inserted soft-deleted record");
     }
 
     [Fact]
@@ -665,6 +671,370 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
 
         _testOutputHelper.WriteLine($"Successfully processed {documents.Count} mixed change type records");
     }
+
+    #region Accumulator Tests
+
+    [Fact]
+    public async Task StartAsync_WithAccumulatorFields_ShouldInitializeAsArrays()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+        var csvContent = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One", "ADDR001", "BVD", "BOVINE", "I")
+        });
+        var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
+
+        var importId = Guid.NewGuid();
+
+        // Act
+        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
+        var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
+
+        doc.Should().NotBeNull();
+
+        // Verify accumulator fields are arrays
+        doc["ADDRESS_PK"].Should().BeOfType<BsonArray>();
+        doc["ADDRESS_PK"].AsBsonArray.Should().HaveCount(1);
+        doc["ADDRESS_PK"].AsBsonArray[0].AsString.Should().Be("ADDR001");
+
+        doc["DISEASE_TYPE"].Should().BeOfType<BsonArray>();
+        doc["DISEASE_TYPE"].AsBsonArray.Should().HaveCount(1);
+        doc["DISEASE_TYPE"].AsBsonArray[0].AsString.Should().Be("BVD");
+
+        doc["ANIMAL_SPECIES_CODE"].Should().BeOfType<BsonArray>();
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Should().HaveCount(1);
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray[0].AsString.Should().Be("BOVINE");
+
+        // Verify non-accumulator fields are scalars
+        doc["FarmName"].Should().BeOfType<BsonString>();
+        doc["FarmName"].AsString.Should().Be("Farm One");
+
+        _testOutputHelper.WriteLine("Successfully initialized accumulator fields as arrays");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithDuplicatePrimaryKey_ShouldAccumulateDistinctValues()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+
+        // First import with initial values
+        var csvContent1 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One", "ADDR001", "BVD", "BOVINE", "I")
+        });
+        var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
+
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+
+        // Clean up first file
+        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
+        {
+            BucketName = LocalStackFixture.TestBucket,
+            Key = $"{DestinationFolder}/{fileName1}"
+        });
+        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
+
+        await Task.Delay(100);
+
+        // Second import with same CPH but different accumulator values
+        var csvContent2 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One Updated", "ADDR002", "IBR", "OVINE", "U")
+        });
+        var testDate2 = testDate.AddDays(-1);
+        var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
+
+        // Act
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
+        var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
+
+        doc.Should().NotBeNull();
+
+        // Verify non-accumulator field was overwritten
+        doc["FarmName"].AsString.Should().Be("Farm One Updated");
+
+        // Verify accumulator fields accumulated distinct values
+        doc["ADDRESS_PK"].AsBsonArray.Should().HaveCount(2);
+        doc["ADDRESS_PK"].AsBsonArray.Select(v => v.AsString).Should().BeEquivalentTo(new[] { "ADDR001", "ADDR002" });
+
+        doc["DISEASE_TYPE"].AsBsonArray.Should().HaveCount(2);
+        doc["DISEASE_TYPE"].AsBsonArray.Select(v => v.AsString).Should().BeEquivalentTo(new[] { "BVD", "IBR" });
+
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Should().HaveCount(2);
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Select(v => v.AsString).Should().BeEquivalentTo(new[] { "BOVINE", "OVINE" });
+
+        _testOutputHelper.WriteLine("Successfully accumulated distinct values in accumulator fields");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithDuplicateAccumulatorValue_ShouldNotDuplicate()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+
+        // First import
+        var csvContent1 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One", "ADDR001", "BVD", "BOVINE", "I")
+        });
+        var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
+
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+
+        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
+        {
+            BucketName = LocalStackFixture.TestBucket,
+            Key = $"{DestinationFolder}/{fileName1}"
+        });
+        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
+
+        // Second import with SAME accumulator values
+        var csvContent2 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One Updated", "ADDR001", "BVD", "BOVINE", "U")
+        });
+        var testDate2 = testDate.AddDays(-1);
+        var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
+
+        // Act
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
+        var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
+
+        doc.Should().NotBeNull();
+
+        // Verify accumulator fields still have only 1 value (no duplicates)
+        doc["ADDRESS_PK"].AsBsonArray.Should().HaveCount(1);
+        doc["ADDRESS_PK"].AsBsonArray[0].AsString.Should().Be("ADDR001");
+
+        doc["DISEASE_TYPE"].AsBsonArray.Should().HaveCount(1);
+        doc["DISEASE_TYPE"].AsBsonArray[0].AsString.Should().Be("BVD");
+
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Should().HaveCount(1);
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray[0].AsString.Should().Be("BOVINE");
+
+        _testOutputHelper.WriteLine("Successfully prevented duplicate values in accumulator fields");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithMultipleUpdatesAccumulatorFields_ShouldAccumulateAll()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+
+        // Import 1: Initial values
+        var csvContent1 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One", "ADDR001", "BVD", "BOVINE", "I")
+        });
+        var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = LocalStackFixture.TestBucket, Key = $"{DestinationFolder}/{fileName1}" });
+        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
+
+        // Import 2: Second set of values
+        var csvContent2 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One", "ADDR002", "IBR", "OVINE", "U")
+        });
+        var testDate2 = testDate.AddDays(-1);
+        var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = LocalStackFixture.TestBucket, Key = $"{DestinationFolder}/{fileName2}" });
+        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName2}");
+
+        // Import 3: Third set of values
+        var csvContent3 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One", "ADDR003", "FMD", "PORCINE", "U")
+        });
+        var testDate3 = testDate.AddDays(-2);
+        var fileName3 = $"LITP_SAMCPHHOLDING_{testDate3:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName3}", csvContent3);
+
+        // Act
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
+        var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
+
+        doc.Should().NotBeNull();
+
+        // Verify all 3 values accumulated
+        doc["ADDRESS_PK"].AsBsonArray.Should().HaveCount(3);
+        doc["ADDRESS_PK"].AsBsonArray.Select(v => v.AsString).Should().BeEquivalentTo(new[] { "ADDR001", "ADDR002", "ADDR003" });
+
+        doc["DISEASE_TYPE"].AsBsonArray.Should().HaveCount(3);
+        doc["DISEASE_TYPE"].AsBsonArray.Select(v => v.AsString).Should().BeEquivalentTo(new[] { "BVD", "IBR", "FMD" });
+
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Should().HaveCount(3);
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Select(v => v.AsString).Should().BeEquivalentTo(new[] { "BOVINE", "OVINE", "PORCINE" });
+
+        _testOutputHelper.WriteLine("Successfully accumulated values across multiple updates");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithNullAccumulatorValues_ShouldNotAddToArray()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+
+        // First import with values
+        var csvContent1 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One", "ADDR001", "BVD", "BOVINE", "I")
+        });
+        var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = LocalStackFixture.TestBucket, Key = $"{DestinationFolder}/{fileName1}" });
+        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
+
+        // Second import with null/empty accumulator values
+        var csvContent2 = "CPH,FarmName,ADDRESS_PK,DISEASE_TYPE,ANIMAL_SPECIES_CODE,CHANGE_TYPE\n" +
+           "CPH001,Farm One Updated,,,CAPRINE,U\n";
+        var testDate2 = testDate.AddDays(-1);
+        var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
+
+        // Act
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
+        var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
+
+        doc.Should().NotBeNull();
+
+        // ADDRESS_PK and DISEASE_TYPE should still have only original value (nulls not added)
+        doc["ADDRESS_PK"].AsBsonArray.Should().HaveCount(1);
+        doc["ADDRESS_PK"].AsBsonArray[0].AsString.Should().Be("ADDR001");
+
+        doc["DISEASE_TYPE"].AsBsonArray.Should().HaveCount(1);
+        doc["DISEASE_TYPE"].AsBsonArray[0].AsString.Should().Be("BVD");
+
+        // ANIMAL_SPECIES_CODE should have 2 values (original + new non-null value)
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Should().HaveCount(2);
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Select(v => v.AsString).Should().BeEquivalentTo(new[] { "BOVINE", "CAPRINE" });
+
+        _testOutputHelper.WriteLine("Successfully handled null values in accumulator fields");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithEmptyAccumulatorFieldsOnFirstImport_ShouldCreateEmptyArrays()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+        var csvContent = "CPH,FarmName,ADDRESS_PK,DISEASE_TYPE,ANIMAL_SPECIES_CODE,CHANGE_TYPE\n" +
+     "CPH001,Farm One,,,,I\n";
+        var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
+
+        var importId = Guid.NewGuid();
+
+        // Act
+        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
+        var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
+
+        doc.Should().NotBeNull();
+
+        // Verify empty accumulator fields are still arrays (not null)
+        doc["ADDRESS_PK"].Should().BeOfType<BsonArray>();
+        doc["ADDRESS_PK"].AsBsonArray.Should().BeEmpty();
+
+        doc["DISEASE_TYPE"].Should().BeOfType<BsonArray>();
+        doc["DISEASE_TYPE"].AsBsonArray.Should().BeEmpty();
+
+        doc["ANIMAL_SPECIES_CODE"].Should().BeOfType<BsonArray>();
+        doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Should().BeEmpty();
+
+        _testOutputHelper.WriteLine("Successfully created empty arrays for null accumulator fields on first import");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithMixedAccumulatorAndNonAccumulatorUpdates_ShouldHandleCorrectly()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+
+        // First import
+        var csvContent1 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One", "ADDR001", "BVD", "BOVINE", "I"),
+            ("CPH002", "Farm Two", "ADDR002", "IBR", "OVINE", "I")
+        });
+        var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = LocalStackFixture.TestBucket, Key = $"{DestinationFolder}/{fileName1}" });
+        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
+
+        // Second import - update one, create new
+        var csvContent2 = GenerateSampleCsvContentWithAccumulators(new[]
+        {
+            ("CPH001", "Farm One Updated", "ADDR003", "FMD", "PORCINE", "U"),
+            ("CPH003", "Farm Three", "ADDR004", "BSE", "CAPRINE", "I")
+        });
+        var testDate2 = testDate.AddDays(-1);
+        var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
+
+        // Act
+        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
+
+        // CPH001: Updated - should have accumulated values and overwritten FarmName
+        var doc1 = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
+        doc1["FarmName"].AsString.Should().Be("Farm One Updated");
+        doc1["ADDRESS_PK"].AsBsonArray.Should().HaveCount(2);
+        doc1["ADDRESS_PK"].AsBsonArray.Select(v => v.AsString).Should().BeEquivalentTo(new[] { "ADDR001", "ADDR003" });
+
+        // CPH002: Unchanged - should still have original values
+        var doc2 = await collection.Find(d => d["_id"] == "CPH002").FirstOrDefaultAsync();
+        doc2["FarmName"].AsString.Should().Be("Farm Two");
+        doc2["ADDRESS_PK"].AsBsonArray.Should().HaveCount(1);
+        doc2["ADDRESS_PK"].AsBsonArray[0].AsString.Should().Be("ADDR002");
+
+        // CPH003: New - should have initial values as arrays
+        var doc3 = await collection.Find(d => d["_id"] == "CPH003").FirstOrDefaultAsync();
+        doc3["FarmName"].AsString.Should().Be("Farm Three");
+        doc3["ADDRESS_PK"].AsBsonArray.Should().HaveCount(1);
+        doc3["ADDRESS_PK"].AsBsonArray[0].AsString.Should().Be("ADDR004");
+
+        _testOutputHelper.WriteLine("Successfully handled mixed accumulator and non-accumulator updates");
+    }
+
+    #endregion
 
     private IBlobStorageServiceFactory CreateBlobStorageFactory()
     {
@@ -746,6 +1116,19 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         foreach (var (cph, farmName, owner, address, changeType) in records)
         {
             sb.AppendLine($"{cph},{farmName},{owner},{address},{changeType}");
+        }
+
+        return sb.ToString();
+    }
+
+    private string GenerateSampleCsvContentWithAccumulators((string cph, string farmName, string addressPk, string diseaseType, string animalSpeciesCode, string changeType)[] records)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("CPH,FarmName,ADDRESS_PK,DISEASE_TYPE,ANIMAL_SPECIES_CODE,CHANGE_TYPE");
+
+        foreach (var (cph, farmName, addressPk, diseaseType, animalSpeciesCode, changeType) in records)
+        {
+            sb.AppendLine($"{cph},{farmName},{addressPk},{diseaseType},{animalSpeciesCode},{changeType}");
         }
 
         return sb.ToString();

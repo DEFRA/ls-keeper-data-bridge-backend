@@ -49,10 +49,16 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
         // Create mock DataSetDefinitions with our test collection
         var dataSetDefinitions = new DataSetDefinitions
         {
-            SamCPHHolding = new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMdd", "CPH", "CHANGETYPE"),
-            All = [
-                new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMdd", "CPH", "CHANGETYPE"),
-                new DataSetDefinition(_testCollectionName, "TEST_PRODUCTS_{0}", "yyyyMMdd", "ProductId", "CHANGETYPE")
+            SamCPHHolding = new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMdd", ["CPH"], "CHANGETYPE", []),
+            CTSCPHHolding = new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMdd", ["CPH"], "CHANGETYPE", []),
+            CTSKeeper = new DataSetDefinition(_testCollectionName, "TEST_PRODUCTS_{0}", "yyyyMMdd", ["ProductId"], "CHANGETYPE", []),
+            SamCPHHolder = new DataSetDefinition(_testCollectionName, "TEST_PRODUCTS_{0}", "yyyyMMdd", ["ProductId"], "CHANGETYPE", []),
+            SamHerd = new DataSetDefinition(_testCollectionName, "TEST_PRODUCTS_{0}", "yyyyMMdd", ["ProductId"], "CHANGETYPE", []),
+            SamParty = new DataSetDefinition(_testCollectionName, "TEST_PARTY_{0}", "yyyyMMdd", ["PartyId"], "CHANGETYPE", []),
+            All =
+            [
+                new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMdd", ["CPH"], "CHANGETYPE", []),
+                new DataSetDefinition(_testCollectionName, "TEST_PRODUCTS_{0}", "yyyyMMdd", ["ProductId"], "CHANGETYPE", [])
             ]
         };
 

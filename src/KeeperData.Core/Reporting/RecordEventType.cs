@@ -4,5 +4,6 @@ public enum RecordEventType
 {
     Created,
     Updated,
-    Deleted
+    Deleted,
+    Undeleted
 }

@@ -209,10 +209,10 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
 
         // CPH contains slashes, HOLDER_ID contains alphanumeric
         // Generate CSV with correct headers matching the DataSetDefinition
-        var csvContent = "CPH,HOLDER_ID,NAME,CHANGE_TYPE\n" +
-            "12/345/6789,H001,Holder One,I\n" +
-            "98/765/4321,H002,Holder Two,I\n" +
-            "11/222/3333,H123ABC,Holder Three,I\n";
+        var csvContent = "CPH|HOLDER_ID|NAME|CHANGE_TYPE\n"
+            + "12/345/6789|H001|Holder One|I\n"
+            + "98/765/4321|H002|Holder Two|I\n"
+            + "11/222/3333|H123ABC|Holder Three|I\n";
 
         var fileName = $"TEST_SPECIAL_{testDate:yyyyMMdd}120000.csv";
         var fileKey = $"{DestinationFolder}/{fileName}";
@@ -379,7 +379,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                                       Accumulators: []);
 
         // CSV missing FARM_ID column
-        var csvContent = "REGION,NAME,CHANGE_TYPE\nNORTH,Farm Alpha,I\n";
+        var csvContent = "REGION|NAME|CHANGE_TYPE\nNORTH|Farm Alpha|I\n";
 
         var fileName = $"TEST_MISSING_{testDate:yyyyMMdd}120000.csv";
         var fileKey = $"{DestinationFolder}/{fileName}";
@@ -410,10 +410,10 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                                       Accumulators: []);
 
         // CSV with null/empty value in one key part
-        var csvContent = "REGION,FARM_ID,NAME,CHANGE_TYPE\n"
-            + "NORTH,F001,Farm Alpha,I\n"
-            + ",F002,Farm Beta,I\n"
-            + "SOUTH,,Farm Gamma,I\n";
+        var csvContent = "REGION|FARM_ID|NAME|CHANGE_TYPE\n"
+            + "NORTH|F001|Farm Alpha|I\n"
+            + "|F002|Farm Beta|I\n"
+            + "SOUTH||Farm Gamma|I\n";
 
         var fileName = $"TEST_NULL_{testDate:yyyyMMdd}120000.csv";
         var fileKey = $"{DestinationFolder}/{fileName}";
@@ -461,8 +461,8 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                                       Accumulators: ["DISEASE_TYPE", "ANIMAL_CODE"]);
 
         // First import
-        var csvContent1 = "REGION,FARM_ID,NAME,DISEASE_TYPE,ANIMAL_CODE,CHANGE_TYPE\n"
-            + "NORTH,F001,Farm Alpha,BVD,BOVINE,I\n";
+        var csvContent1 = "REGION|FARM_ID|NAME|DISEASE_TYPE|ANIMAL_CODE|CHANGE_TYPE\n"
+             + "NORTH|F001|Farm Alpha|BVD|BOVINE|I\n";
         var fileName1 = $"TEST_COMP_ACC_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
         await IngestWithCustomDefinition(Guid.NewGuid(), dataSetDefinition);
@@ -476,8 +476,8 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
 
         // Second import - same composite key, different accumulator values
-        var csvContent2 = "REGION,FARM_ID,NAME,DISEASE_TYPE,ANIMAL_CODE,CHANGE_TYPE\n" +
-        "NORTH,F001,Farm Alpha Updated,IBR,OVINE,U\n";
+        var csvContent2 = "REGION|FARM_ID|NAME|DISEASE_TYPE|ANIMAL_CODE|CHANGE_TYPE\n" +
+            "NORTH|F001|Farm Alpha Updated|IBR|OVINE|U\n";
         var testDate2 = testDate.AddDays(-1);
         var fileName2 = $"TEST_COMP_ACC_{testDate2:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
@@ -611,11 +611,11 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
     private string GenerateCompositeKeyCsv((string key1, string key2, string name, string changeType)[] records)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("REGION,FARM_ID,NAME,CHANGE_TYPE");
+        sb.AppendLine("REGION|FARM_ID|NAME|CHANGE_TYPE");
 
         foreach (var (key1, key2, name, changeType) in records)
         {
-            sb.AppendLine($"{key1},{key2},{name},{changeType}");
+            sb.AppendLine($"{key1}|{key2}|{name}|{changeType}");
         }
 
         return sb.ToString();
@@ -624,11 +624,11 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
     private string GenerateTripleKeyCsv((string key1, string key2, string key3, string name, string changeType)[] records)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("COUNTRY,REGION,FARM_ID,NAME,CHANGE_TYPE");
+        sb.AppendLine("COUNTRY|REGION|FARM_ID|NAME|CHANGE_TYPE");
 
         foreach (var (key1, key2, key3, name, changeType) in records)
         {
-            sb.AppendLine($"{key1},{key2},{key3},{name},{changeType}");
+            sb.AppendLine($"{key1}|{key2}|{key3}|{name}|{changeType}");
         }
 
         return sb.ToString();

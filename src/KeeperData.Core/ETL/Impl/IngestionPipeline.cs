@@ -1,18 +1,18 @@
+using CsvHelper;
+using CsvHelper.Configuration;
+using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
-using MongoDB.Driver;
-using MongoDB.Bson;
-using CsvHelper;
-using System.Globalization;
-using CsvHelper.Configuration;
 using Microsoft.Extensions.Options;
-using KeeperData.Core.Database;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Globalization;
 
 namespace KeeperData.Core.ETL.Impl;
 
@@ -276,7 +276,8 @@ public class IngestionPipeline(
         {
             HasHeaderRecord = true,
             TrimOptions = TrimOptions.Trim,
-            BadDataFound = null // Ignore bad data
+            BadDataFound = null, // Ignore bad data
+            Delimiter = "|" // Use pipe delimiter for CSV files
         });
 
         return new CsvContext(stream, reader, csv);

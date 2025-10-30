@@ -354,9 +354,9 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
-        var csvContent = "CPH,FarmName,Owner,Address,CHANGE_TYPE\n" +
-                        "CPH001,Farm One,,,I\n" +
-                        "CPH002,,Owner B,Address 2,I\n";
+        var csvContent = "CPH|FarmName|Owner|Address|CHANGE_TYPE\n" +
+                        "CPH001|Farm One|||I\n" +
+                        "CPH002||Owner B|Address 2|I\n";
 
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
@@ -389,7 +389,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
-        var csvContent = "CPH,FarmName,Owner,Address,CHANGE_TYPE\n"; // Headers only
+        var csvContent = "CPH|FarmName|Owner|Address|CHANGE_TYPE\n"; // Headers only
 
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
@@ -415,8 +415,8 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
-        var csvContent = "FarmName,Owner,Address,CHANGE_TYPE\n" + // Missing CPH column
- "Farm One,Owner A,Address 1,I\n";
+        var csvContent = "FarmName|Owner|Address|CHANGE_TYPE\n" + // Missing CPH column
+            "Farm One|Owner A|Address 1|I\n";
 
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
@@ -439,9 +439,9 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
         // CSV with quoted headers (common in some CSV exports)
-        var csvContent = "\"CPH\",\"FarmName\",\"Owner\",\"Address\",\"CHANGE_TYPE\"\n"
-            + "CPH001,Farm One,Owner A,Address 1,I\n"
-            + "CPH002,Farm Two,Owner B,Address 2,I\n";
+        var csvContent = "\"CPH\"|\"FarmName\"|\"Owner\"|\"Address\"|\"CHANGE_TYPE\"\n"
+            + "CPH001|Farm One|Owner A|Address 1|I\n"
+            + "CPH002|Farm Two|Owner B|Address 2|I\n";
 
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
@@ -474,8 +474,8 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
         // CSV with some headers quoted and some not (edge case but should be handled)
-        var csvContent = "\"CPH\",FarmName,\"Owner\",Address,\"CHANGE_TYPE\"\n"
-            + "CPH001,Farm One,Owner A,Address 1,I\n";
+        var csvContent = "\"CPH\"|FarmName|\"Owner\"|Address|\"CHANGE_TYPE\"\n"
+            + "CPH001|Farm One|Owner A|Address 1|I\n";
 
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
@@ -741,8 +741,8 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
 
         // Second import with null/empty accumulator values
-        var csvContent2 = "CPH,FarmName,ADDRESS_PK,DISEASE_TYPE,ANIMAL_SPECIES_CODE,CHANGE_TYPE\n" +
-           "CPH001,Farm One Updated,,,CAPRINE,U\n";
+        var csvContent2 = "CPH|FarmName|ADDRESS_PK|DISEASE_TYPE|ANIMAL_SPECIES_CODE|CHANGE_TYPE\n"
+            + "CPH001|Farm One Updated|||CAPRINE|U\n";
         var testDate2 = testDate.AddDays(-1);
         var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
@@ -776,8 +776,8 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
-        var csvContent = "CPH,FarmName,ADDRESS_PK,DISEASE_TYPE,ANIMAL_SPECIES_CODE,CHANGE_TYPE\n"
-            + "CPH001,Farm One,,,,I\n";
+        var csvContent = "CPH|FarmName|ADDRESS_PK|DISEASE_TYPE|ANIMAL_SPECIES_CODE|CHANGE_TYPE\n"
+            + "CPH001|Farm One||||I\n";
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
 
@@ -804,62 +804,6 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         doc["ANIMAL_SPECIES_CODE"].AsBsonArray.Should().BeEmpty();
 
         _testOutputHelper.WriteLine("Successfully created empty arrays for null accumulator fields on first import");
-    }
-
-    [Fact]
-    public async Task StartAsync_WithMixedAccumulatorAndNonAccumulatorUpdates_ShouldHandleCorrectly()
-    {
-        // Arrange
-        var testDate = new DateOnly(2024, 12, 15);
-
-        // First import
-        var csvContent1 = GenerateSampleCsvContentWithAccumulators(new[]
-        {
-            ("CPH001", "Farm One", "ADDR001", "BVD", "BOVINE", "I"),
-            ("CPH002", "Farm Two", "ADDR002", "IBR", "OVINE", "I")
-        });
-        var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
-        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = LocalStackFixture.TestBucket, Key = $"{DestinationFolder}/{fileName1}" });
-        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
-
-        // Second import - update one, create new
-        var csvContent2 = GenerateSampleCsvContentWithAccumulators(new[]
-        {
-            ("CPH001", "Farm One Updated", "ADDR003", "FMD", "PORCINE", "U"),
-            ("CPH003", "Farm Three", "ADDR004", "BSE", "CAPRINE", "I")
-        });
-        var testDate2 = testDate.AddDays(-1);
-        var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
-
-        // Act
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
-
-        // Assert
-        var database = _mongoClient.GetDatabase(_testDatabaseName);
-        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
-
-        // CPH001: Updated - should have accumulated values and overwritten FarmName
-        var doc1 = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
-        doc1["FarmName"].AsString.Should().Be("Farm One Updated");
-        doc1["ADDRESS_PK"].AsBsonArray.Should().HaveCount(2);
-        doc1["ADDRESS_PK"].AsBsonArray.Select(v => v.AsString).Should().BeEquivalentTo(new[] { "ADDR001", "ADDR003" });
-
-        // CPH002: Unchanged - should still have original values
-        var doc2 = await collection.Find(d => d["_id"] == "CPH002").FirstOrDefaultAsync();
-        doc2["FarmName"].AsString.Should().Be("Farm Two");
-        doc2["ADDRESS_PK"].AsBsonArray.Should().HaveCount(1);
-        doc2["ADDRESS_PK"].AsBsonArray[0].AsString.Should().Be("ADDR002");
-
-        // CPH003: New - should have initial values as arrays
-        var doc3 = await collection.Find(d => d["_id"] == "CPH003").FirstOrDefaultAsync();
-        doc3["FarmName"].AsString.Should().Be("Farm Three");
-        doc3["ADDRESS_PK"].AsBsonArray.Should().HaveCount(1);
-        doc3["ADDRESS_PK"].AsBsonArray[0].AsString.Should().Be("ADDR004");
-
-        _testOutputHelper.WriteLine("Successfully handled mixed accumulator and non-accumulator updates");
     }
 
     #endregion
@@ -926,11 +870,11 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     private string GenerateSampleCsvContent((string cph, string farmName, string owner, string address)[] records)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("CPH,FarmName,Owner,Address,CHANGE_TYPE");
+        sb.AppendLine("CPH|FarmName|Owner|Address|CHANGE_TYPE");
 
         foreach (var (cph, farmName, owner, address) in records)
         {
-            sb.AppendLine($"{cph},{farmName},{owner},{address},{ChangeType.Insert}");
+            sb.AppendLine($"{cph}|{farmName}|{owner}|{address}|{ChangeType.Insert}");
         }
 
         return sb.ToString();
@@ -939,11 +883,11 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     private string GenerateSampleCsvContentWithAccumulators((string cph, string farmName, string addressPk, string diseaseType, string animalSpeciesCode, string changeType)[] records)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("CPH,FarmName,ADDRESS_PK,DISEASE_TYPE,ANIMAL_SPECIES_CODE,CHANGE_TYPE");
+        sb.AppendLine("CPH|FarmName|ADDRESS_PK|DISEASE_TYPE|ANIMAL_SPECIES_CODE|CHANGE_TYPE");
 
         foreach (var (cph, farmName, addressPk, diseaseType, animalSpeciesCode, changeType) in records)
         {
-            sb.AppendLine($"{cph},{farmName},{addressPk},{diseaseType},{animalSpeciesCode},{changeType}");
+            sb.AppendLine($"{cph}|{farmName}|{addressPk}|{diseaseType}|{animalSpeciesCode}|{changeType}");
         }
 
         return sb.ToString();

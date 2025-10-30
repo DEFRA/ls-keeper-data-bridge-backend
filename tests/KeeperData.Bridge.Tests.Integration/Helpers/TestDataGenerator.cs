@@ -26,11 +26,11 @@ public static class TestDataGenerator
         var records = faker.Generate(recordCount);
 
         var csv = new StringBuilder();
-        csv.AppendLine($"{primaryKeyHeaderName},FirstName,LastName,Email,PhoneNumber,DateOfBirth,Address,City,PostalCode,Country,Salary,Department,IsActive,CHANGETYPE");
+        csv.AppendLine($"{primaryKeyHeaderName}|FirstName|LastName|Email|PhoneNumber|DateOfBirth|Address|City|PostalCode|Country|Salary|Department|IsActive|CHANGETYPE");
 
         foreach (var record in records)
         {
-            csv.AppendLine($"\"{record.PersonId}\",\"{record.FirstName}\",\"{record.LastName}\",\"{record.Email}\",\"{record.PhoneNumber}\",\"{record.DateOfBirth}\",\"{EscapeCsv(record.Address)}\",\"{record.City}\",\"{record.PostalCode}\",\"{record.Country}\",{record.Salary},\"{record.Department}\",{record.IsActive.ToString().ToLower()},{record.ChangeType}");
+            csv.AppendLine($"\"{record.PersonId}\"|\"{record.FirstName}\"|\"{record.LastName}\"|\"{record.Email}\"|\"{record.PhoneNumber}\"|\"{record.DateOfBirth}\"|\"{EscapeCsv(record.Address)}\"|\"{record.City}\"|\"{record.PostalCode}\"|\"{record.Country}\"|{record.Salary}|\"{record.Department}\"|{record.IsActive.ToString().ToLower()}|{record.ChangeType}");
         }
 
         return (csv.ToString(), records);

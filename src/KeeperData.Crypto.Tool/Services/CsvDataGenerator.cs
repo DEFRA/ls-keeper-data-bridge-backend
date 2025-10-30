@@ -63,6 +63,7 @@ public class CsvDataGenerator
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             HasHeaderRecord = true,
+            Delimiter = "|" // Use pipe delimiter to match production format
         };
 
         await using var writer = new StreamWriter(filePath);
@@ -116,6 +117,7 @@ public class CsvDataGenerator
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             HasHeaderRecord = true,
+            Delimiter = "|" // Use pipe delimiter to match production format
         };
 
         await using var writer = new StreamWriter(filePath);

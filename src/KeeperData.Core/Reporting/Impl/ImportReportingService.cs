@@ -309,6 +309,20 @@ public class ImportReportingService : IImportReportingService
         return lifecycle?.Events ?? Array.Empty<RecordLineageEvent>();
     }
 
+    public async Task<IReadOnlyList<ImportSummary>> GetImportSummariesAsync(int skip = 0, int top = 10, CancellationToken ct = default)
+    {
+        _logger.LogDebug("Getting import summaries with skip: {Skip}, top: {Top}", skip, top);
+
+        var documents = await _importReports
+            .Find(Builders<ImportReportDocument>.Filter.Empty)
+            .SortByDescending(x => x.StartedAtUtc)
+            .Skip(skip)
+            .Limit(top)
+            .ToListAsync(ct);
+
+        return documents.Select(MapToImportSummary).ToList();
+    }
+
     private static ImportReport MapToImportReport(ImportReportDocument doc)
     {
         return new ImportReport
@@ -394,6 +408,21 @@ public class ImportReportingService : IImportReportingService
                 PreviousValues = e.PreviousValues,
                 NewValues = e.NewValues
             }).ToList()
+        };
+    }
+
+    private static ImportSummary MapToImportSummary(ImportReportDocument doc)
+    {
+        return new ImportSummary
+        {
+            ImportId = doc.ImportId,
+            Status = Enum.Parse<ImportStatus>(doc.Status),
+            StartedAtUtc = doc.StartedAtUtc,
+            CompletedAtUtc = doc.CompletedAtUtc,
+            FilesProcessed = doc.IngestionPhase?.FilesProcessed ?? 0,
+            RecordsCreated = doc.IngestionPhase?.RecordsCreated ?? 0,
+            RecordsUpdated = doc.IngestionPhase?.RecordsUpdated ?? 0,
+            RecordsDeleted = doc.IngestionPhase?.RecordsDeleted ?? 0
         };
     }
 }

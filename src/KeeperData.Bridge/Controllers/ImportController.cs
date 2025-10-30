@@ -72,6 +72,71 @@ public class ImportController(
     }
 
     /// <summary>
+    /// Gets a paginated list of import summaries in reverse chronological order (most recent first).
+    /// Returns summary information including status, file counts, and record statistics for each import.
+    /// </summary>
+    /// <param name="skip">Number of records to skip for pagination (default: 0)</param>
+    /// <param name="top">Number of records to return (default: 10, max: 100)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Paginated list of import summaries</returns>
+    [HttpGet]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetImportSummaries(
+        [FromQuery] int skip = 0,
+        [FromQuery] int top = 10,
+        CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Received request to get import summaries with skip={skip}, top={top}", skip, top);
+
+        // Validate parameters
+        if (skip < 0)
+        {
+            logger.LogWarning("Invalid skip parameter: {skip}", skip);
+            return BadRequest(new
+            {
+                Message = "Skip parameter must be greater than or equal to 0.",
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        if (top <= 0 || top > 100)
+        {
+            logger.LogWarning("Invalid top parameter: {top}", top);
+            return BadRequest(new
+            {
+                Message = "Top parameter must be between 1 and 100.",
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        try
+        {
+            var summaries = await importReportingService.GetImportSummariesAsync(skip, top, cancellationToken);
+
+            logger.LogInformation("Successfully retrieved {count} import summaries", summaries.Count);
+
+            return Ok(new
+            {
+                Skip = skip,
+                Top = top,
+                Count = summaries.Count,
+                Imports = summaries,
+                Timestamp = DateTime.UtcNow
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogWarning("Get import summaries request was cancelled");
+            return StatusCode(499, new
+            {
+                Message = "Request was cancelled.",
+                Timestamp = DateTime.UtcNow
+            });
+        }
+    }
+
+    /// <summary>
     /// Gets the import report for a specific import ID.
     /// Includes overall import status, acquisition phase details, and ingestion phase details.
     /// </summary>

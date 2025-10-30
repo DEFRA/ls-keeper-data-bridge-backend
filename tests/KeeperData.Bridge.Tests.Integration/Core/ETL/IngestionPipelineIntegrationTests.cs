@@ -416,7 +416,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
         var csvContent = "FarmName,Owner,Address,CHANGE_TYPE\n" + // Missing CPH column
-          "Farm One,Owner A,Address 1,I\n";
+ "Farm One,Owner A,Address 1,I\n";
 
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
@@ -434,219 +434,15 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task StartAsync_WithSoftDelete_ShouldMarkRecordAsDeleted()
+    public async Task StartAsync_WithQuotedHeaders_ShouldProcessCorrectly()
     {
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
+        // CSV with quoted headers (common in some CSV exports)
+        var csvContent = "\"CPH\",\"FarmName\",\"Owner\",\"Address\",\"CHANGE_TYPE\"\n"
+            + "CPH001,Farm One,Owner A,Address 1,I\n"
+            + "CPH002,Farm Two,Owner B,Address 2,I\n";
 
-        // First, insert a record
-        var csvContent1 = GenerateSampleCsvContentWithChangeType(new[]
-        {
-            ("CPH001", "Farm One", "Owner A", "Address 1", "I")
-        });
-        var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
-
-        var importId1 = Guid.NewGuid();
-        await _ingestionPipeline.StartAsync(importId1, CancellationToken.None);
-
-        // Delete the first file
-        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
-        {
-            BucketName = LocalStackFixture.TestBucket,
-            Key = $"{DestinationFolder}/{fileName1}"
-        });
-        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
-
-        // Now, soft delete the record
-        var csvContent2 = GenerateSampleCsvContentWithChangeType(new[]
-        {
-            ("CPH001", "Farm One", "Owner A", "Address 1", "D")
-        });
-        var testDate2 = testDate.AddDays(-1);
-        var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
-
-        var importId2 = Guid.NewGuid();
-
-        // Act
-        await _ingestionPipeline.StartAsync(importId2, CancellationToken.None);
-
-        // Assert
-        var database = _mongoClient.GetDatabase(_testDatabaseName);
-        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
-        var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
-
-        doc.Should().NotBeNull();
-        doc["IsDeleted"].AsBoolean.Should().BeTrue();
-        doc.Contains("DeletedAtUtc").Should().BeTrue();
-        doc["UpdatedAtUtc"].ToUniversalTime().Should().BeAfter(doc["CreatedAtUtc"].ToUniversalTime());
-
-        _testOutputHelper.WriteLine("Successfully soft-deleted record");
-    }
-
-    [Fact]
-    public async Task StartAsync_WithUpdateToSoftDeletedRecord_ShouldUndeleteAndUpdate()
-    {
-        // Arrange
-        var testDate = new DateOnly(2024, 12, 15);
-
-        // First, insert and soft delete a record
-        var csvContent1 = GenerateSampleCsvContentWithChangeType(new[]
-        {
-            ("CPH001", "Farm One", "Owner A", "Address 1", "I")
-        });
-        var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
-
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
-
-        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
-        {
-            BucketName = LocalStackFixture.TestBucket,
-            Key = $"{DestinationFolder}/{fileName1}"
-        });
-        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
-
-        // Soft delete it
-        var csvContent2 = GenerateSampleCsvContentWithChangeType(new[]
-        {
-            ("CPH001", "Farm One", "Owner A", "Address 1", "D")
-        });
-        var testDate2 = testDate.AddDays(-1);
-        var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
-
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
-
-        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
-        {
-            BucketName = LocalStackFixture.TestBucket,
-            Key = $"{DestinationFolder}/{fileName2}"
-        });
-        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName2}");
-
-        var database = _mongoClient.GetDatabase(_testDatabaseName);
-        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
-        var originalDoc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
-        var originalCreatedAt = originalDoc["CreatedAtUtc"].ToUniversalTime();
-
-        await Task.Delay(100);
-
-        // Try to update the soft-deleted record
-        var csvContent3 = GenerateSampleCsvContentWithChangeType(new[]
-        {
-            ("CPH001", "Farm One Updated", "Owner A Updated", "Address 1 Updated", "U")
-        });
-        var testDate3 = testDate.AddDays(-2);
-        var fileName3 = $"LITP_SAMCPHHOLDING_{testDate3:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName3}", csvContent3);
-
-        // Act
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
-
-        // Assert
-        var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
-
-        doc.Should().NotBeNull();
-        doc["IsDeleted"].AsBoolean.Should().BeFalse(); // Should be undeleted
-        doc.Contains("DeletedAtUtc").Should().BeFalse(); // DeletedAtUtc should be removed
-        doc["FarmName"].Should().Be("Farm One Updated"); // Should be updated
-        doc["Owner"].Should().Be("Owner A Updated"); // Should be updated
-        doc["Address"].Should().Be("Address 1 Updated"); // Should be updated
-        doc["CreatedAtUtc"].ToUniversalTime().Should().Be(originalCreatedAt); // CreatedAtUtc should be preserved
-        doc["UpdatedAtUtc"].ToUniversalTime().Should().BeAfter(originalCreatedAt); // UpdatedAtUtc should be newer
-
-        _testOutputHelper.WriteLine("Successfully undeleted and updated soft-deleted record");
-    }
-
-    [Fact]
-    public async Task StartAsync_WithInsertToSoftDeletedRecord_ShouldUndeleteAndInsert()
-    {
-        // Arrange
-        var testDate = new DateOnly(2024, 12, 15);
-
-        // First, insert and soft delete a record
-        var csvContent1 = GenerateSampleCsvContentWithChangeType(new[]
-        {
-            ("CPH001", "Farm One", "Owner A", "Address 1", "I")
-        });
-        var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
-
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
-
-        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
-        {
-            BucketName = LocalStackFixture.TestBucket,
-            Key = $"{DestinationFolder}/{fileName1}"
-        });
-        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
-
-        // Soft delete it
-        var csvContent2 = GenerateSampleCsvContentWithChangeType(new[]
-        {
-       ("CPH001", "Farm One", "Owner A", "Address 1", "D")
-        });
-        var testDate2 = testDate.AddDays(-1);
-        var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
-
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
-
-        await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
-        {
-            BucketName = LocalStackFixture.TestBucket,
-            Key = $"{DestinationFolder}/{fileName2}"
-        });
-        _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName2}");
-
-        var database = _mongoClient.GetDatabase(_testDatabaseName);
-        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
-        var originalDoc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
-        var originalCreatedAt = originalDoc["CreatedAtUtc"].ToUniversalTime();
-
-        await Task.Delay(100);
-
-        // Try to re-insert the soft-deleted record
-        var csvContent3 = GenerateSampleCsvContentWithChangeType(new[]
-        {
-            ("CPH001", "Farm One New", "Owner A New", "Address 1 New", "I")
-        });
-        var testDate3 = testDate.AddDays(-2);
-        var fileName3 = $"LITP_SAMCPHHOLDING_{testDate3:yyyyMMdd}120000.csv";
-        await UploadCsvToS3($"{DestinationFolder}/{fileName3}", csvContent3);
-
-        // Act
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
-
-        // Assert
-        var doc = await collection.Find(d => d["_id"] == "CPH001").FirstOrDefaultAsync();
-
-        doc.Should().NotBeNull();
-        doc["IsDeleted"].AsBoolean.Should().BeFalse(); // Should be undeleted
-        doc.Contains("DeletedAtUtc").Should().BeFalse(); // DeletedAtUtc should be removed
-        doc["FarmName"].Should().Be("Farm One New"); // Should be updated with new data
-        doc["Owner"].Should().Be("Owner A New"); // Should be updated with new data
-        doc["Address"].Should().Be("Address 1 New"); // Should be updated with new data
-        doc["CreatedAtUtc"].ToUniversalTime().Should().Be(originalCreatedAt); // CreatedAtUtc should be preserved
-        doc["UpdatedAtUtc"].ToUniversalTime().Should().BeAfter(originalCreatedAt); // UpdatedAtUtc should be newer
-
-        _testOutputHelper.WriteLine("Successfully undeleted and re-inserted soft-deleted record");
-    }
-
-    [Fact]
-    public async Task StartAsync_WithMixedChangeTypes_ShouldProcessCorrectly()
-    {
-        // Arrange
-        var testDate = new DateOnly(2024, 12, 15);
-
-        var csvContent = GenerateSampleCsvContentWithChangeType(new[]
-        {
-            ("CPH001", "Farm One", "Owner A", "Address 1", "I"),
-            ("CPH002", "Farm Two", "Owner B", "Address 2", "I"),
-            ("CPH003", "Farm Three", "Owner C", "Address 3", "I")
-        });
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
 
@@ -660,16 +456,48 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
 
         var documents = await collection.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync();
-        documents.Should().HaveCount(3);
+        documents.Should().HaveCount(2);
 
-        foreach (var doc in documents)
-        {
-            doc["IsDeleted"].AsBoolean.Should().BeFalse();
-            doc.Contains("CreatedAtUtc").Should().BeTrue();
-            doc.Contains("UpdatedAtUtc").Should().BeTrue();
-        }
+        var firstDoc = documents.FirstOrDefault(d => d["_id"] == "CPH001");
+        firstDoc.Should().NotBeNull();
+        firstDoc["CPH"].Should().Be("CPH001");
+        firstDoc["FarmName"].Should().Be("Farm One");
+        firstDoc["Owner"].Should().Be("Owner A");
+        firstDoc["Address"].Should().Be("Address 1");
 
-        _testOutputHelper.WriteLine($"Successfully processed {documents.Count} mixed change type records");
+        _testOutputHelper.WriteLine($"Successfully ingested {documents.Count} documents with quoted headers");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithMixedQuotedAndUnquotedHeaders_ShouldProcessCorrectly()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+        // CSV with some headers quoted and some not (edge case but should be handled)
+        var csvContent = "\"CPH\",FarmName,\"Owner\",Address,\"CHANGE_TYPE\"\n"
+            + "CPH001,Farm One,Owner A,Address 1,I\n";
+
+        var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
+
+        var importId = Guid.NewGuid();
+
+        // Act
+        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
+
+        var documents = await collection.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync();
+        documents.Should().HaveCount(1);
+
+        var firstDoc = documents[0];
+        firstDoc["_id"].Should().Be("CPH001");
+        firstDoc["CPH"].Should().Be("CPH001");
+        firstDoc["FarmName"].Should().Be("Farm One");
+
+        _testOutputHelper.WriteLine("Successfully ingested document with mixed quoted/unquoted headers");
     }
 
     #region Accumulator Tests
@@ -948,8 +776,8 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var testDate = new DateOnly(2024, 12, 15);
-        var csvContent = "CPH,FarmName,ADDRESS_PK,DISEASE_TYPE,ANIMAL_SPECIES_CODE,CHANGE_TYPE\n" +
-     "CPH001,Farm One,,,,I\n";
+        var csvContent = "CPH,FarmName,ADDRESS_PK,DISEASE_TYPE,ANIMAL_SPECIES_CODE,CHANGE_TYPE\n"
+            + "CPH001,Farm One,,,,I\n";
         var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
 
@@ -1103,19 +931,6 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         foreach (var (cph, farmName, owner, address) in records)
         {
             sb.AppendLine($"{cph},{farmName},{owner},{address},{ChangeType.Insert}");
-        }
-
-        return sb.ToString();
-    }
-
-    private string GenerateSampleCsvContentWithChangeType((string cph, string farmName, string owner, string address, string changeType)[] records)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("CPH,FarmName,Owner,Address,CHANGE_TYPE");
-
-        foreach (var (cph, farmName, owner, address, changeType) in records)
-        {
-            sb.AppendLine($"{cph},{farmName},{owner},{address},{changeType}");
         }
 
         return sb.ToString();

@@ -1,5 +1,6 @@
 using KeeperData.Bridge.Worker.Tasks;
 using KeeperData.Core.Reporting;
+using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
 
@@ -21,6 +22,10 @@ public class ImportController(
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Import ID if started successfully, or an appropriate error response</returns>
     [HttpPost("start")]
+    [ProducesResponseType(typeof(StartBulkImportResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
     public async Task<IActionResult> StartBulkImport([FromQuery] string sourceType = BlobStorageSources.External, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Received request to start bulk import with sourceType={sourceType} at {requestTime}", sourceType, DateTime.UtcNow);
@@ -29,7 +34,7 @@ public class ImportController(
         if (sourceType != BlobStorageSources.Internal && sourceType != BlobStorageSources.External)
         {
             logger.LogWarning("Invalid sourceType provided: {sourceType}", sourceType);
-            return BadRequest(new
+            return BadRequest(new ErrorResponse
             {
                 Message = $"Invalid sourceType. Must be '{BlobStorageSources.Internal}' or '{BlobStorageSources.External}'.",
                 Timestamp = DateTime.UtcNow
@@ -43,7 +48,7 @@ public class ImportController(
             if (importId == null)
             {
                 logger.LogWarning("Failed to start bulk import - could not acquire lock");
-                return Conflict(new
+                return Conflict(new ErrorResponse
                 {
                     Message = "Import is already running. Please wait for the current import to complete.",
                     Timestamp = DateTime.UtcNow
@@ -52,7 +57,7 @@ public class ImportController(
 
             logger.LogInformation("Bulk import started successfully with importId={importId}, sourceType={sourceType}", importId.Value, sourceType);
 
-            return Accepted(new
+            return Accepted(new StartBulkImportResponse
             {
                 ImportId = importId.Value,
                 SourceType = sourceType,
@@ -63,7 +68,7 @@ public class ImportController(
         catch (OperationCanceledException)
         {
             logger.LogWarning("Bulk import start request was cancelled");
-            return StatusCode(499, new
+            return StatusCode(499, new ErrorResponse
             {
                 Message = "Request was cancelled.",
                 Timestamp = DateTime.UtcNow
@@ -80,7 +85,7 @@ public class ImportController(
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Paginated list of import summaries</returns>
     [HttpGet]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ImportSummariesResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetImportSummaries(
         [FromQuery] int skip = 0,
@@ -116,7 +121,7 @@ public class ImportController(
 
             logger.LogInformation("Successfully retrieved {count} import summaries", summaries.Count);
 
-            return Ok(new
+            return Ok(new ImportSummariesResponse
             {
                 Skip = skip,
                 Top = top,
@@ -144,7 +149,7 @@ public class ImportController(
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Import report if found, or 404 if not found</returns>
     [HttpGet("{importId}")]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ImportReport), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetImportReport(Guid importId, CancellationToken cancellationToken = default)
     {
@@ -189,7 +194,7 @@ public class ImportController(
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of file processing reports</returns>
     [HttpGet("{importId}/files")]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(FileReportsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetFileReports(Guid importId, CancellationToken cancellationToken = default)
     {
@@ -216,7 +221,7 @@ public class ImportController(
             logger.LogInformation("Successfully retrieved {fileCount} file report(s) for importId={importId}",
                 fileReports.Count, importId);
 
-            return Ok(new
+            return Ok(new FileReportsResponse
             {
                 ImportId = importId,
                 TotalFiles = fileReports.Count,

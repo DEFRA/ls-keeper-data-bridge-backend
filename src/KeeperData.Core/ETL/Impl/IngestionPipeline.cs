@@ -290,13 +290,16 @@ public class IngestionPipeline(
     {
         await csv.ReadAsync();
         csv.ReadHeader();
-        var headers = csv.HeaderRecord;
+        var rawHeaders = csv.HeaderRecord;
 
-        if (headers == null || headers.Length == 0)
+        if (rawHeaders == null || rawHeaders.Length == 0)
         {
             logger.LogWarning("No headers found in file {FileKey}, skipping ingestion", fileKey);
             throw new InvalidOperationException($"No headers found in file {fileKey}");
         }
+
+        // Normalize headers by removing surrounding quotes
+        var headers = NormalizeHeaders(rawHeaders);
 
         ValidatePrimaryKeyHeaders(headers, primaryKeyHeaderNames);
         ValidateChangeTypeHeader(headers, changeTypeHeaderName);
@@ -305,6 +308,11 @@ public class IngestionPipeline(
             headers.Length, string.Join(", ", primaryKeyHeaderNames), changeTypeHeaderName);
 
         return new CsvHeaders(headers, primaryKeyHeaderNames, changeTypeHeaderName);
+    }
+
+    private string[] NormalizeHeaders(string[] headers)
+    {
+        return headers.Select(h => h?.Trim('"') ?? string.Empty).ToArray();
     }
 
     private void ValidatePrimaryKeyHeaders(string[] headers, string[] primaryKeyHeaderNames)

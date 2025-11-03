@@ -226,7 +226,7 @@ public class IngestionPipeline(
         StorageObjectInfo file,
         CancellationToken ct)
     {
-        var stopwatch = Stopwatch.StartNew();
+        var overallStopwatch = Stopwatch.StartNew();
         var collectionName = fileSet.Definition.Name;
 
         logger.LogInformation("Starting ingestion of file {FileKey} into collection {CollectionName}",
@@ -235,42 +235,114 @@ public class IngestionPipeline(
         var collection = await EnsureCollectionExistsAsync(collectionName, ct);
         await EnsureWildcardIndexExistsAsync(collection, ct);
 
-        var csvContext = await OpenCsvFileAsync(blobs, file.Key, ct);
+        string? tempFilePath = null;
+        try
+        {
+            // Track S3 download time
+            var downloadStopwatch = Stopwatch.StartNew();
+            tempFilePath = await DownloadToTempFileAsync(blobs, file.Key, ct);
+            downloadStopwatch.Stop();
 
-        var headers = await ReadAndValidateHeadersAsync(
-            csvContext.Csv,
-            file.Key,
-            fileSet.Definition.PrimaryKeyHeaderNames,
-            fileSet.Definition.ChangeTypeHeaderName);
+            logger.LogInformation("Downloaded file {FileKey} to temp storage: {TempPath} in {DownloadDuration}ms",
+                file.Key, tempFilePath, downloadStopwatch.ElapsedMilliseconds);
 
-        var metrics = await ProcessCsvRecordsAsync(
-            importId,
-            collection,
-            csvContext.Csv,
-            headers,
-            file.Key,
-            collectionName,
-            fileSet.Definition,
-            ct);
+            // Track MongoDB ingestion time
+            var mongoIngestionStopwatch = Stopwatch.StartNew();
 
-        stopwatch.Stop();
-        logger.LogInformation("Completed ingestion of file {FileKey}. Total records: {TotalRecords}, Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms",
-            file.Key,
-            metrics.RecordsProcessed,
-            metrics.RecordsCreated,
-            metrics.RecordsUpdated,
-            metrics.RecordsDeleted,
-            stopwatch.ElapsedMilliseconds);
+            var csvContext = await OpenCsvFileFromDiskAsync(tempFilePath, ct);
 
-        return metrics;
+            var headers = await ReadAndValidateHeadersAsync(
+                csvContext.Csv,
+                file.Key,
+                fileSet.Definition.PrimaryKeyHeaderNames,
+                fileSet.Definition.ChangeTypeHeaderName);
+
+            var metrics = await ProcessCsvRecordsAsync(
+                importId,
+                collection,
+                csvContext.Csv,
+                headers,
+                file.Key,
+                collectionName,
+                fileSet.Definition,
+                ct);
+
+            await csvContext.DisposeAsync();
+
+            mongoIngestionStopwatch.Stop();
+            overallStopwatch.Stop();
+
+            logger.LogInformation("Completed ingestion of file {FileKey}. Total records: {TotalRecords}, Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, S3 Download: {DownloadDuration}ms, MongoDB Ingestion: {MongoIngestionDuration}ms, Total Duration: {TotalDuration}ms, Avg Record Processing: {AvgMs:F2}ms/record",
+                file.Key,
+                metrics.RecordsProcessed,
+                metrics.RecordsCreated,
+                metrics.RecordsUpdated,
+                metrics.RecordsDeleted,
+                downloadStopwatch.ElapsedMilliseconds,
+                mongoIngestionStopwatch.ElapsedMilliseconds,
+                overallStopwatch.ElapsedMilliseconds,
+                metrics.AverageMongoIngestionMs);
+
+            return metrics with
+            {
+                S3DownloadDurationMs = downloadStopwatch.ElapsedMilliseconds,
+                MongoIngestionDurationMs = mongoIngestionStopwatch.ElapsedMilliseconds
+            };
+        }
+        finally
+        {
+            // Ensure temp file is always cleaned up
+            if (tempFilePath != null && File.Exists(tempFilePath))
+            {
+                try
+                {
+                    File.Delete(tempFilePath);
+                    logger.LogDebug("Deleted temp file: {TempPath}", tempFilePath);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to delete temp file: {TempPath}", tempFilePath);
+                }
+            }
+        }
     }
 
-    private async Task<CsvContext> OpenCsvFileAsync(
+    private async Task<string> DownloadToTempFileAsync(
         IBlobStorageService blobs,
         string fileKey,
         CancellationToken ct)
     {
-        var stream = await blobs.OpenReadAsync(fileKey, ct);
+        var tempFilePath = Path.Combine(Path.GetTempPath(), $"keeper_import_{Guid.NewGuid():N}.csv");
+
+        logger.LogDebug("Downloading {FileKey} to {TempPath}", fileKey, tempFilePath);
+
+        await using var sourceStream = await blobs.OpenReadAsync(fileKey, ct);
+        await using var fileStream = new FileStream(
+            tempFilePath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 81920, // 80KB buffer
+            useAsync: true);
+
+        await sourceStream.CopyToAsync(fileStream, ct);
+        await fileStream.FlushAsync(ct);
+
+        return tempFilePath;
+    }
+
+    private async Task<CsvContext> OpenCsvFileFromDiskAsync(
+        string filePath,
+        CancellationToken ct)
+    {
+        var stream = new FileStream(
+            filePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920, // 80KB buffer
+            useAsync: true);
+
         var reader = new StreamReader(stream);
         var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
         {
@@ -351,6 +423,7 @@ public class IngestionPipeline(
         var metrics = new RecordMetricsAccumulator();
         var batch = new List<(BsonDocument Document, string ChangeType)>();
         var lineageEvents = new List<RecordLineageEvent>();
+        var totalMongoProcessingMs = 0L;
 
         while (await csv.ReadAsync())
         {
@@ -370,6 +443,8 @@ public class IngestionPipeline(
 
             if (batch.Count >= BatchSize)
             {
+                var batchStopwatch = Stopwatch.StartNew();
+
                 var batchMetrics = await ProcessBatchAsync(
                     importId,
                     collection,
@@ -379,6 +454,9 @@ public class IngestionPipeline(
                     definition,
                     lineageEvents,
                     ct);
+
+                batchStopwatch.Stop();
+                totalMongoProcessingMs += batchStopwatch.ElapsedMilliseconds;
 
                 metrics.AddBatch(batchMetrics);
 
@@ -409,7 +487,12 @@ public class IngestionPipeline(
         // Flush remaining lineage events
         await FlushLineageEventsAsync(lineageEvents, ct);
 
-        return metrics.ToFileMetrics();
+        // Calculate average MongoDB ingestion time per record
+        var avgMongoMs = metrics.RecordsProcessed > 0
+            ? (double)totalMongoProcessingMs / metrics.RecordsProcessed
+     : 0;
+
+        return metrics.ToFileMetrics(avgMongoMs);
     }
 
     private bool IsValidChangeType(string changeType)
@@ -818,6 +901,9 @@ public class IngestionPipeline(
             RecordsUpdated = metrics.RecordsUpdated,
             RecordsDeleted = metrics.RecordsDeleted,
             IngestionDurationMs = durationMs,
+            AverageRecordIngestionMs = metrics.AverageMongoIngestionMs,
+            S3DownloadDurationMs = metrics.S3DownloadDurationMs,
+            MongoIngestionDurationMs = metrics.MongoIngestionDurationMs,
             IngestedAtUtc = DateTime.UtcNow,
             Status = FileProcessingStatus.Ingested
         }, ct);
@@ -826,9 +912,9 @@ public class IngestionPipeline(
     private async Task RecordFailedIngestionAsync(
         Guid importId,
         StorageObjectInfo file,
-        long durationMs,
+     long durationMs,
         Exception ex,
-        CancellationToken ct)
+     CancellationToken ct)
     {
         try
         {
@@ -840,6 +926,9 @@ public class IngestionPipeline(
                 RecordsUpdated = 0,
                 RecordsDeleted = 0,
                 IngestionDurationMs = durationMs,
+                AverageRecordIngestionMs = 0,
+                S3DownloadDurationMs = 0,
+                MongoIngestionDurationMs = 0,
                 IngestedAtUtc = DateTime.UtcNow,
                 Status = FileProcessingStatus.Failed,
                 Error = ex.Message
@@ -949,12 +1038,13 @@ public class IngestionPipeline(
             RecordsDeleted += batchMetrics.RecordsDeleted;
         }
 
-        public FileIngestionMetrics ToFileMetrics() => new()
+        public FileIngestionMetrics ToFileMetrics(double avgMongoIngestionMs) => new()
         {
             RecordsProcessed = RecordsProcessed,
             RecordsCreated = RecordsCreated,
             RecordsUpdated = RecordsUpdated,
-            RecordsDeleted = RecordsDeleted
+            RecordsDeleted = RecordsDeleted,
+            AverageMongoIngestionMs = avgMongoIngestionMs
         };
     }
 
@@ -980,6 +1070,9 @@ public class IngestionPipeline(
         public int RecordsCreated { get; init; }
         public int RecordsUpdated { get; init; }
         public int RecordsDeleted { get; init; }
+        public double AverageMongoIngestionMs { get; init; }
+        public long S3DownloadDurationMs { get; init; }
+        public long MongoIngestionDurationMs { get; init; }
     }
 
     private record BatchProcessingMetrics

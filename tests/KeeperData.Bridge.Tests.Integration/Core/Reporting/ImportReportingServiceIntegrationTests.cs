@@ -4,6 +4,7 @@ using KeeperData.Core.Database;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Reporting.Impl;
+using KeeperData.Core.Reporting.Services;
 using KeeperData.Infrastructure.Database.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -45,11 +46,22 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         });
 
         var loggerMock = new Mock<ILogger<ImportReportingService>>();
+        var loggerFactoryMock = new Mock<ILoggerFactory>();
+        loggerFactoryMock.Setup(x => x.CreateLogger(It.IsAny<string>()))
+            .Returns(new Mock<ILogger>().Object);
+
+        // Create services required by ImportReportingService
+        var idGenerator = new LineageIdGenerator();
+        var mapper = new LineageMapper();
+        var indexManagerFactory = new LineageIndexManagerFactory(loggerFactoryMock.Object);
 
         // Create the service under test
         _reportingService = new ImportReportingService(
             _mongoClient,
             mongoConfig,
+            idGenerator,
+            mapper,
+            indexManagerFactory,
             loggerMock.Object);
     }
 

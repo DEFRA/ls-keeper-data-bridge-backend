@@ -14,7 +14,8 @@ public class ImportController(
     ITaskProcessBulkFiles taskProcessBulkFiles,
     IImportReportingService importReportingService,
     ILogger<ImportController> logger,
-    ICollectionManagementService collectionManagementService) : ControllerBase
+    ICollectionManagementService collectionManagementService,
+    IReportingCollectionManagementService reportingCollectionManagementService) : ControllerBase
 {
     /// <summary>
     /// Starts a bulk file import process asynchronously.
@@ -193,7 +194,7 @@ public class ImportController(
     /// Gets the file processing reports for all files in a specific import.
     /// Includes details about acquisition and ingestion for each file.
     /// </summary>
-    /// <param name="importId">The import ID to retrieve file reports for</param>
+    /// <param name="importId">The import ID to retrieve the file reports for</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of file processing reports</returns>
     [HttpGet("{importId}/files")]
@@ -309,6 +310,103 @@ public class ImportController(
         logger.LogInformation("Received request to delete all collections");
 
         var result = await collectionManagementService.DeleteAllCollectionsAsync(cancellationToken);
+
+        if (!result.Success)
+        {
+            if (result.Error is OperationCanceledException)
+            {
+                return StatusCode(499, new ErrorResponse
+                {
+                    Message = result.Message,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            return StatusCode(500, new ErrorResponse
+            {
+                Message = result.Message,
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        return Ok(new DeleteCollectionsResponse
+        {
+            DeletedCollections = result.DeletedCollections,
+            TotalCount = result.TotalCount,
+            Success = true,
+            Message = result.Message,
+            DeletedAtUtc = result.OperatedAtUtc
+        });
+    }
+
+    /// <summary>
+    /// Deletes a specific reporting/lineage MongoDB collection by name.
+    /// Valid collections: import_reports, import_files, record_lineage, record_lineage_events.
+    /// </summary>
+    /// <param name="collectionName">The name of the reporting collection to delete</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Success response with deleted collection name, or 404 if collection not valid</returns>
+    [HttpDelete("reporting-collections/{collectionName}")]
+    [ProducesResponseType(typeof(DeleteCollectionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
+    public async Task<IActionResult> DeleteReportingCollection(string collectionName, CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Received request to delete reporting collection: {CollectionName}", collectionName);
+
+        var result = await reportingCollectionManagementService.DeleteReportingCollectionAsync(collectionName, cancellationToken);
+
+        if (!result.Success)
+        {
+            if (result.Error is ArgumentException)
+            {
+                return NotFound(new ErrorResponse
+                {
+                    Message = result.Message,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            if (result.Error is OperationCanceledException)
+            {
+                return StatusCode(499, new ErrorResponse
+                {
+                    Message = result.Message,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            return StatusCode(500, new ErrorResponse
+            {
+                Message = result.Message,
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        return Ok(new DeleteCollectionResponse
+        {
+            CollectionName = result.CollectionName,
+            Success = true,
+            Message = result.Message,
+            DeletedAtUtc = result.OperatedAtUtc
+        });
+    }
+
+    /// <summary>
+    /// Deletes all reporting/lineage MongoDB collections.
+    /// This includes: import_reports, import_files, record_lineage, record_lineage_events.
+    /// These collections will be automatically recreated when the next import runs.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Summary of deleted reporting collections</returns>
+    [HttpDelete("reporting-collections")]
+    [ProducesResponseType(typeof(DeleteCollectionsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
+    public async Task<IActionResult> DeleteAllReportingCollections(CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Received request to delete all reporting collections");
+
+        var result = await reportingCollectionManagementService.DeleteAllReportingCollectionsAsync(cancellationToken);
 
         if (!result.Success)
         {

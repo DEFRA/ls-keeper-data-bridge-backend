@@ -29,10 +29,10 @@ public class IngestionPipeline(
     CsvRowCounter csvRowCounter,
     ILogger<IngestionPipeline> logger) : IIngestionPipeline
 {
-    private const int BatchSize = 1000;
+    private const int BatchSize = 100;
     private const int LogInterval = 100;
-    private const int ProgressUpdateInterval = 10; // Update progress tracking every N records ingested
-    private const int LineageEventBatchSize = 500;
+    private const int ProgressUpdateInterval = 100; // Update progress tracking every N records ingested
+    private const int LineageEventBatchSize = 100;
     private readonly IDatabaseConfig _databaseConfig = databaseConfig.Value;
     private readonly CsvRowCounter _rowCounter = csvRowCounter;
 
@@ -46,6 +46,7 @@ public class IngestionPipeline(
     public async Task StartAsync(Guid importId, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
+        Debug.WriteLine($"[keepetl] Starting ingest pipeline for ImportId: {importId}");
         logger.LogInformation("Starting ingest pipeline for ImportId: {ImportId}", importId);
 
         try
@@ -82,6 +83,7 @@ public class IngestionPipeline(
 
     private (IBlobStorageService BlobStorage, ExternalCatalogueService CatalogueService) InitializeStorageServices(Guid importId)
     {
+        Debug.WriteLine($"[keepetl] Initializing blob storage services for ImportId: {importId}");
         var blobs = blobStorageServiceFactory.Get();
         var catalogueService = ExternalCatalogueServiceFactory.Create(blobs);
 
@@ -95,11 +97,13 @@ public class IngestionPipeline(
         ExternalCatalogueService catalogueService,
         CancellationToken ct)
     {
+        Debug.WriteLine($"[keepetl] Step 1: Discovering files for ImportId: {importId}");
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
 
         var fileSets = await catalogueService.GetFileSetsAsync(20, ct);
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
 
+        Debug.WriteLine($"[keepetl] Discovered {fileSets.Count} file set(s) containing {totalFiles} file(s) for ImportId: {importId}");
         logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",
             fileSets.Count,
             totalFiles,
@@ -110,6 +114,7 @@ public class IngestionPipeline(
 
     private async Task UpdateIngestionPhaseStartedAsync(Guid importId, CancellationToken ct)
     {
+        Debug.WriteLine($"[keepetl] Updating ingestion phase to Started for ImportId: {importId}");
         await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
         {
             Status = PhaseStatus.Started,
@@ -129,6 +134,7 @@ public class IngestionPipeline(
         CancellationToken ct
     )
     {
+        Debug.WriteLine($"[keepetl] Step 2: Processing and ingesting {totalFiles} files for ImportId: {importId}");
         logger.LogInformation("Step 2: Processing and ingesting files for ImportId: {ImportId}", importId);
 
         var totals = new IngestionTotals();
@@ -136,6 +142,7 @@ public class IngestionPipeline(
 
         foreach (var fileSet in fileSets)
         {
+            Debug.WriteLine($"[keepetl] Processing file set: {fileSet.Definition.Name} with {fileSet.Files.Length} file(s)");
             logger.LogDebug("Processing file set for definition: {DefinitionName} with {FileCount} file(s) for ImportId: {ImportId}",
                 fileSet.Definition.Name,
                 fileSet.Files.Length,
@@ -166,6 +173,7 @@ public class IngestionPipeline(
             }
         }
 
+        Debug.WriteLine($"[keepetl] Step 2 completed: Processed {processedFileCount} file(s) for ImportId: {importId}");
         logger.LogInformation("Step 2 completed: Processed {ProcessedFileCount} file(s) for ImportId: {ImportId}",
             processedFileCount,
             importId);
@@ -184,6 +192,7 @@ public class IngestionPipeline(
     {
         var fileStopwatch = Stopwatch.StartNew();
 
+        Debug.WriteLine($"[keepetl] Processing file {currentFileNumber}/{totalFiles}: {file.Key}");
         logger.LogInformation("Processing file {CurrentFile}/{TotalFiles}: {FileKey} for ImportId: {ImportId}",
             currentFileNumber,
             totalFiles,
@@ -197,6 +206,7 @@ public class IngestionPipeline(
 
             await RecordSuccessfulIngestionAsync(importId, file, fileMetrics, fileStopwatch.ElapsedMilliseconds, ct);
 
+            Debug.WriteLine($"[keepetl] Successfully ingested file: {file.Key} - Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}, Duration: {fileStopwatch.ElapsedMilliseconds}ms");
             logger.LogInformation("Successfully ingested file: {FileKey} - Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms",
                 file.Key,
                 fileMetrics.RecordsCreated,
@@ -214,6 +224,7 @@ public class IngestionPipeline(
         catch (Exception ex)
         {
             fileStopwatch.Stop();
+            Debug.WriteLine($"[keepetl] Failed to ingest file: {file.Key} after {fileStopwatch.ElapsedMilliseconds}ms - Error: {ex.Message}");
             logger.LogError(ex, "Failed to ingest file: {FileKey} after {Duration}ms for ImportId: {ImportId}",
                 file.Key,
                 fileStopwatch.ElapsedMilliseconds,
@@ -235,6 +246,7 @@ public class IngestionPipeline(
         var overallStopwatch = Stopwatch.StartNew();
         var collectionName = fileSet.Definition.Name;
 
+        Debug.WriteLine($"[keepetl] Starting ingestion of file {file.Key} into collection {collectionName}");
         logger.LogInformation("Starting ingestion of file {FileKey} into collection {CollectionName}",
             file.Key, collectionName);
 
@@ -251,6 +263,7 @@ public class IngestionPipeline(
             tempFilePath = await DownloadToTempFileAsync(blobs, file.Key, ct);
             downloadStopwatch.Stop();
 
+            Debug.WriteLine($"[keepetl] Downloaded file {file.Key} to temp storage: {tempFilePath} in {downloadStopwatch.ElapsedMilliseconds}ms");
             logger.LogInformation("Downloaded file {FileKey} to temp storage: {TempPath} in {DownloadDuration}ms",
                 file.Key, tempFilePath, downloadStopwatch.ElapsedMilliseconds);
 
@@ -258,6 +271,7 @@ public class IngestionPipeline(
             var estimatedRowCount = await _rowCounter.CountRowsAsync(tempFilePath, ct);
             progressTracker = new IngestionProgressTracker(file.Key, estimatedRowCount);
 
+            Debug.WriteLine($"[keepetl] File {file.Key} has approximately {estimatedRowCount} data rows to process");
             logger.LogInformation("File {FileKey} has approximately {RowCount} data rows to process",
                 file.Key, estimatedRowCount);
 
@@ -288,6 +302,7 @@ public class IngestionPipeline(
             mongoIngestionStopwatch.Stop();
             overallStopwatch.Stop();
 
+            Debug.WriteLine($"[keepetl] Completed ingestion of file {file.Key}. Total records: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}, S3 Download: {downloadStopwatch.ElapsedMilliseconds}ms, MongoDB Ingestion: {mongoIngestionStopwatch.ElapsedMilliseconds}ms, Total Duration: {overallStopwatch.ElapsedMilliseconds}ms, Avg Record Processing: {metrics.AverageMongoIngestionMs:F2}ms/record");
             logger.LogInformation("Completed ingestion of file {FileKey}. Total records: {TotalRecords}, Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, S3 Download: {DownloadDuration}ms, MongoDB Ingestion: {MongoIngestionDuration}ms, Total Duration: {TotalDuration}ms, Avg Record Processing: {AvgMs:F2}ms/record",
                 file.Key,
                 metrics.RecordsProcessed,
@@ -313,10 +328,12 @@ public class IngestionPipeline(
                 try
                 {
                     File.Delete(tempFilePath);
+                    Debug.WriteLine($"[keepetl] Deleted temp file: {tempFilePath}");
                     logger.LogDebug("Deleted temp file: {TempPath}", tempFilePath);
                 }
                 catch (Exception ex)
                 {
+                    Debug.WriteLine($"[keepetl] Failed to delete temp file: {tempFilePath} - Error: {ex.Message}");
                     logger.LogWarning(ex, "Failed to delete temp file: {TempPath}", tempFilePath);
                 }
             }
@@ -330,6 +347,7 @@ public class IngestionPipeline(
     {
         var tempFilePath = Path.Combine(Path.GetTempPath(), $"keeper_import_{Guid.NewGuid():N}.csv");
 
+        Debug.WriteLine($"[keepetl] Downloading {fileKey} to {tempFilePath}");
         logger.LogDebug("Downloading {FileKey} to {TempPath}", fileKey, tempFilePath);
 
         await using var sourceStream = await blobs.OpenReadAsync(fileKey, ct);
@@ -351,6 +369,7 @@ public class IngestionPipeline(
         string filePath,
         CancellationToken ct)
     {
+        Debug.WriteLine($"[keepetl] Opening CSV file from disk: {filePath}");
         var stream = new FileStream(
             filePath,
             FileMode.Open,
@@ -383,6 +402,7 @@ public class IngestionPipeline(
 
         if (rawHeaders == null || rawHeaders.Length == 0)
         {
+            Debug.WriteLine($"[keepetl] No headers found in file {fileKey}, skipping ingestion");
             logger.LogWarning("No headers found in file {FileKey}, skipping ingestion", fileKey);
             throw new InvalidOperationException($"No headers found in file {fileKey}");
         }
@@ -393,6 +413,7 @@ public class IngestionPipeline(
         ValidatePrimaryKeyHeaders(headers, primaryKeyHeaderNames);
         ValidateChangeTypeHeader(headers, changeTypeHeaderName);
 
+        Debug.WriteLine($"[keepetl] CSV headers read successfully. Total columns: {headers.Length}, Primary Keys: {string.Join(", ", primaryKeyHeaderNames)}, Change Type: {changeTypeHeaderName}");
         logger.LogInformation("CSV headers read successfully. Total columns: {ColumnCount}, Primary Keys: {PrimaryKeys}, Change Type: {ChangeType}",
             headers.Length, string.Join(", ", primaryKeyHeaderNames), changeTypeHeaderName);
 
@@ -437,6 +458,7 @@ public class IngestionPipeline(
         IngestionProgressTracker progressTracker,
         CancellationToken ct)
     {
+        Debug.WriteLine($"[keepetl] Starting to process CSV records for file: {fileKey}");
         var metrics = new RecordMetricsAccumulator();
         var batch = new List<(BsonDocument Document, string ChangeType)>();
         var lineageEvents = new List<RecordLineageEvent>();
@@ -451,6 +473,7 @@ public class IngestionPipeline(
             if (!IsValidChangeType(changeType))
             {
                 var primaryKeyValue = string.Join(CompositeKeyDelimiter, headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty));
+                Debug.WriteLine($"[keepetl] Invalid change type '{changeType}' for record with primary key '{primaryKeyValue}' in file {fileKey}, skipping record");
                 logger.LogWarning("Invalid change type '{ChangeType}' for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
                     changeType, primaryKeyValue, fileKey);
                 metrics.RecordsSkipped++;
@@ -485,6 +508,8 @@ public class IngestionPipeline(
                     RecordsDeleted = batchMetrics.RecordsDeleted
                 });
 
+                Debug.WriteLine($"[keepetl] Processed batch of {BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}");
+
                 batch.Clear();
 
                 await FlushLineageEventsIfNeededAsync(lineageEvents, ct);
@@ -511,6 +536,7 @@ public class IngestionPipeline(
         // Process remaining records
         if (batch.Count > 0)
         {
+            Debug.WriteLine($"[keepetl] Processing final batch of {batch.Count} records from {fileKey}");
             var batchMetrics = await ProcessBatchAsync(
                 importId,
                 collection,
@@ -542,6 +568,8 @@ public class IngestionPipeline(
             ? (double)totalMongoProcessingMs / metrics.RecordsProcessed
      : 0;
 
+        Debug.WriteLine($"[keepetl] Finished processing CSV records for file: {fileKey}. Total: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}, Avg: {avgMongoMs:F2}ms/record");
+
         return metrics.ToFileMetrics(avgMongoMs);
     }
 
@@ -556,6 +584,7 @@ public class IngestionPipeline(
     {
         if (recordsProcessed % (LogInterval * BatchSize) == 0 || recordsProcessed % LogInterval == 0)
         {
+            Debug.WriteLine($"[keepetl] Imported {recordsProcessed} records from file {fileKey}");
             logger.LogInformation("Imported {RecordsProcessed} records from file {FileKey}",
                 recordsProcessed, fileKey);
         }
@@ -567,7 +596,12 @@ public class IngestionPipeline(
     {
         if (lineageEvents.Count >= LineageEventBatchSize)
         {
+            var flushStopwatch = Stopwatch.StartNew();
+            Debug.WriteLine($"[keepetl] Flushing {lineageEvents.Count} lineage events");
             await reportingService.RecordLineageEventsBatchAsync(lineageEvents, ct);
+            flushStopwatch.Stop();
+            var elapsedSeconds = flushStopwatch.Elapsed.TotalSeconds;
+            Debug.WriteLine($"[keepetl] Lineage events flushed in {elapsedSeconds:F3}s");
             lineageEvents.Clear();
         }
     }
@@ -578,7 +612,12 @@ public class IngestionPipeline(
     {
         if (lineageEvents.Count > 0)
         {
+            var flushStopwatch = Stopwatch.StartNew();
+            Debug.WriteLine($"[keepetl] Flushing final {lineageEvents.Count} lineage events");
             await reportingService.RecordLineageEventsBatchAsync(lineageEvents, ct);
+            flushStopwatch.Stop();
+            var elapsedSeconds = flushStopwatch.Elapsed.TotalSeconds;
+            Debug.WriteLine($"[keepetl] Final lineage events flushed in {elapsedSeconds:F3}s");
         }
     }
 
@@ -593,8 +632,13 @@ public class IngestionPipeline(
 
         if (!collectionList.Contains(collectionName))
         {
+            Debug.WriteLine($"[keepetl] Creating collection {collectionName}");
             logger.LogInformation("Creating collection {CollectionName}", collectionName);
             await database.CreateCollectionAsync(collectionName, cancellationToken: ct);
+        }
+        else
+        {
+            Debug.WriteLine($"[keepetl] Collection {collectionName} already exists");
         }
 
         return database.GetCollection<BsonDocument>(collectionName);
@@ -608,6 +652,7 @@ public class IngestionPipeline(
         {
             if (await WildcardIndexExistsAsync(collection, ct))
             {
+                Debug.WriteLine($"[keepetl] Wildcard index already exists on collection {collection.CollectionNamespace.CollectionName}");
                 logger.LogDebug("Wildcard index already exists on collection {CollectionName}",
                     collection.CollectionNamespace.CollectionName);
                 return;
@@ -617,6 +662,7 @@ public class IngestionPipeline(
         }
         catch (Exception ex)
         {
+            Debug.WriteLine($"[keepetl] Failed to create wildcard index on collection {collection.CollectionNamespace.CollectionName}. Continuing with ingestion. Error: {ex.Message}");
             logger.LogWarning(ex, "Failed to create wildcard index on collection {CollectionName}. Continuing with ingestion.",
                 collection.CollectionNamespace.CollectionName);
         }
@@ -644,6 +690,7 @@ public class IngestionPipeline(
         IMongoCollection<BsonDocument> collection,
         CancellationToken ct)
     {
+        Debug.WriteLine($"[keepetl] Creating wildcard index on collection {collection.CollectionNamespace.CollectionName}");
         logger.LogInformation("Creating wildcard index on collection {CollectionName}",
             collection.CollectionNamespace.CollectionName);
 
@@ -652,6 +699,7 @@ public class IngestionPipeline(
 
         await collection.Indexes.CreateOneAsync(indexModel, cancellationToken: ct);
 
+        Debug.WriteLine($"[keepetl] Wildcard index created successfully on collection {collection.CollectionNamespace.CollectionName}");
         logger.LogInformation("Wildcard index created successfully on collection {CollectionName}",
             collection.CollectionNamespace.CollectionName);
     }
@@ -715,6 +763,11 @@ public class IngestionPipeline(
             return new BatchProcessingMetrics();
         }
 
+        var batchStopwatch = Stopwatch.StartNew();
+
+        Debug.WriteLine("[keepetl] -- NEW BATCH --");
+        Debug.WriteLine($"[keepetl] Processing batch of {batch.Count} documents for collection {collectionName}");
+
         var documentIds = batch.Select(b => b.Document[FieldId]).ToList();
         var existingDocsDict = await FetchExistingDocumentsAsync(collection, documentIds, ct);
         var softDeletedIds = GetSoftDeletedIds(existingDocsDict);
@@ -776,8 +829,14 @@ public class IngestionPipeline(
 
         if (bulkOps.Count > 0)
         {
+            Debug.WriteLine($"[keepetl] Executing bulk write of {bulkOps.Count} operations for collection {collectionName}");
             await collection.BulkWriteAsync(bulkOps, new BulkWriteOptions { IsOrdered = false }, ct);
         }
+
+        batchStopwatch.Stop();
+        var elapsedSeconds = batchStopwatch.Elapsed.TotalSeconds;
+
+        Debug.WriteLine($"[keepetl] Batch processing complete. Processed: {metrics.Processed}, Created: {metrics.Created}, Updated: {metrics.Updated}, Deleted: {metrics.Deleted}, Elapsed: {elapsedSeconds:F3}s");
 
         return metrics.ToMetrics();
     }
@@ -795,9 +854,9 @@ public class IngestionPipeline(
     private HashSet<BsonValue> GetSoftDeletedIds(Dictionary<BsonValue, BsonDocument> existingDocsDict)
     {
         return existingDocsDict
-   .Where(kvp => kvp.Value.Contains(FieldIsDeleted) && kvp.Value[FieldIsDeleted].AsBoolean)
-     .Select(kvp => kvp.Key)
-   .ToHashSet();
+            .Where(kvp => kvp.Value.Contains(FieldIsDeleted) && kvp.Value[FieldIsDeleted].AsBoolean)
+            .Select(kvp => kvp.Key)
+            .ToHashSet();
     }
 
     private void ProcessDeleteOperation(List<WriteModel<BsonDocument>> bulkOps,
@@ -911,6 +970,7 @@ public class IngestionPipeline(
         if (isSoftDeleted)
         {
             eventType = RecordEventType.Undeleted;
+            Debug.WriteLine($"[keepetl] Undeleting soft-deleted record with _id: {docId} in file {fileKey}");
             logger.LogInformation("Undeleting soft-deleted record with _id: {DocId} in file {FileKey}", docId, fileKey);
         }
         else if (isCreate)
@@ -1047,6 +1107,7 @@ public class IngestionPipeline(
     private void LogPipelineCompletion(Guid importId, Stopwatch stopwatch)
     {
         stopwatch.Stop();
+        Debug.WriteLine($"[keepetl] Import pipeline completed successfully for ImportId: {importId}. Total duration: {stopwatch.ElapsedMilliseconds}ms ({stopwatch.Elapsed.TotalSeconds}s)");
         logger.LogInformation("Import pipeline completed successfully for ImportId: {ImportId}. Total duration: {Duration}ms ({DurationSeconds}s)",
             importId,
             stopwatch.ElapsedMilliseconds,
@@ -1056,6 +1117,7 @@ public class IngestionPipeline(
     private void LogPipelineFailure(Guid importId, Stopwatch stopwatch, Exception ex)
     {
         stopwatch.Stop();
+        Debug.WriteLine($"[keepetl] Import pipeline failed for ImportId: {importId} after {stopwatch.ElapsedMilliseconds}ms ({stopwatch.Elapsed.TotalSeconds}s) - Error: {ex.Message}");
         logger.LogError(ex, "Import pipeline failed for ImportId: {ImportId} after {Duration}ms ({DurationSeconds}s)",
             importId,
             stopwatch.ElapsedMilliseconds,

@@ -1,6 +1,7 @@
 using KeeperData.Core.Database;
 using KeeperData.Core.Reporting.Domain;
 using KeeperData.Core.Reporting.Dtos;
+using KeeperData.Core.Reporting.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
@@ -12,18 +13,29 @@ public class ImportReportingService : IImportReportingService
     private readonly IMongoCollection<ImportReportDocument> _importReports;
     private readonly IMongoCollection<ImportFileDocument> _importFiles;
     private readonly IMongoCollection<RecordLineageDocument> _recordLineage;
+    private readonly IMongoCollection<LineageEventDocument> _recordLineageEvents;
+    private readonly ILineageIdGenerator _idGenerator;
+    private readonly ILineageMapper _mapper;
+    private readonly ILineageIndexManager _indexManager;
     private readonly ILogger<ImportReportingService> _logger;
 
     public ImportReportingService(
         IMongoClient mongoClient,
         IOptions<IDatabaseConfig> databaseConfig,
+        ILineageIdGenerator idGenerator,
+        ILineageMapper mapper,
+        ILineageIndexManagerFactory indexManagerFactory,
         ILogger<ImportReportingService> logger)
     {
         var database = mongoClient.GetDatabase(databaseConfig.Value.DatabaseName);
         _importReports = database.GetCollection<ImportReportDocument>("import_reports");
         _importFiles = database.GetCollection<ImportFileDocument>("import_files");
         _recordLineage = database.GetCollection<RecordLineageDocument>("record_lineage");
-        _logger = logger;
+        _recordLineageEvents = database.GetCollection<LineageEventDocument>("record_lineage_events");
+        _idGenerator = idGenerator ?? throw new ArgumentNullException(nameof(idGenerator));
+        _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+        _indexManager = indexManagerFactory?.Create(_recordLineageEvents) ?? throw new ArgumentNullException(nameof(indexManagerFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<ImportReport> StartImportAsync(Guid importId, string sourceType, CancellationToken ct)
@@ -255,44 +267,81 @@ public class ImportReportingService : IImportReportingService
 
         _logger.LogDebug("Recording {Count} lineage events", eventsList.Count);
 
-        var bulkOps = new List<WriteModel<RecordLineageDocument>>();
+        // Ensure indexes exist (idempotent, fast after first call)
+        await _indexManager.EnsureIndexesAsync(ct);
 
-        foreach (var lineageEvent in eventsList)
+        // Group events by lineage document ID for efficient parent upserts
+        var groupedEvents = eventsList.GroupBy(e => 
+            _idGenerator.GenerateLineageDocumentId(e.CollectionName, e.RecordId));
+
+        var parentUpserts = new List<WriteModel<RecordLineageDocument>>();
+        var eventInserts = new List<LineageEventDocument>();
+
+        foreach (var group in groupedEvents)
         {
-            var filter = Builders<RecordLineageDocument>.Filter.And(
-                Builders<RecordLineageDocument>.Filter.Eq(x => x.RecordId, lineageEvent.RecordId),
-                Builders<RecordLineageDocument>.Filter.Eq(x => x.CollectionName, lineageEvent.CollectionName)
-            );
+            var lineageDocId = group.Key;
+            var latestEvent = group.OrderByDescending(e => e.EventDateUtc).First();
 
-            var eventDoc = new LineageEventDocument
+            // Prepare parent document upsert
+            parentUpserts.Add(CreateParentUpsert(lineageDocId, latestEvent));
+
+            // Prepare event documents
+            foreach (var evt in group)
             {
-                EventType = lineageEvent.EventType.ToString(),
-                ImportId = lineageEvent.ImportId,
-                FileKey = lineageEvent.FileKey,
-                EventDateUtc = lineageEvent.EventDateUtc,
-                ChangeType = lineageEvent.ChangeType,
-                PreviousValues = lineageEvent.PreviousValues,
-                NewValues = lineageEvent.NewValues
-            };
-
-            var currentStatus = lineageEvent.EventType == RecordEventType.Deleted ? "Deleted" : "Active";
-
-            var update = Builders<RecordLineageDocument>.Update
-                .Push(x => x.Events, eventDoc)
-                .Set(x => x.CurrentStatus, currentStatus)
-                .Set(x => x.LastModifiedByImport, lineageEvent.ImportId)
-                .Set(x => x.LastModifiedAtUtc, lineageEvent.EventDateUtc)
-                .SetOnInsert(x => x.RecordId, lineageEvent.RecordId)
-                .SetOnInsert(x => x.CollectionName, lineageEvent.CollectionName)
-                .SetOnInsert(x => x.CreatedByImport, lineageEvent.ImportId)
-                .SetOnInsert(x => x.CreatedAtUtc, lineageEvent.EventDateUtc);
-
-            bulkOps.Add(new UpdateOneModel<RecordLineageDocument>(filter, update) { IsUpsert = true });
+                var eventId = _idGenerator.GenerateLineageEventId(
+                    evt.CollectionName, 
+                    evt.RecordId, 
+                    evt.EventDateUtc);
+                
+                eventInserts.Add(_mapper.MapToEventDocument(evt, eventId, lineageDocId));
+            }
         }
 
-        if (bulkOps.Count > 0)
+        // Execute bulk operations
+        await ExecuteBulkOperationsAsync(parentUpserts, eventInserts, ct);
+    }
+
+    private WriteModel<RecordLineageDocument> CreateParentUpsert(
+        string lineageDocId, 
+        RecordLineageEvent latestEvent)
+    {
+        var filter = Builders<RecordLineageDocument>.Filter.Eq(x => x.Id, lineageDocId);
+        var currentStatus = latestEvent.EventType == RecordEventType.Deleted ? "Deleted" : "Active";
+
+        var update = Builders<RecordLineageDocument>.Update
+            .Set(x => x.CurrentStatus, currentStatus)
+            .Set(x => x.LastModifiedByImport, latestEvent.ImportId)
+            .Set(x => x.LastModifiedAtUtc, latestEvent.EventDateUtc)
+            .SetOnInsert(x => x.Id, lineageDocId)
+            .SetOnInsert(x => x.RecordId, latestEvent.RecordId)
+            .SetOnInsert(x => x.CollectionName, latestEvent.CollectionName)
+            .SetOnInsert(x => x.CreatedByImport, latestEvent.ImportId)
+            .SetOnInsert(x => x.CreatedAtUtc, latestEvent.EventDateUtc);
+
+        return new UpdateOneModel<RecordLineageDocument>(filter, update) { IsUpsert = true };
+    }
+
+    private async Task ExecuteBulkOperationsAsync(
+        List<WriteModel<RecordLineageDocument>> parentUpserts,
+        List<LineageEventDocument> eventInserts,
+        CancellationToken ct)
+    {
+        // Execute parent upserts
+        if (parentUpserts.Count > 0)
         {
-            await _recordLineage.BulkWriteAsync(bulkOps, new BulkWriteOptions { IsOrdered = false }, ct);
+            await _recordLineage.BulkWriteAsync(
+                parentUpserts,
+                new BulkWriteOptions { IsOrdered = false },
+                ct);
+        }
+
+        // Execute event inserts
+        if (eventInserts.Count > 0)
+        {
+            await _recordLineageEvents.InsertManyAsync(
+                eventInserts,
+                new InsertManyOptions { IsOrdered = false },
+                ct);
         }
     }
 
@@ -314,14 +363,23 @@ public class ImportReportingService : IImportReportingService
 
     public async Task<RecordLifecycle?> GetRecordLifecycleAsync(string collectionName, string recordId, CancellationToken ct)
     {
-        var filter = Builders<RecordLineageDocument>.Filter.And(
-            Builders<RecordLineageDocument>.Filter.Eq(x => x.RecordId, recordId),
-            Builders<RecordLineageDocument>.Filter.Eq(x => x.CollectionName, collectionName)
-        );
+        var lineageDocId = _idGenerator.GenerateLineageDocumentId(collectionName, recordId);
+        
+        // Get parent document (O(1) direct lookup by composite _id)
+        var parentFilter = Builders<RecordLineageDocument>.Filter.Eq(x => x.Id, lineageDocId);
+        var parentDoc = await _recordLineage.Find(parentFilter).FirstOrDefaultAsync(ct);
+        
+        if (parentDoc == null) return null;
 
-        var document = await _recordLineage.Find(filter).FirstOrDefaultAsync(ct);
+        // Get all events for this record (efficiently indexed query)
+        var eventsFilter = Builders<LineageEventDocument>.Filter.Eq(x => x.LineageDocumentId, lineageDocId);
+        var eventsSort = Builders<LineageEventDocument>.Sort.Ascending(x => x.Id); // Chronological by design
+        var events = await _recordLineageEvents
+            .Find(eventsFilter)
+            .Sort(eventsSort)
+            .ToListAsync(ct);
 
-        return document != null ? MapToRecordLifecycle(document) : null;
+        return _mapper.MapToRecordLifecycle(parentDoc, events);
     }
 
     public async Task<IReadOnlyList<RecordLineageEvent>> GetRecordLineageAsync(string collectionName, string recordId, CancellationToken ct)
@@ -413,32 +471,6 @@ public class ImportReportingService : IImportReportingService
                 IngestionDurationMs = doc.IngestionDetails.IngestionDurationMs
             } : null,
             Error = doc.Error
-        };
-    }
-
-    private static RecordLifecycle MapToRecordLifecycle(RecordLineageDocument doc)
-    {
-        return new RecordLifecycle
-        {
-            RecordId = doc.RecordId,
-            CollectionName = doc.CollectionName,
-            CurrentStatus = doc.CurrentStatus,
-            CreatedByImport = doc.CreatedByImport,
-            LastModifiedByImport = doc.LastModifiedByImport,
-            CreatedAtUtc = doc.CreatedAtUtc,
-            LastModifiedAtUtc = doc.LastModifiedAtUtc,
-            Events = doc.Events.Select(e => new RecordLineageEvent
-            {
-                RecordId = doc.RecordId,
-                CollectionName = doc.CollectionName,
-                EventType = Enum.Parse<RecordEventType>(e.EventType),
-                ImportId = e.ImportId,
-                FileKey = e.FileKey,
-                EventDateUtc = e.EventDateUtc,
-                ChangeType = e.ChangeType,
-                PreviousValues = e.PreviousValues,
-                NewValues = e.NewValues
-            }).ToList()
         };
     }
 

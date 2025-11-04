@@ -8,6 +8,7 @@ using KeeperData.Core.Querying.Abstract;
 using KeeperData.Core.Querying.Impl;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Impl;
+using KeeperData.Core.Reporting.Services;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Database.Configuration;
@@ -100,6 +101,11 @@ public static class TestServiceProviderBuilder
 
         services.AddSingleton<IPasswordSaltService, PasswordSaltService>();
         services.AddSingleton<IAesCryptoTransform, AesCryptoTransform>();
+
+        // Register lineage services required by ImportReportingService
+        services.AddSingleton<ILineageIdGenerator, LineageIdGenerator>();
+        services.AddSingleton<ILineageMapper, LineageMapper>();
+        services.AddSingleton<ILineageIndexManagerFactory, LineageIndexManagerFactory>();
 
         services.AddScoped<IImportReportingService, ImportReportingService>();
 

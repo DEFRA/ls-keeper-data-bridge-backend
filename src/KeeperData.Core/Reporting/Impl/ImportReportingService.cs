@@ -131,6 +131,27 @@ public class ImportReportingService : IImportReportingService
             updates.Add(updateBuilder.Set("IngestionPhase.CompletedAtUtc", update.CompletedAtUtc.Value));
         }
 
+        // Update CurrentFileStatus if provided
+        if (update.CurrentFileStatus != null)
+        {
+            var statusDoc = new IngestionCurrentFileStatusDocument
+            {
+                FileName = update.CurrentFileStatus.FileName,
+                TotalRows = update.CurrentFileStatus.TotalRows,
+                RowNumber = update.CurrentFileStatus.RowNumber,
+                PercentageCompleted = update.CurrentFileStatus.PercentageCompleted,
+                RowsPerMinute = update.CurrentFileStatus.RowsPerMinute,
+                EstimatedTimeRemaining = update.CurrentFileStatus.EstimatedTimeRemaining,
+                EstimatedCompletionUtc = update.CurrentFileStatus.EstimatedCompletionUtc
+            };
+            updates.Add(updateBuilder.Set("IngestionPhase.CurrentFileStatus", statusDoc));
+        }
+        else
+        {
+            // Clear CurrentFileStatus if null is provided
+            updates.Add(updateBuilder.Unset("IngestionPhase.CurrentFileStatus"));
+        }
+
         var combinedUpdate = updateBuilder.Combine(updates);
         await _importReports.UpdateOneAsync(filter, combinedUpdate, cancellationToken: ct);
     }
@@ -349,7 +370,17 @@ public class ImportReportingService : IImportReportingService
                 RecordsUpdated = doc.IngestionPhase.RecordsUpdated,
                 RecordsDeleted = doc.IngestionPhase.RecordsDeleted,
                 StartedAtUtc = doc.IngestionPhase.StartedAtUtc,
-                CompletedAtUtc = doc.IngestionPhase.CompletedAtUtc
+                CompletedAtUtc = doc.IngestionPhase.CompletedAtUtc,
+                CurrentFileStatus = doc.IngestionPhase.CurrentFileStatus != null ? new IngestionCurrentFileStatus
+                {
+                    FileName = doc.IngestionPhase.CurrentFileStatus.FileName,
+                    TotalRows = doc.IngestionPhase.CurrentFileStatus.TotalRows,
+                    RowNumber = doc.IngestionPhase.CurrentFileStatus.RowNumber,
+                    PercentageCompleted = doc.IngestionPhase.CurrentFileStatus.PercentageCompleted,
+                    RowsPerMinute = doc.IngestionPhase.CurrentFileStatus.RowsPerMinute,
+                    EstimatedTimeRemaining = doc.IngestionPhase.CurrentFileStatus.EstimatedTimeRemaining,
+                    EstimatedCompletionUtc = doc.IngestionPhase.CurrentFileStatus.EstimatedCompletionUtc
+                } : null
             } : null,
             Error = doc.Error
         };

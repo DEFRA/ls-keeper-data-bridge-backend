@@ -2,6 +2,7 @@ using CsvHelper;
 using CsvHelper.Configuration;
 using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Abstract;
+using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
@@ -25,12 +26,14 @@ public class IngestionPipeline(
     IMongoClient mongoClient,
     IOptions<IDatabaseConfig> databaseConfig,
     IImportReportingService reportingService,
+    CsvRowCounter csvRowCounter,
     ILogger<IngestionPipeline> logger) : IIngestionPipeline
 {
     private const int BatchSize = 1000;
     private const int LogInterval = 100;
     private const int LineageEventBatchSize = 500;
     private readonly IDatabaseConfig _databaseConfig = databaseConfig.Value;
+    private readonly CsvRowCounter _rowCounter = csvRowCounter;
 
     // MongoDB field name constants
     private const string FieldId = "_id";
@@ -112,7 +115,8 @@ public class IngestionPipeline(
             FilesProcessed = 0,
             RecordsCreated = 0,
             RecordsUpdated = 0,
-            RecordsDeleted = 0
+            RecordsDeleted = 0,
+            CurrentFileStatus = null
         }, ct);
     }
 
@@ -151,11 +155,12 @@ public class IngestionPipeline(
 
                 totals = totals.Add(fileResult);
 
-                // Update progress after each file
+                // Clear current file status after completion and update overall progress
                 await UpdateIngestionPhaseProgressAsync(
                     importId,
                     processedFileCount,
                     totals,
+                    null, // Clear current file status
                     ct);
             }
         }
@@ -236,6 +241,8 @@ public class IngestionPipeline(
         await EnsureWildcardIndexExistsAsync(collection, ct);
 
         string? tempFilePath = null;
+        IngestionProgressTracker? progressTracker = null;
+
         try
         {
             // Track S3 download time
@@ -245,6 +252,13 @@ public class IngestionPipeline(
 
             logger.LogInformation("Downloaded file {FileKey} to temp storage: {TempPath} in {DownloadDuration}ms",
                 file.Key, tempFilePath, downloadStopwatch.ElapsedMilliseconds);
+
+            // Count rows for progress tracking
+            var estimatedRowCount = await _rowCounter.CountRowsAsync(tempFilePath, ct);
+            progressTracker = new IngestionProgressTracker(file.Key, estimatedRowCount);
+
+            logger.LogInformation("File {FileKey} has approximately {RowCount} data rows to process",
+                file.Key, estimatedRowCount);
 
             // Track MongoDB ingestion time
             var mongoIngestionStopwatch = Stopwatch.StartNew();
@@ -265,6 +279,7 @@ public class IngestionPipeline(
                 file.Key,
                 collectionName,
                 fileSet.Definition,
+                progressTracker,
                 ct);
 
             await csvContext.DisposeAsync();
@@ -418,12 +433,14 @@ public class IngestionPipeline(
         string fileKey,
         string collectionName,
         DataSetDefinition definition,
+        IngestionProgressTracker progressTracker,
         CancellationToken ct)
     {
         var metrics = new RecordMetricsAccumulator();
         var batch = new List<(BsonDocument Document, string ChangeType)>();
         var lineageEvents = new List<RecordLineageEvent>();
         var totalMongoProcessingMs = 0L;
+        var totals = new IngestionTotals();
 
         while (await csv.ReadAsync())
         {
@@ -459,8 +476,27 @@ public class IngestionPipeline(
                 totalMongoProcessingMs += batchStopwatch.ElapsedMilliseconds;
 
                 metrics.AddBatch(batchMetrics);
+                totals = totals.Add(new IngestionTotals
+                {
+                    RecordsCreated = batchMetrics.RecordsCreated,
+                    RecordsUpdated = batchMetrics.RecordsUpdated,
+                    RecordsDeleted = batchMetrics.RecordsDeleted
+                });
 
-                LogProgressIfNeeded(metrics.RecordsProcessed, fileKey);
+                // Update progress tracking and report every 100 records
+                progressTracker.UpdateProgress(metrics.RecordsProcessed);
+
+                if (metrics.RecordsProcessed % LogInterval == 0)
+                {
+                    LogProgressIfNeeded(metrics.RecordsProcessed, fileKey);
+
+                    var currentStatus = progressTracker.GetCurrentStatus();
+                    await UpdateIngestionPhaseProgressWithFileStatusAsync(
+                        importId,
+                        totals,
+                        currentStatus,
+                        ct);
+                }
 
                 batch.Clear();
 
@@ -482,6 +518,16 @@ public class IngestionPipeline(
                 ct);
 
             metrics.AddBatch(batchMetrics);
+
+            // Final progress update
+            progressTracker.UpdateProgress(metrics.RecordsProcessed);
+            var finalStatus = progressTracker.Complete();
+
+            await UpdateIngestionPhaseProgressWithFileStatusAsync(
+                importId,
+                totals,
+                finalStatus,
+                ct);
         }
 
         // Flush remaining lineage events
@@ -597,7 +643,7 @@ public class IngestionPipeline(
         logger.LogInformation("Creating wildcard index on collection {CollectionName}",
             collection.CollectionNamespace.CollectionName);
 
-        var wildcardIndexKeys = Builders<BsonDocument>.IndexKeys.Wildcard("$**");
+        var wildcardIndexKeys = Builders<BsonDocument>.IndexKeys.Wildcard();
         var indexModel = new CreateIndexModel<BsonDocument>(wildcardIndexKeys);
 
         await collection.Indexes.CreateOneAsync(indexModel, cancellationToken: ct);
@@ -944,6 +990,7 @@ public class IngestionPipeline(
         Guid importId,
         int filesProcessed,
         IngestionTotals totals,
+        IngestionCurrentFileStatus? currentFileStatus,
         CancellationToken ct)
     {
         await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
@@ -952,7 +999,25 @@ public class IngestionPipeline(
             FilesProcessed = filesProcessed,
             RecordsCreated = totals.RecordsCreated,
             RecordsUpdated = totals.RecordsUpdated,
-            RecordsDeleted = totals.RecordsDeleted
+            RecordsDeleted = totals.RecordsDeleted,
+            CurrentFileStatus = currentFileStatus
+        }, ct);
+    }
+
+    private async Task UpdateIngestionPhaseProgressWithFileStatusAsync(
+        Guid importId,
+        IngestionTotals totals,
+        IngestionCurrentFileStatus currentFileStatus,
+        CancellationToken ct)
+    {
+        await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
+        {
+            Status = PhaseStatus.Started,
+            FilesProcessed = 0, // Not updated during file processing
+            RecordsCreated = totals.RecordsCreated,
+            RecordsUpdated = totals.RecordsUpdated,
+            RecordsDeleted = totals.RecordsDeleted,
+            CurrentFileStatus = currentFileStatus
         }, ct);
     }
 

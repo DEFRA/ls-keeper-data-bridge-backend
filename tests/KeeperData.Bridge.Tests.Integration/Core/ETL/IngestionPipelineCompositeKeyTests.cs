@@ -4,6 +4,7 @@ using KeeperData.Bridge.Tests.Integration.Helpers;
 using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Database.Configuration;
@@ -66,12 +67,14 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
 
         // Create the pipeline under test
         var reportingServiceMock = new Mock<IImportReportingService>();
+        var csvRowCounterMock = new Mock<CsvRowCounter>(new Mock<ILogger<CsvRowCounter>>().Object);
 
         _ingestionPipeline = new IngestionPipeline(blobStorageFactory,
                                                    externalCatalogueServiceFactory,
                                                    _mongoClient,
                                                    mongoConfig,
                                                    reportingServiceMock.Object,
+                                                   csvRowCounterMock.Object,
                                                    _loggerMock.Object);
     }
 
@@ -550,6 +553,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                              _mongoClient,
                                              mongoConfig,
                                              reportingServiceMock.Object,
+                                             new Mock<CsvRowCounter>(new Mock<ILogger<CsvRowCounter>>().Object).Object,
                                              _loggerMock.Object);
 
         await pipeline.StartAsync(importId, CancellationToken.None);

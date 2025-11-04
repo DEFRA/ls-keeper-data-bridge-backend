@@ -3,6 +3,7 @@ using KeeperData.Core.Crypto;
 using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Querying.Abstract;
 using KeeperData.Core.Querying.Impl;
 using KeeperData.Core.Reporting;
@@ -102,6 +103,7 @@ public static class TestServiceProviderBuilder
 
         services.AddScoped<IImportReportingService, ImportReportingService>();
 
+        services.AddTransient<CsvRowCounter>();
         services.AddTransient<IExternalCatalogueServiceFactory, ExternalCatalogueServiceFactory>();
 
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();

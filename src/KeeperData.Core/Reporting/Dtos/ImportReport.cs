@@ -121,4 +121,36 @@ public record IngestionPhaseReport
     /// Gets the UTC timestamp when the ingestion phase completed, or null if still in progress.
     /// </summary>
     public DateTime? CompletedAtUtc { get; init; }
+
+    public IngestionCurrentFileStatus? CurrentFileStatus { get; init; }
+}
+
+public record IngestionCurrentFileStatus
+{
+    /// <summary>
+    /// The current file being processed.
+    /// </summary>
+    public string? FileName { get; init; }
+
+    /// <summary>
+    /// Total number of rows in the current file.
+    /// </summary>
+    public int? TotalRows { get; init; }
+
+    /// <summary>
+    /// Gets or sets index of the current row within a collection or result set.
+    /// </summary>
+    public int? RowNumber { get; init; }
+
+    /// <summary>
+    /// Gets or sets the percentage of the operation that has been completed.
+    /// </summary>
+    public int? PercentageCompleted { get; init; }
+
+    public decimal? RowsPerMinute { get; init; }
+
+    public TimeSpan? EstimatedTimeRemaining { get; init; }
+
+    public DateTime? EstimatedCompletionUtc { get; init; }
+
 }

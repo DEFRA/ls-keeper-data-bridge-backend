@@ -41,4 +41,16 @@ public class IngestionPhaseDocument
     public int RecordsDeleted { get; init; }
     public DateTime? StartedAtUtc { get; init; }
     public DateTime? CompletedAtUtc { get; init; }
+    public IngestionCurrentFileStatusDocument? CurrentFileStatus { get; init; }
+}
+
+public class IngestionCurrentFileStatusDocument
+{
+    public string? FileName { get; init; }
+    public int? TotalRows { get; init; }
+    public int? RowNumber { get; init; }
+    public int? PercentageCompleted { get; init; }
+    public decimal? RowsPerMinute { get; init; }
+    public TimeSpan? EstimatedTimeRemaining { get; init; }
+    public DateTime? EstimatedCompletionUtc { get; init; }
 }

@@ -14,6 +14,7 @@ public class IngestionProgressTracker
     private readonly Stopwatch _stopwatch;
 
     private int _rowsProcessed;
+    private int _lastReportedRowCount;
     private double _exponentialMovingAverage;
     private DateTime _lastUpdateTime;
 
@@ -27,6 +28,7 @@ public class IngestionProgressTracker
         _estimatedTotalRows = Math.Max(1, estimatedTotalRows); // Ensure at least 1 to avoid division by zero
         _stopwatch = Stopwatch.StartNew();
         _rowsProcessed = 0;
+        _lastReportedRowCount = 0;
         _exponentialMovingAverage = 0;
         _lastUpdateTime = DateTime.UtcNow;
     }
@@ -36,13 +38,16 @@ public class IngestionProgressTracker
     /// </summary>
     public void UpdateProgress(int rowsProcessed)
     {
+        var currentTime = DateTime.UtcNow;
+        var timeDeltaSeconds = (currentTime - _lastUpdateTime).TotalSeconds;
+        var rowsDelta = rowsProcessed - _lastReportedRowCount;
+
         _rowsProcessed = rowsProcessed;
 
-        // Calculate current rate
-        var elapsedSeconds = _stopwatch.Elapsed.TotalSeconds;
-        if (elapsedSeconds > 0 && rowsProcessed > 0)
+        // Calculate incremental rate based on rows processed since last update
+        if (timeDeltaSeconds > 0 && rowsDelta > 0)
         {
-            var currentRate = rowsProcessed / elapsedSeconds;
+            var currentRate = rowsDelta / timeDeltaSeconds;
 
             // Initialize or update exponential moving average
             if (_exponentialMovingAverage == 0)
@@ -55,7 +60,8 @@ public class IngestionProgressTracker
             }
         }
 
-        _lastUpdateTime = DateTime.UtcNow;
+        _lastReportedRowCount = rowsProcessed;
+        _lastUpdateTime = currentTime;
     }
 
     /// <summary>

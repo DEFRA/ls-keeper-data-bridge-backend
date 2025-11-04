@@ -31,6 +31,7 @@ public class IngestionPipeline(
 {
     private const int BatchSize = 1000;
     private const int LogInterval = 100;
+    private const int ProgressUpdateInterval = 10; // Update progress tracking every N records ingested
     private const int LineageEventBatchSize = 500;
     private readonly IDatabaseConfig _databaseConfig = databaseConfig.Value;
     private readonly CsvRowCounter _rowCounter = csvRowCounter;
@@ -441,6 +442,7 @@ public class IngestionPipeline(
         var lineageEvents = new List<RecordLineageEvent>();
         var totalMongoProcessingMs = 0L;
         var totals = new IngestionTotals();
+        var lastReportedRecordCount = 0;
 
         while (await csv.ReadAsync())
         {
@@ -483,24 +485,26 @@ public class IngestionPipeline(
                     RecordsDeleted = batchMetrics.RecordsDeleted
                 });
 
-                // Update progress tracking and report every 100 records
-                progressTracker.UpdateProgress(metrics.RecordsProcessed);
-
-                if (metrics.RecordsProcessed % LogInterval == 0)
-                {
-                    LogProgressIfNeeded(metrics.RecordsProcessed, fileKey);
-
-                    var currentStatus = progressTracker.GetCurrentStatus();
-                    await UpdateIngestionPhaseProgressWithFileStatusAsync(
-                        importId,
-                        totals,
-                        currentStatus,
-                        ct);
-                }
-
                 batch.Clear();
 
                 await FlushLineageEventsIfNeededAsync(lineageEvents, ct);
+            }
+
+            // Check progress and report every ProgressUpdateInterval records (default: 10)
+            if (metrics.RecordsProcessed > lastReportedRecordCount && 
+                metrics.RecordsProcessed - lastReportedRecordCount >= ProgressUpdateInterval)
+            {
+                LogProgressIfNeeded(metrics.RecordsProcessed, fileKey);
+                progressTracker.UpdateProgress(metrics.RecordsProcessed);
+
+                var currentStatus = progressTracker.GetCurrentStatus();
+                await UpdateIngestionPhaseProgressWithFileStatusAsync(
+                    importId,
+                    totals,
+                    currentStatus,
+                    ct);
+
+                lastReportedRecordCount = metrics.RecordsProcessed;
             }
         }
 
@@ -518,17 +522,17 @@ public class IngestionPipeline(
                 ct);
 
             metrics.AddBatch(batchMetrics);
-
-            // Final progress update
-            progressTracker.UpdateProgress(metrics.RecordsProcessed);
-            var finalStatus = progressTracker.Complete();
-
-            await UpdateIngestionPhaseProgressWithFileStatusAsync(
-                importId,
-                totals,
-                finalStatus,
-                ct);
         }
+
+        // Final progress update
+        progressTracker.UpdateProgress(metrics.RecordsProcessed);
+        var finalStatus = progressTracker.Complete();
+
+        await UpdateIngestionPhaseProgressWithFileStatusAsync(
+            importId,
+            totals,
+            finalStatus,
+            ct);
 
         // Flush remaining lineage events
         await FlushLineageEventsAsync(lineageEvents, ct);

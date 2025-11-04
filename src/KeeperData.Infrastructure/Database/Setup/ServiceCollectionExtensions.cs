@@ -1,3 +1,5 @@
+using KeeperData.Core.Database;
+using KeeperData.Core.Database.Impl;
 using KeeperData.Core.Locking;
 using KeeperData.Core.Repositories;
 using KeeperData.Core.Transactions;
@@ -11,13 +13,12 @@ using KeeperData.Infrastructure.Locking;
 using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Conventions;
 using MongoDB.Bson.Serialization.Serializers;
 using System.Diagnostics.CodeAnalysis;
-using KeeperData.Core.Database;
-using Microsoft.Extensions.Options;
 
 namespace KeeperData.Infrastructure.Database.Setup;
 
@@ -49,6 +50,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IUnitOfWork, MongoUnitOfWork>();
         services.AddScoped(sp => (ITransactionManager)sp.GetRequiredService<IUnitOfWork>());
+
+        services.AddScoped<ICollectionManagementService, CollectionManagementService>();
 
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(UnitOfWorkTransactionBehavior<,>));

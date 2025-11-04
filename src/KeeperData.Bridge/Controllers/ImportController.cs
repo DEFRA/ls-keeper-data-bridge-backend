@@ -1,4 +1,6 @@
 using KeeperData.Bridge.Worker.Tasks;
+using KeeperData.Core.Database;
+using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Infrastructure.Storage;
@@ -11,7 +13,8 @@ namespace KeeperData.Bridge.Controllers;
 public class ImportController(
     ITaskProcessBulkFiles taskProcessBulkFiles,
     IImportReportingService importReportingService,
-    ILogger<ImportController> logger) : ControllerBase
+    ILogger<ImportController> logger,
+    ICollectionManagementService collectionManagementService) : ControllerBase
 {
     /// <summary>
     /// Starts a bulk file import process asynchronously.
@@ -238,5 +241,100 @@ public class ImportController(
                 Timestamp = DateTime.UtcNow
             });
         }
+    }
+
+    /// <summary>
+    /// Deletes a specific MongoDB collection by name.
+    /// The collection name must be defined in DataSetDefinitions.
+    /// </summary>
+    /// <param name="collectionName">The name of the collection to delete</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Success response with deleted collection name, or 404 if collection not found in definitions</returns>
+    [HttpDelete("collections/{collectionName}")]
+    [ProducesResponseType(typeof(DeleteCollectionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
+    public async Task<IActionResult> DeleteCollection(string collectionName, CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Received request to delete collection: {CollectionName}", collectionName);
+
+        var result = await collectionManagementService.DeleteCollectionAsync(collectionName, cancellationToken);
+
+        if (!result.Success)
+        {
+            if (result.Error is ArgumentException)
+            {
+                return NotFound(new ErrorResponse
+                {
+                    Message = result.Message,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            if (result.Error is OperationCanceledException)
+            {
+                return StatusCode(499, new ErrorResponse
+                {
+                    Message = result.Message,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            return StatusCode(500, new ErrorResponse
+            {
+                Message = result.Message,
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        return Ok(new DeleteCollectionResponse
+        {
+            CollectionName = result.CollectionName,
+            Success = true,
+            Message = result.Message,
+            DeletedAtUtc = result.OperatedAtUtc
+        });
+    }
+
+    /// <summary>
+    /// Deletes all MongoDB collections defined in DataSetDefinitions.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Summary of deleted collections</returns>
+    [HttpDelete("collections")]
+    [ProducesResponseType(typeof(DeleteCollectionsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
+    public async Task<IActionResult> DeleteAllCollections(CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Received request to delete all collections");
+
+        var result = await collectionManagementService.DeleteAllCollectionsAsync(cancellationToken);
+
+        if (!result.Success)
+        {
+            if (result.Error is OperationCanceledException)
+            {
+                return StatusCode(499, new ErrorResponse
+                {
+                    Message = result.Message,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            return StatusCode(500, new ErrorResponse
+            {
+                Message = result.Message,
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        return Ok(new DeleteCollectionsResponse
+        {
+            DeletedCollections = result.DeletedCollections,
+            TotalCount = result.TotalCount,
+            Success = true,
+            Message = result.Message,
+            DeletedAtUtc = result.OperatedAtUtc
+        });
     }
 }

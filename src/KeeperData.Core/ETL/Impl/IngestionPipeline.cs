@@ -491,7 +491,7 @@ public class IngestionPipeline(
             }
 
             // Check progress and report every ProgressUpdateInterval records (default: 10)
-            if (metrics.RecordsProcessed > lastReportedRecordCount && 
+            if (metrics.RecordsProcessed > lastReportedRecordCount &&
                 metrics.RecordsProcessed - lastReportedRecordCount >= ProgressUpdateInterval)
             {
                 LogProgressIfNeeded(metrics.RecordsProcessed, fileKey);

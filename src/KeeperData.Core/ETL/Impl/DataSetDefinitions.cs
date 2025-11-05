@@ -4,7 +4,7 @@ using System.Collections.Immutable;
 namespace KeeperData.Core.ETL.Impl;
 
 
-public record DataSetDefinition(string Name, string FilePrefixFormat, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName, string[] Accumulators, string DatePattern = EtlFileTimestampPatterns.DatePattern, string DateTimePattern = EtlFileTimestampPatterns.DateTimePattern);
+public record DataSetDefinition(string Name, string FilePrefixFormat, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName, string[] Accumulators, string DatePattern = EtlConstants.DatePattern, string DateTimePattern = EtlConstants.DateTimePattern);
 
 public class DataSetDefinitions : IDataSetDefinitions
 {

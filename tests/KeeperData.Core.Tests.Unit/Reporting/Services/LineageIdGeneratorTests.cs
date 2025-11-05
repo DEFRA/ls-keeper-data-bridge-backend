@@ -21,7 +21,7 @@ public class LineageIdGeneratorTests
         var result = _generator.GenerateLineageDocumentId(collectionName, recordId);
 
         // Assert
-        result.Should().Be("sam_cph_holdings__CPH001");
+        result.Should().Be($"sam_cph_holdings{EtlConstants.LineageEventIdDelimiter}CPH001");
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public class LineageIdGeneratorTests
     public void GenerateLineageDocumentId_WithDelimiterInCollectionName_ShouldThrowArgumentException()
     {
         // Act
-        var act = () => _generator.GenerateLineageDocumentId("invalid__collection", "CPH001");
+        var act = () => _generator.GenerateLineageDocumentId($"invalid{EtlConstants.LineageEventIdDelimiter}collection", "CPH001");
 
         // Assert
         act.Should().Throw<ArgumentException>()
@@ -70,11 +70,11 @@ public class LineageIdGeneratorTests
         var result = _generator.GenerateLineageEventId(collectionName, recordId, eventDate);
 
         // Assert
-        result.Should().StartWith("sam_cph_holdings__CPH001__20241215143045123456__");
-        result.Should().MatchRegex(@"^sam_cph_holdings__CPH001__\d{20}__\d{6}$");
+        result.Should().StartWith($"sam_cph_holdings{EtlConstants.LineageEventIdDelimiter}CPH001{EtlConstants.LineageEventIdDelimiter}20241215143045123456{EtlConstants.LineageEventIdDelimiter}");
+        result.Should().MatchRegex($@"^sam_cph_holdings{EtlConstants.LineageEventIdDelimiter}CPH001{EtlConstants.LineageEventIdDelimiter}\d{{20}}{EtlConstants.LineageEventIdDelimiter}\d{{6}}$");
 
         // Extract components
-        var parts = result.Split("__");
+        var parts = result.Split($"{EtlConstants.LineageEventIdDelimiter}");
         parts.Should().HaveCount(4);
         parts[0].Should().Be("sam_cph_holdings");
         parts[1].Should().Be("CPH001");
@@ -97,7 +97,7 @@ public class LineageIdGeneratorTests
 
         // Assert - All IDs should be unique due to random component
         ids.Should().OnlyHaveUniqueItems();
-        ids.Should().AllSatisfy(id => id.Should().StartWith($"sam_cph_holdings__CPH001__"));
+        ids.Should().AllSatisfy(id => id.Should().StartWith($"sam_cph_holdings{EtlConstants.LineageEventIdDelimiter}CPH001{EtlConstants.LineageEventIdDelimiter}"));
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public class LineageIdGeneratorTests
         // Assert - All random components should be 6 digits
         foreach (var id in ids)
         {
-            var randomPart = id.Split("__")[3];
+            var randomPart = id.Split($"{EtlConstants.LineageEventIdDelimiter}")[3];
             randomPart.Should().MatchRegex(@"^\d{6}$",
                 "random component should be exactly 6 digits");
             randomPart.Length.Should().Be(6);
@@ -206,7 +206,7 @@ public class LineageIdGeneratorTests
         foreach (var date in dates)
         {
             var id = _generator.GenerateLineageEventId(collectionName, recordId, date);
-            var timestampPart = id.Split("__")[2];
+            var timestampPart = id.Split($"{EtlConstants.LineageEventIdDelimiter}")[2];
 
             timestampPart.Length.Should().Be(20,
                 $"timestamp should always be 20 characters for date {date}");
@@ -229,7 +229,7 @@ public class LineageIdGeneratorTests
 
         // Assert
         id1.Should().NotBe(id2);
-        id1.Should().StartWith("sam_cph_holdings__CPH001__");
-        id2.Should().StartWith("sam_cph_addresses__CPH001__");
+        id1.Should().StartWith($"sam_cph_holdings{EtlConstants.LineageEventIdDelimiter}CPH001{EtlConstants.LineageEventIdDelimiter}");
+        id2.Should().StartWith($"sam_cph_addresses{EtlConstants.LineageEventIdDelimiter}CPH001{EtlConstants.LineageEventIdDelimiter}");
     }
 }

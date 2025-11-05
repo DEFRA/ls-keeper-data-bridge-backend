@@ -6,12 +6,11 @@ public interface IImportReportingService
 {
     // Import-level operations
     Task<ImportReport> StartImportAsync(Guid importId, string sourceType, CancellationToken ct);
-    Task UpdateAcquisitionPhaseAsync(Guid importId, AcquisitionPhaseUpdate update, CancellationToken ct);
-    Task UpdateIngestionPhaseAsync(Guid importId, IngestionPhaseUpdate update, CancellationToken ct);
-    Task CompleteImportAsync(Guid importId, ImportStatus status, string? error, CancellationToken ct);
+    Task UpsertImportReportAsync(ImportReport report, CancellationToken ct);
 
     // File-level operations
     Task<bool> IsFileProcessedAsync(string fileKey, string md5Hash, CancellationToken ct);
+    Task<bool> IsFileIngestedAsync(string fileKey, string md5Hash, CancellationToken ct);
     Task RecordFileAcquisitionAsync(Guid importId, FileAcquisitionRecord record, CancellationToken ct);
     Task RecordFileIngestionAsync(Guid importId, FileIngestionRecord record, CancellationToken ct);
 

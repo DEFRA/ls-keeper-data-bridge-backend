@@ -26,7 +26,6 @@ public interface ILineageIdGenerator
 /// </summary>
 public class LineageIdGenerator : ILineageIdGenerator
 {
-    private const string Delimiter = "__";
     private const string TimestampFormat = "yyyyMMddHHmmssffffff"; // 20 chars, microsecond precision
     private const int RandomDigits = 6; // 000000-999999
 
@@ -35,7 +34,7 @@ public class LineageIdGenerator : ILineageIdGenerator
         ValidateInput(collectionName, nameof(collectionName));
         ValidateInput(recordId, nameof(recordId));
 
-        return $"{collectionName}{Delimiter}{recordId}";
+        return $"{collectionName}{EtlConstants.LineageEventIdDelimiter}{recordId}";
     }
 
     public string GenerateLineageEventId(string collectionName, string recordId, DateTime eventDateUtc)
@@ -47,7 +46,7 @@ public class LineageIdGenerator : ILineageIdGenerator
         var timestamp = eventDateUtc.ToString(TimestampFormat);
         var random = Random.Shared.Next(0, 1_000_000).ToString($"D{RandomDigits}");
 
-        return $"{lineageDocId}{Delimiter}{timestamp}{Delimiter}{random}";
+        return $"{lineageDocId}{EtlConstants.LineageEventIdDelimiter}{timestamp}{EtlConstants.LineageEventIdDelimiter}{random}";
     }
 
     private static void ValidateInput(string value, string paramName)
@@ -57,9 +56,9 @@ public class LineageIdGenerator : ILineageIdGenerator
             throw new ArgumentException($"{paramName} cannot be null or whitespace.", paramName);
         }
 
-        if (value.Contains(Delimiter))
+        if (value.Contains(EtlConstants.LineageEventIdDelimiter))
         {
-            throw new ArgumentException($"{paramName} cannot contain the delimiter '{Delimiter}'.", paramName);
+            throw new ArgumentException($"{paramName} cannot contain the delimiter '{EtlConstants.LineageEventIdDelimiter}'.", paramName);
         }
     }
 }

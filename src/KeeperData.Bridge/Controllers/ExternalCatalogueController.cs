@@ -1,3 +1,4 @@
+using KeeperData.Core;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Storage;
@@ -241,6 +242,7 @@ public class ExternalCatalogueController(
                     report.AppendLine($"      Size: {sizeDisplay}");
                     report.AppendLine($"      Last Modified: {file.StorageObject.LastModified:yyyy-MM-dd HH:mm:ss} UTC");
                     report.AppendLine($"      ETag: {file.StorageObject.ETag}");
+                    report.AppendLine($"      Timestamp: {file.Timestamp}");
                 }
             }
             else
@@ -288,7 +290,7 @@ public class ExternalCatalogueController(
         try
         {
             var prefixPattern = definition.FilePrefixFormat.Replace("{0}", "");
-            var dateTimePattern = EtlFileTimestampPatterns.DateTimePattern;
+            var dateTimePattern = EtlConstants.DateTimePattern;
 
             var expectedPattern = prefixPattern + dateTimePattern;
 
@@ -312,7 +314,7 @@ public class ExternalCatalogueController(
 
             return DateTime.TryParseExact(
                 dateTimeString,
-                EtlFileTimestampPatterns.DateTimePattern,
+                EtlConstants.DateTimePattern,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
                 out _);
@@ -326,7 +328,7 @@ public class ExternalCatalogueController(
     private static string FormatExampleFileName(DataSetDefinition definition)
     {
         var prefix = definition.FilePrefixFormat.Replace("{0}", "");
-        return $"{prefix}{EtlFileTimestampPatterns.DateTimePattern}.csv (e.g., {prefix}20241201123045.csv)";
+        return $"{prefix}{EtlConstants.DateTimePattern}.csv (e.g., {prefix}20241201123045.csv)";
     }
 
     private ValidationProblemDetails CreateValidationProblem(string errorMessage, string fieldName)

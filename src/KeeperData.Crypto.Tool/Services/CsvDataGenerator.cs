@@ -1,6 +1,7 @@
 using Bogus;
 using CsvHelper;
 using CsvHelper.Configuration;
+using KeeperData.Core;
 using KeeperData.Core.ETL.Impl;
 using System.Globalization;
 
@@ -42,7 +43,7 @@ public class CsvDataGenerator
     {
         Directory.CreateDirectory(_options.OutputDirectory);
 
-        var timestamp = DateTime.Now.ToString(EtlFileTimestampPatterns.DateTimePattern);
+        var timestamp = DateTime.Now.ToString(EtlConstants.DateTimePattern);
         var filePrefix = string.Format(definition.FilePrefixFormat, timestamp);
 
         // Generate main file
@@ -84,7 +85,7 @@ public class CsvDataGenerator
             cancellationToken.ThrowIfCancellationRequested();
 
             var compositeKeyParts = GenerateCompositePrimaryKey(faker, definition.PrimaryKeyHeaderNames.Length);
-            var compositeKey = string.Join("__", compositeKeyParts);
+            var compositeKey = string.Join(EtlConstants.CompositeKeyDelimiter, compositeKeyParts);
             primaryKeys.Add(compositeKey);
 
             // Write primary key columns

@@ -6,6 +6,7 @@ using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
+using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Storage;
@@ -110,9 +111,31 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         await UploadCsvToS3(fileKey, csvContent);
 
         var importId = Guid.NewGuid();
+        var report = new ImportReport
+        {
+            ImportId = importId,
+            SourceType = "External",
+            Status = ImportStatus.Started,
+            StartedAtUtc = DateTime.UtcNow,
+            AcquisitionPhase = new AcquisitionPhaseReport
+            {
+                Status = PhaseStatus.NotStarted,
+                FilesDiscovered = 0,
+                FilesProcessed = 0,
+                FilesFailed = 0
+            },
+            IngestionPhase = new IngestionPhaseReport
+            {
+                Status = PhaseStatus.NotStarted,
+                FilesProcessed = 0,
+                RecordsCreated = 0,
+                RecordsUpdated = 0,
+                RecordsDeleted = 0
+            }
+        };
 
         // Act
-        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(report, CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -160,9 +183,31 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
 
         var importId = Guid.NewGuid();
+        var report = new ImportReport
+        {
+            ImportId = importId,
+            SourceType = "External",
+            Status = ImportStatus.Started,
+            StartedAtUtc = DateTime.UtcNow,
+            AcquisitionPhase = new AcquisitionPhaseReport
+            {
+                Status = PhaseStatus.NotStarted,
+                FilesDiscovered = 0,
+                FilesProcessed = 0,
+                FilesFailed = 0
+            },
+            IngestionPhase = new IngestionPhaseReport
+            {
+                Status = PhaseStatus.NotStarted,
+                FilesProcessed = 0,
+                RecordsCreated = 0,
+                RecordsUpdated = 0,
+                RecordsDeleted = 0
+            }
+        };
 
         // Act
-        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(report, CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -192,7 +237,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
 
         var importId1 = Guid.NewGuid();
-        await _ingestionPipeline.StartAsync(importId1, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId1), CancellationToken.None);
 
         // Get the first document's CreatedAtUtc
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -223,7 +268,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId2 = Guid.NewGuid();
 
         // Act
-        await _ingestionPipeline.StartAsync(importId2, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId2), CancellationToken.None);
 
         // Assert
         var documents = await collection.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync();
@@ -266,7 +311,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId = Guid.NewGuid();
 
         // Act
-        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -303,7 +348,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId = Guid.NewGuid();
 
         // Act
-        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -367,7 +412,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId = Guid.NewGuid();
 
         // Act
-        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -400,7 +445,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId = Guid.NewGuid();
 
         // Act
-        var act = async () => await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        var act = async () => await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
 
         // Assert
         await act.Should().NotThrowAsync();
@@ -427,7 +472,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId = Guid.NewGuid();
 
         // Act
-        var act = async () => await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        var act = async () => await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
@@ -452,7 +497,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId = Guid.NewGuid();
 
         // Act
-        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -486,7 +531,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId = Guid.NewGuid();
 
         // Act
-        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -520,7 +565,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId = Guid.NewGuid();
 
         // Act
-        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -563,7 +608,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
 
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(), CancellationToken.None);
 
         // Clean up first file
         await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
@@ -585,7 +630,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
 
         // Act
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -624,7 +669,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
 
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(), CancellationToken.None);
 
         await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
         {
@@ -643,7 +688,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
 
         // Act
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -678,7 +723,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         });
         var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(), CancellationToken.None);
         await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = LocalStackFixture.TestBucket, Key = $"{DestinationFolder}/{fileName1}" });
         _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
 
@@ -690,7 +735,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var testDate2 = testDate.AddDays(-1);
         var fileName2 = $"LITP_SAMCPHHOLDING_{testDate2:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(), CancellationToken.None);
         await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = LocalStackFixture.TestBucket, Key = $"{DestinationFolder}/{fileName2}" });
         _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName2}");
 
@@ -704,7 +749,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         await UploadCsvToS3($"{DestinationFolder}/{fileName3}", csvContent3);
 
         // Act
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -739,7 +784,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         });
         var fileName1 = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(), CancellationToken.None);
         await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = LocalStackFixture.TestBucket, Key = $"{DestinationFolder}/{fileName1}" });
         _createdTestFileKeys.Remove($"{DestinationFolder}/{fileName1}");
 
@@ -751,7 +796,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         await UploadCsvToS3($"{DestinationFolder}/{fileName2}", csvContent2);
 
         // Act
-        await _ingestionPipeline.StartAsync(Guid.NewGuid(), CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -787,7 +832,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var importId = Guid.NewGuid();
 
         // Act
-        await _ingestionPipeline.StartAsync(importId, CancellationToken.None);
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
 
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
@@ -870,30 +915,30 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         return factory.Object;
     }
 
-    private string GenerateSampleCsvContent((string cph, string farmName, string owner, string address)[] records)
+    private ImportReport CreateImportReport(Guid importId = default)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("CPH|FarmName|Owner|Address|CHANGE_TYPE");
-
-        foreach (var (cph, farmName, owner, address) in records)
+        return new ImportReport
         {
-            sb.AppendLine($"{cph}|{farmName}|{owner}|{address}|{ChangeType.Insert}");
-        }
-
-        return sb.ToString();
-    }
-
-    private string GenerateSampleCsvContentWithAccumulators((string cph, string farmName, string addressPk, string diseaseType, string animalSpeciesCode, string changeType)[] records)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("CPH|FarmName|ADDRESS_PK|DISEASE_TYPE|ANIMAL_SPECIES_CODE|CHANGE_TYPE");
-
-        foreach (var (cph, farmName, addressPk, diseaseType, animalSpeciesCode, changeType) in records)
-        {
-            sb.AppendLine($"{cph}|{farmName}|{addressPk}|{diseaseType}|{animalSpeciesCode}|{changeType}");
-        }
-
-        return sb.ToString();
+            ImportId = importId == default ? Guid.NewGuid() : importId,
+            SourceType = "External",
+            Status = ImportStatus.Started,
+            StartedAtUtc = DateTime.UtcNow,
+            AcquisitionPhase = new AcquisitionPhaseReport
+            {
+                Status = PhaseStatus.NotStarted,
+                FilesDiscovered = 0,
+                FilesProcessed = 0,
+                FilesFailed = 0
+            },
+            IngestionPhase = new IngestionPhaseReport
+            {
+                Status = PhaseStatus.NotStarted,
+                FilesProcessed = 0,
+                RecordsCreated = 0,
+                RecordsUpdated = 0,
+                RecordsDeleted = 0
+            }
+        };
     }
 
     private async Task UploadCsvToS3(string key, string content)
@@ -938,6 +983,32 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         {
             _testOutputHelper.WriteLine($"Failed to cleanup test data: {ex.Message}");
         }
+    }
+
+    private string GenerateSampleCsvContent((string cph, string farmName, string owner, string address)[] records)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("CPH|FarmName|Owner|Address|CHANGE_TYPE");
+
+        foreach (var (cph, farmName, owner, address) in records)
+        {
+            sb.AppendLine($"{cph}|{farmName}|{owner}|{address}|I");
+        }
+
+        return sb.ToString();
+    }
+
+    private string GenerateSampleCsvContentWithAccumulators((string cph, string farmName, string addressPk, string diseaseType, string animalSpeciesCode, string changeType)[] records)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("CPH|FarmName|ADDRESS_PK|DISEASE_TYPE|ANIMAL_SPECIES_CODE|CHANGE_TYPE");
+
+        foreach (var (cph, farmName, addressPk, diseaseType, animalSpeciesCode, changeType) in records)
+        {
+            sb.AppendLine($"{cph}|{farmName}|{addressPk}|{diseaseType}|{animalSpeciesCode}|{changeType}");
+        }
+
+        return sb.ToString();
     }
 }
 

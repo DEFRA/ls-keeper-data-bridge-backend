@@ -6,6 +6,7 @@ using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
+using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Storage;
@@ -20,12 +21,13 @@ using MongoDB.Driver;
 using Moq;
 using System.Text;
 using Xunit.Abstractions;
+using KeeperData.Core;
 
 namespace KeeperData.Bridge.Tests.Integration.Core.ETL;
 
 /// <summary>
 /// Integration tests for IngestionPipeline composite key functionality.
-/// Tests multi-column primary keys that are concatenated with double underscore (__) delimiter.
+/// Tests multi-column primary keys that are concatenated with EtlConstants.CompositeKeyDelimiter.
 /// </summary>
 [Collection("LocalStackAndMongo"), Trait("Dependence", "docker")]
 public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
@@ -126,19 +128,19 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         var documents = await collection.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync();
         documents.Should().HaveCount(3);
 
-        // Verify composite _id format: "REGION__FARM_ID"
-        var doc1 = documents.FirstOrDefault(d => d["_id"] == "NORTH__F001");
+        // Verify composite _id format: "REGION{EtlConstants.CompositeKeyDelimiter}FARM_ID"
+        var doc1 = documents.FirstOrDefault(d => d["_id"] == $"NORTH{EtlConstants.CompositeKeyDelimiter}F001");
         doc1.Should().NotBeNull();
         doc1["REGION"].Should().Be("NORTH");
         doc1["FARM_ID"].Should().Be("F001");
         doc1["NAME"].Should().Be("Farm Alpha");
 
-        var doc2 = documents.FirstOrDefault(d => d["_id"] == "SOUTH__F002");
+        var doc2 = documents.FirstOrDefault(d => d["_id"] == $"SOUTH{EtlConstants.CompositeKeyDelimiter}F002");
         doc2.Should().NotBeNull();
         doc2["REGION"].Should().Be("SOUTH");
         doc2["FARM_ID"].Should().Be("F002");
 
-        var doc3 = documents.FirstOrDefault(d => d["_id"] == "EAST__F003");
+        var doc3 = documents.FirstOrDefault(d => d["_id"] == $"EAST{EtlConstants.CompositeKeyDelimiter}F003");
         doc3.Should().NotBeNull();
         doc3["REGION"].Should().Be("EAST");
         doc3["FARM_ID"].Should().Be("F003");
@@ -181,8 +183,8 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         var documents = await collection.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync();
         documents.Should().HaveCount(3);
 
-        // Verify composite _id format: "COUNTRY__REGION__FARM_ID"
-        var doc1 = documents.FirstOrDefault(d => d["_id"] == "UK__NORTH__F001");
+        // Verify composite _id format: "COUNTRY{EtlConstants.CompositeKeyDelimiter}REGION{EtlConstants.CompositeKeyDelimiter}FARM_ID"
+        var doc1 = documents.FirstOrDefault(d => d["_id"] == $"UK{EtlConstants.CompositeKeyDelimiter}NORTH{EtlConstants.CompositeKeyDelimiter}F001");
         doc1.Should().NotBeNull();
         doc1["COUNTRY"].Should().Be("UK");
         doc1["REGION"].Should().Be("NORTH");
@@ -190,7 +192,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         doc1["NAME"].Should().Be("Farm Alpha");
 
         // Different COUNTRY with same REGION and FARM_ID should have different _id
-        var doc3 = documents.FirstOrDefault(d => d["_id"] == "FR__NORTH__F001");
+        var doc3 = documents.FirstOrDefault(d => d["_id"] == $"FR{EtlConstants.CompositeKeyDelimiter}NORTH{EtlConstants.CompositeKeyDelimiter}F001");
         doc3.Should().NotBeNull();
         doc3["COUNTRY"].Should().Be("FR");
         doc3["NAME"].Should().Be("Farm Gamma");
@@ -234,13 +236,13 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         documents.Should().HaveCount(3);
 
         // Verify composite _id with special characters
-        var doc1 = documents.FirstOrDefault(d => d["_id"] == "12/345/6789__H001");
+        var doc1 = documents.FirstOrDefault(d => d["_id"] == $"12/345/6789{EtlConstants.CompositeKeyDelimiter}H001");
         doc1.Should().NotBeNull();
         doc1["CPH"].Should().Be("12/345/6789");
         doc1["HOLDER_ID"].Should().Be("H001");
         doc1["NAME"].Should().Be("Holder One");
 
-        var doc3 = documents.FirstOrDefault(d => d["_id"] == "11/222/3333__H123ABC");
+        var doc3 = documents.FirstOrDefault(d => d["_id"] == $"11/222/3333{EtlConstants.CompositeKeyDelimiter}H123ABC");
         doc3.Should().NotBeNull();
         doc3["HOLDER_ID"].Should().Be("H123ABC");
 
@@ -260,10 +262,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                                       Accumulators: []);
 
         // First import
-        var csvContent1 = GenerateCompositeKeyCsv(new[]
-    {
-            ("NORTH", "F001", "Farm Alpha", "I")
-        });
+        var csvContent1 = GenerateCompositeKeyCsv([("NORTH", "F001", "Farm Alpha", "I")]);
         var fileName1 = $"TEST_UPSERT_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName1}", csvContent1);
         await IngestWithCustomDefinition(Guid.NewGuid(), dataSetDefinition);
@@ -271,7 +270,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         // Get original document
         var database = _mongoClient.GetDatabase(_testDatabaseName);
         var collection = database.GetCollection<BsonDocument>("test_upsert");
-        var originalDoc = await collection.Find(d => d["_id"] == "NORTH__F001").FirstOrDefaultAsync();
+        var originalDoc = await collection.Find(d => d["_id"] == $"NORTH{EtlConstants.CompositeKeyDelimiter}F001").FirstOrDefaultAsync();
         var originalCreatedAt = originalDoc["CreatedAtUtc"].ToUniversalTime();
 
         // Clean up first file
@@ -298,7 +297,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         documents.Should().HaveCount(1, "Should have upserted the existing document");
 
         var updatedDoc = documents[0];
-        updatedDoc["_id"].Should().Be("NORTH__F001");
+        updatedDoc["_id"].Should().Be($"NORTH{EtlConstants.CompositeKeyDelimiter}F001");
         updatedDoc["NAME"].Should().Be("Farm Alpha Updated");
         updatedDoc["REGION"].Should().Be("NORTH");
         updatedDoc["FARM_ID"].Should().Be("F001");
@@ -358,7 +357,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
         var collection = database.GetCollection<BsonDocument>("test_delete");
-        var doc = await collection.Find(d => d["_id"] == "WEST__F999").FirstOrDefaultAsync();
+        var doc = await collection.Find(d => d["_id"] == $"WEST{EtlConstants.CompositeKeyDelimiter}F999").FirstOrDefaultAsync();
 
         doc.Should().NotBeNull();
         doc["IsDeleted"].AsBoolean.Should().BeTrue();
@@ -435,15 +434,15 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         documents.Should().HaveCount(3);
 
         // Verify _id with empty string for null key parts
-        var doc1 = documents.FirstOrDefault(d => d["_id"] == "NORTH__F001");
+        var doc1 = documents.FirstOrDefault(d => d["_id"] == $"NORTH{EtlConstants.CompositeKeyDelimiter}F001");
         doc1.Should().NotBeNull();
 
-        var doc2 = documents.FirstOrDefault(d => d["_id"] == "__F002");
+        var doc2 = documents.FirstOrDefault(d => d["_id"] == $"{EtlConstants.CompositeKeyDelimiter}F002");
         doc2.Should().NotBeNull();
         doc2["REGION"].Should().Be(BsonNull.Value);
         doc2["FARM_ID"].Should().Be("F002");
 
-        var doc3 = documents.FirstOrDefault(d => d["_id"] == "SOUTH__");
+        var doc3 = documents.FirstOrDefault(d => d["_id"] == $"SOUTH{EtlConstants.CompositeKeyDelimiter}");
         doc3.Should().NotBeNull();
         doc3["REGION"].Should().Be("SOUTH");
         doc3["FARM_ID"].Should().Be(BsonNull.Value);
@@ -491,7 +490,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         // Assert
         var database = _mongoClient.GetDatabase(_testDatabaseName);
         var collection = database.GetCollection<BsonDocument>("test_composite_accum");
-        var doc = await collection.Find(d => d["_id"] == "NORTH__F001").FirstOrDefaultAsync();
+        var doc = await collection.Find(d => d["_id"] == $"NORTH{EtlConstants.CompositeKeyDelimiter}F001").FirstOrDefaultAsync();
 
         doc.Should().NotBeNull();
 
@@ -556,7 +555,30 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                              new Mock<CsvRowCounter>(new Mock<ILogger<CsvRowCounter>>().Object).Object,
                                              _loggerMock.Object);
 
-        await pipeline.StartAsync(importId, CancellationToken.None);
+        var report = new ImportReport
+        {
+            ImportId = importId,
+            SourceType = "External",
+            Status = ImportStatus.Started,
+            StartedAtUtc = DateTime.UtcNow,
+            AcquisitionPhase = new AcquisitionPhaseReport
+            {
+                Status = PhaseStatus.NotStarted,
+                FilesDiscovered = 0,
+                FilesProcessed = 0,
+                FilesFailed = 0
+            },
+            IngestionPhase = new IngestionPhaseReport
+            {
+                Status = PhaseStatus.NotStarted,
+                FilesProcessed = 0,
+                RecordsCreated = 0,
+                RecordsUpdated = 0,
+                RecordsDeleted = 0
+            }
+        };
+
+        await pipeline.StartAsync(report, CancellationToken.None);
     }
 
     private IBlobStorageServiceFactory CreateBlobStorageFactory()
@@ -612,6 +634,34 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         return factory.Object;
     }
 
+    private async Task CleanupTestDataAsync()
+    {
+        try
+        {
+            foreach (var key in _createdTestFileKeys)
+            {
+                try
+                {
+                    await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
+                    {
+                        BucketName = LocalStackFixture.TestBucket,
+                        Key = key
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _testOutputHelper.WriteLine($"Failed to delete test file {key}: {ex.Message}");
+                }
+            }
+
+            _createdTestFileKeys.Clear();
+        }
+        catch (Exception ex)
+        {
+            _testOutputHelper.WriteLine($"Failed to cleanup test data: {ex.Message}");
+        }
+    }
+
     private string GenerateCompositeKeyCsv((string key1, string key2, string name, string changeType)[] records)
     {
         var sb = new StringBuilder();
@@ -652,33 +702,5 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         _createdTestFileKeys.Add(key);
 
         _testOutputHelper.WriteLine($"Uploaded CSV file: {key}");
-    }
-
-    private async Task CleanupTestDataAsync()
-    {
-        try
-        {
-            foreach (var key in _createdTestFileKeys)
-            {
-                try
-                {
-                    await _localStackFixture.S3Client.DeleteObjectAsync(new DeleteObjectRequest
-                    {
-                        BucketName = LocalStackFixture.TestBucket,
-                        Key = key
-                    });
-                }
-                catch (Exception ex)
-                {
-                    _testOutputHelper.WriteLine($"Failed to delete test file {key}: {ex.Message}");
-                }
-            }
-
-            _createdTestFileKeys.Clear();
-        }
-        catch (Exception ex)
-        {
-            _testOutputHelper.WriteLine($"Failed to cleanup test data: {ex.Message}");
-        }
     }
 }

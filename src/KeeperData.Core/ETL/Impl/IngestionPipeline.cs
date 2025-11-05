@@ -29,10 +29,11 @@ public class IngestionPipeline(
     CsvRowCounter csvRowCounter,
     ILogger<IngestionPipeline> logger) : IIngestionPipeline
 {
-    private const int BatchSize = 100;
-    private const int LogInterval = 100;
-    private const int ProgressUpdateInterval = 100; // Update progress tracking every N records ingested
-    private const int LineageEventBatchSize = 100;
+    private const int DefaultInterval = 5000;
+    private const int BatchSize = DefaultInterval;
+    private const int LogInterval = DefaultInterval;
+    private const int ProgressUpdateInterval = DefaultInterval;
+    private const int LineageEventBatchSize = DefaultInterval;
     private readonly IDatabaseConfig _databaseConfig = databaseConfig.Value;
     private readonly CsvRowCounter _rowCounter = csvRowCounter;
 
@@ -43,40 +44,45 @@ public class IngestionPipeline(
     private const string FieldIsDeleted = "IsDeleted";
     private const string FieldDeletedAtUtc = "DeletedAtUtc";
 
-    public async Task StartAsync(Guid importId, CancellationToken ct)
+    public async Task StartAsync(ImportReport report, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
-        Debug.WriteLine($"[keepetl] Starting ingest pipeline for ImportId: {importId}");
-        logger.LogInformation("Starting ingest pipeline for ImportId: {ImportId}", importId);
+        Debug.WriteLine($"[keepetl] Starting ingest pipeline for ImportId: {report.ImportId}");
+        logger.LogInformation("Starting ingest pipeline for ImportId: {ImportId}", report.ImportId);
 
         try
         {
-            var storageServices = InitializeStorageServices(importId);
+            var (blobStorage, catalogueService) = InitializeStorageServices(report.ImportId);
 
-            var fileSets = await DiscoverFilesAsync(importId, storageServices.CatalogueService, ct);
+            var (fileSets, totalFiles) = await DiscoverFilesAsync(report.ImportId, catalogueService, ct);
 
-            await UpdateIngestionPhaseStartedAsync(importId, ct);
+            // Update ingestion phase to Started
+            report.IngestionPhase!.Status = PhaseStatus.Started;
+            report.IngestionPhase!.StartedAtUtc = DateTime.UtcNow;
+            await reportingService.UpsertImportReportAsync(report, ct);
 
-            var ingestionResults = await ProcessAllFilesAsync(
-                importId,
-                fileSets.FileSets,
-                fileSets.TotalFiles,
-                storageServices.BlobStorage,
-                ct);
+            var ingestionResults = await ProcessAllFilesAsync(report, fileSets, totalFiles, blobStorage, ct);
 
-            await UpdateIngestionPhaseCompletedAsync(
-                importId,
-                ingestionResults.FilesProcessed,
-                ingestionResults.RecordsCreated,
-                ingestionResults.RecordsUpdated,
-                ingestionResults.RecordsDeleted,
-                ct);
+            // Update ingestion phase to Completed
+            report.IngestionPhase!.Status = PhaseStatus.Completed;
+            report.IngestionPhase!.FilesProcessed = ingestionResults.FilesProcessed;
+            report.IngestionPhase!.RecordsCreated = ingestionResults.RecordsCreated;
+            report.IngestionPhase!.RecordsUpdated = ingestionResults.RecordsUpdated;
+            report.IngestionPhase!.RecordsDeleted = ingestionResults.RecordsDeleted;
+            report.IngestionPhase!.CompletedAtUtc = DateTime.UtcNow;
+            report.IngestionPhase!.CurrentFileStatus = null;
+            await reportingService.UpsertImportReportAsync(report, ct);
 
-            LogPipelineCompletion(importId, stopwatch);
+            LogPipelineCompletion(report.ImportId, stopwatch);
         }
         catch (Exception ex)
         {
-            LogPipelineFailure(importId, stopwatch, ex);
+            // Update ingestion phase to Failed
+            report.IngestionPhase!.Status = PhaseStatus.Failed;
+            report.IngestionPhase!.CompletedAtUtc = DateTime.UtcNow;
+            await reportingService.UpsertImportReportAsync(report, ct);
+
+            LogPipelineFailure(report.ImportId, stopwatch, ex);
             throw;
         }
     }
@@ -112,30 +118,11 @@ public class IngestionPipeline(
         return (fileSets, totalFiles);
     }
 
-    private async Task UpdateIngestionPhaseStartedAsync(Guid importId, CancellationToken ct)
+    private async Task<IngestionTotals> ProcessAllFilesAsync(ImportReport report, ImmutableList<FileSet> fileSets, int totalFiles, 
+        IBlobStorageService blobStorage, CancellationToken ct)
     {
-        Debug.WriteLine($"[keepetl] Updating ingestion phase to Started for ImportId: {importId}");
-        await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
-        {
-            Status = PhaseStatus.Started,
-            FilesProcessed = 0,
-            RecordsCreated = 0,
-            RecordsUpdated = 0,
-            RecordsDeleted = 0,
-            CurrentFileStatus = null
-        }, ct);
-    }
-
-    private async Task<IngestionTotals> ProcessAllFilesAsync(
-        Guid importId,
-        ImmutableList<FileSet> fileSets,
-        int totalFiles,
-        IBlobStorageService blobStorage,
-        CancellationToken ct
-    )
-    {
-        Debug.WriteLine($"[keepetl] Step 2: Processing and ingesting {totalFiles} files for ImportId: {importId}");
-        logger.LogInformation("Step 2: Processing and ingesting files for ImportId: {ImportId}", importId);
+        Debug.WriteLine($"[keepetl] Step 2: Processing and ingesting {totalFiles} files for ImportId: {report.ImportId}");
+        logger.LogInformation("Step 2: Processing and ingesting files for ImportId: {ImportId}", report.ImportId);
 
         var totals = new IngestionTotals();
         var processedFileCount = 0;
@@ -143,76 +130,67 @@ public class IngestionPipeline(
         foreach (var fileSet in fileSets)
         {
             Debug.WriteLine($"[keepetl] Processing file set: {fileSet.Definition.Name} with {fileSet.Files.Length} file(s)");
-            logger.LogDebug("Processing file set for definition: {DefinitionName} with {FileCount} file(s) for ImportId: {ImportId}",
-                fileSet.Definition.Name,
-                fileSet.Files.Length,
-                importId);
+            logger.LogDebug("Processing file set for definition: {DefinitionName} with {FileCount} file(s) for ImportId: {ImportId}", fileSet.Definition.Name, fileSet.Files.Length, report.ImportId);
 
             foreach (var file in fileSet.Files)
             {
                 processedFileCount++;
 
-                var fileResult = await ProcessSingleFileAsync(
-                    importId,
-                    fileSet,
-                    file,
-                    processedFileCount,
-                    totalFiles,
-                    blobStorage,
-                    ct);
+                var fileResult = await ProcessSingleFileAsync(report.ImportId, fileSet, file, processedFileCount, totalFiles, blobStorage, report, ct);
 
                 totals = totals.Add(fileResult);
 
                 // Clear current file status after completion and update overall progress
-                await UpdateIngestionPhaseProgressAsync(
-                    importId,
-                    processedFileCount,
-                    totals,
-                    null, // Clear current file status
-                    ct);
+                report.IngestionPhase!.FilesProcessed = processedFileCount;
+                report.IngestionPhase!.FilesSkipped = totals.FilesSkipped;
+                report.IngestionPhase!.RecordsCreated = totals.RecordsCreated;
+                report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated;
+                report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted;
+                report.IngestionPhase!.CurrentFileStatus = null;
+                await reportingService.UpsertImportReportAsync(report, ct);
             }
         }
 
-        Debug.WriteLine($"[keepetl] Step 2 completed: Processed {processedFileCount} file(s) for ImportId: {importId}");
+        Debug.WriteLine($"[keepetl] Step 2 completed: Processed {processedFileCount} file(s) for ImportId: {report.ImportId}");
         logger.LogInformation("Step 2 completed: Processed {ProcessedFileCount} file(s) for ImportId: {ImportId}",
             processedFileCount,
-            importId);
+            report.ImportId);
 
         return totals with { FilesProcessed = processedFileCount };
     }
 
-    private async Task<IngestionTotals> ProcessSingleFileAsync(
-        Guid importId,
-        FileSet fileSet,
-        EtlFile file,
-        int currentFileNumber,
-        int totalFiles,
-        IBlobStorageService blobStorage,
-        CancellationToken ct)
+    private async Task<IngestionTotals> ProcessSingleFileAsync(Guid importId, FileSet fileSet, EtlFile file, int currentFileNumber, 
+        int totalFiles, IBlobStorageService blobStorage, ImportReport report, CancellationToken ct)
     {
         var fileStopwatch = Stopwatch.StartNew();
 
         Debug.WriteLine($"[keepetl] Processing file {currentFileNumber}/{totalFiles}: {file.StorageObject.Key}");
-        logger.LogInformation("Processing file {CurrentFile}/{TotalFiles}: {FileKey} for ImportId: {ImportId}",
-            currentFileNumber,
-            totalFiles,
-            file.StorageObject.Key,
-            importId);
+        logger.LogInformation("Processing file {CurrentFile}/{TotalFiles}: {FileKey} for ImportId: {ImportId}", currentFileNumber, totalFiles, file.StorageObject.Key, importId);
 
         try
         {
-            var fileMetrics = await IngestFileAsync(importId, blobStorage, fileSet, file, ct);
+            // Check if file has already been ingested by retrieving MD5 from S3 metadata
+            var isAlreadyIngested = await IsFileAlreadyIngestedAsync(file.StorageObject.Key, blobStorage, ct);
+            if (isAlreadyIngested)
+            {
+                fileStopwatch.Stop();
+                Debug.WriteLine($"[keepetl] Skipping file {file.StorageObject.Key} - already ingested in a previous import");
+                logger.LogInformation("Skipping file {FileKey} - already ingested in a previous import for ImportId: {ImportId}", file.StorageObject.Key, importId);
+
+                return new IngestionTotals() 
+                { 
+                    FilesSkipped = 1 
+                };
+            }
+
+            var fileMetrics = await IngestFileAsync(importId, blobStorage, fileSet, file, report, ct);
             fileStopwatch.Stop();
 
             await RecordSuccessfulIngestionAsync(importId, file, fileMetrics, fileStopwatch.ElapsedMilliseconds, ct);
 
             Debug.WriteLine($"[keepetl] Successfully ingested file: {file.StorageObject.Key} - Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}, Duration: {fileStopwatch.ElapsedMilliseconds}ms");
-            logger.LogInformation("Successfully ingested file: {FileKey} - Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms",
-                file.StorageObject.Key,
-                fileMetrics.RecordsCreated,
-                fileMetrics.RecordsUpdated,
-                fileMetrics.RecordsDeleted,
-                fileStopwatch.ElapsedMilliseconds);
+            logger.LogInformation("Successfully ingested file: {FileKey} - Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms", 
+                file.StorageObject.Key, fileMetrics.RecordsCreated, fileMetrics.RecordsUpdated, fileMetrics.RecordsDeleted, fileStopwatch.ElapsedMilliseconds);
 
             return new IngestionTotals
             {
@@ -236,12 +214,44 @@ public class IngestionPipeline(
         }
     }
 
-    private async Task<FileIngestionMetrics> IngestFileAsync(
-        Guid importId,
-        IBlobStorageService blobs,
-        FileSet fileSet,
-        EtlFile file,
+    private async Task<bool> IsFileAlreadyIngestedAsync(
+        string fileKey,
+        IBlobStorageService blobStorage,
         CancellationToken ct)
+    {
+        try
+        {
+            // Retrieve file metadata from S3 to get the MD5 hash
+            var metadata = await blobStorage.GetMetadataAsync(fileKey, ct);
+
+            if (!metadata.UserMetadata.TryGetValue("MD5Hash", out var md5Hash) || string.IsNullOrEmpty(md5Hash))
+            {
+                Debug.WriteLine($"[keepetl] No MD5 hash found in S3 metadata for file {fileKey} - will proceed with ingestion");
+                logger.LogDebug("No MD5 hash found in S3 metadata for file {FileKey} - will proceed with ingestion", fileKey);
+                return false;
+            }
+
+            // Check if a file with this key and MD5 has been previously ingested (not just acquired)
+            var isIngested = await reportingService.IsFileIngestedAsync(fileKey, md5Hash, ct);
+
+            if (isIngested)
+            {
+                Debug.WriteLine($"[keepetl] File {fileKey} with MD5 {md5Hash} has already been ingested");
+                logger.LogWarning("File {FileKey} with MD5 {Md5Hash} has already been ingested in a previous import", fileKey, md5Hash);
+            }
+
+            return isIngested;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[keepetl] Error checking if file was already ingested: {fileKey} - Error: {ex.Message}");
+            logger.LogWarning(ex, "Error checking if file {FileKey} was already ingested - will proceed with ingestion", fileKey);
+            // If we can't determine if file was ingested, proceed with ingestion to avoid silently skipping files
+            return false;
+        }
+    }
+
+    private async Task<FileIngestionMetrics> IngestFileAsync(Guid importId, IBlobStorageService blobs, FileSet fileSet, EtlFile file, ImportReport report, CancellationToken ct)
     {
         var overallStopwatch = Stopwatch.StartNew();
         var collectionName = fileSet.Definition.Name;
@@ -286,16 +296,8 @@ public class IngestionPipeline(
                 fileSet.Definition.PrimaryKeyHeaderNames,
                 fileSet.Definition.ChangeTypeHeaderName);
 
-            var metrics = await ProcessCsvRecordsAsync(
-                importId,
-                collection,
-                csvContext.Csv,
-                headers,
-                file.StorageObject.Key,
-                collectionName,
-                fileSet.Definition,
-                progressTracker,
-                ct);
+            var metrics = await ProcessCsvRecordsAsync(importId, collection, csvContext.Csv, headers, file.StorageObject.Key, 
+                collectionName, fileSet.Definition, progressTracker, report, ct);
 
             await csvContext.DisposeAsync();
 
@@ -445,18 +447,10 @@ public class IngestionPipeline(
         }
     }
 
-    private const string CompositeKeyDelimiter = "__";
 
-    private async Task<FileIngestionMetrics> ProcessCsvRecordsAsync(
-        Guid importId,
-        IMongoCollection<BsonDocument> collection,
-        CsvReader csv,
-        CsvHeaders headers,
-        string fileKey,
-        string collectionName,
-        DataSetDefinition definition,
-        IngestionProgressTracker progressTracker,
-        CancellationToken ct)
+    private async Task<FileIngestionMetrics> ProcessCsvRecordsAsync(Guid importId, IMongoCollection<BsonDocument> collection, CsvReader csv, 
+        CsvHeaders headers, string fileKey, string collectionName, DataSetDefinition definition, IngestionProgressTracker progressTracker, 
+        ImportReport report, CancellationToken ct)
     {
         Debug.WriteLine($"[keepetl] Starting to process CSV records for file: {fileKey}");
         var metrics = new RecordMetricsAccumulator();
@@ -472,7 +466,7 @@ public class IngestionPipeline(
 
             if (!IsValidChangeType(changeType))
             {
-                var primaryKeyValue = string.Join(CompositeKeyDelimiter, headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty));
+                var primaryKeyValue = string.Join(EtlConstants.CompositeKeyDelimiter, headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty));
                 Debug.WriteLine($"[keepetl] Invalid change type '{changeType}' for record with primary key '{primaryKeyValue}' in file {fileKey}, skipping record");
                 logger.LogWarning("Invalid change type '{ChangeType}' for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
                     changeType, primaryKeyValue, fileKey);
@@ -486,19 +480,12 @@ public class IngestionPipeline(
             if (batch.Count >= BatchSize)
             {
                 var batchStopwatch = Stopwatch.StartNew();
+                Debug.WriteLine($"[keepetl] -- NEW BATCH (size:{BatchSize}) --");
+                Debug.WriteLine($"[keepetl] Processing batch of {batch.Count} documents for collection {collectionName}");
 
-                var batchMetrics = await ProcessBatchAsync(
-                    importId,
-                    collection,
-                    batch,
-                    fileKey,
-                    collectionName,
-                    definition,
-                    lineageEvents,
-                    ct);
+                var batchMetrics = await ProcessBatchAsync(importId, collection, batch, fileKey, collectionName, definition, lineageEvents, ct);
 
-                batchStopwatch.Stop();
-                totalMongoProcessingMs += batchStopwatch.ElapsedMilliseconds;
+                await FlushLineageEventsIfNeededAsync(lineageEvents, ct);
 
                 metrics.AddBatch(batchMetrics);
                 totals = totals.Add(new IngestionTotals
@@ -508,11 +495,15 @@ public class IngestionPipeline(
                     RecordsDeleted = batchMetrics.RecordsDeleted
                 });
 
+                batchStopwatch.Stop();
+                totalMongoProcessingMs += batchStopwatch.ElapsedMilliseconds;
+
                 Debug.WriteLine($"[keepetl] Processed batch of {BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}");
+                Debug.WriteLine($"[keepetl] -- END BATCH ({batchStopwatch.Elapsed.TotalSeconds}s, {batchStopwatch.ElapsedMilliseconds}ms) --");
+                Debug.WriteLine($"[keepetl] ");
+                Debug.WriteLine($"[keepetl] ");
 
                 batch.Clear();
-
-                await FlushLineageEventsIfNeededAsync(lineageEvents, ct);
             }
 
             // Check progress and report every ProgressUpdateInterval records (default: 10)
@@ -523,15 +514,29 @@ public class IngestionPipeline(
                 progressTracker.UpdateProgress(metrics.RecordsProcessed);
 
                 var currentStatus = progressTracker.GetCurrentStatus();
-                await UpdateIngestionPhaseProgressWithFileStatusAsync(
-                    importId,
-                    totals,
-                    currentStatus,
-                    ct);
+                // Update report with current file status
+                report.IngestionPhase!.RecordsCreated = totals.RecordsCreated + metrics.RecordsCreated;
+                report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated + metrics.RecordsUpdated;
+                report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted + metrics.RecordsDeleted;
+                report.IngestionPhase!.CurrentFileStatus = new IngestionCurrentFileStatus
+                {
+                    FileName = currentStatus.FileName,
+                    TotalRows = currentStatus.TotalRows,
+                    RowNumber = currentStatus.RowNumber,
+                    PercentageCompleted = currentStatus.PercentageCompleted,
+                    RowsPerMinute = currentStatus.RowsPerMinute,
+                    EstimatedTimeRemaining = currentStatus.EstimatedTimeRemaining,
+                    EstimatedCompletionUtc = currentStatus.EstimatedCompletionUtc
+                };
+                await reportingService.UpsertImportReportAsync(report, ct);
+
+                Debug.WriteLine($"[keepetl] STATS: rpm:{currentStatus.RowsPerMinute}, {currentStatus.PercentageCompleted}% done, tot:{currentStatus.TotalRows}, num:{currentStatus.RowNumber}");
 
                 lastReportedRecordCount = metrics.RecordsProcessed;
             }
-        }
+
+        } // [end while]
+
 
         // Process remaining records
         if (batch.Count > 0)
@@ -554,26 +559,33 @@ public class IngestionPipeline(
         progressTracker.UpdateProgress(metrics.RecordsProcessed);
         var finalStatus = progressTracker.Complete();
 
-        await UpdateIngestionPhaseProgressWithFileStatusAsync(
-            importId,
-            totals,
-            finalStatus,
-            ct);
+        report.IngestionPhase!.RecordsCreated = totals.RecordsCreated + metrics.RecordsCreated;
+        report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated + metrics.RecordsUpdated;
+        report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted + metrics.RecordsDeleted;
+        report.IngestionPhase!.CurrentFileStatus = new IngestionCurrentFileStatus
+        {
+            FileName = finalStatus.FileName,
+            TotalRows = finalStatus.TotalRows,
+            RowNumber = finalStatus.RowNumber,
+            PercentageCompleted = finalStatus.PercentageCompleted,
+            RowsPerMinute = finalStatus.RowsPerMinute,
+            EstimatedTimeRemaining = finalStatus.EstimatedTimeRemaining,
+            EstimatedCompletionUtc = finalStatus.EstimatedCompletionUtc
+        };
+        await reportingService.UpsertImportReportAsync(report, ct);
 
         // Flush remaining lineage events
         await FlushLineageEventsAsync(lineageEvents, ct);
 
         // Calculate average MongoDB ingestion time per record
-        var avgMongoMs = metrics.RecordsProcessed > 0
-            ? (double)totalMongoProcessingMs / metrics.RecordsProcessed
-     : 0;
+        var avgMongoMs = metrics.RecordsProcessed > 0 ? (double)totalMongoProcessingMs / metrics.RecordsProcessed : 0;
 
         Debug.WriteLine($"[keepetl] Finished processing CSV records for file: {fileKey}. Total: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}, Avg: {avgMongoMs:F2}ms/record");
 
         return metrics.ToFileMetrics(avgMongoMs);
     }
 
-    private bool IsValidChangeType(string changeType)
+    private static bool IsValidChangeType(string changeType)
     {
         return changeType == ChangeType.Delete ||
                changeType == ChangeType.Update ||
@@ -715,7 +727,7 @@ public class IngestionPipeline(
 
         // Create composite primary key for _id
         var compositeKeyParts = headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty);
-        document[FieldId] = string.Join(CompositeKeyDelimiter, compositeKeyParts);
+        document[FieldId] = string.Join(EtlConstants.CompositeKeyDelimiter, compositeKeyParts);
 
         foreach (var header in headers.AllHeaders)
         {
@@ -764,9 +776,6 @@ public class IngestionPipeline(
         }
 
         var batchStopwatch = Stopwatch.StartNew();
-
-        Debug.WriteLine("[keepetl] -- NEW BATCH --");
-        Debug.WriteLine($"[keepetl] Processing batch of {batch.Count} documents for collection {collectionName}");
 
         var documentIds = batch.Select(b => b.Document[FieldId]).ToList();
         var existingDocsDict = await FetchExistingDocumentsAsync(collection, documentIds, ct);
@@ -1050,60 +1059,6 @@ public class IngestionPipeline(
         }
     }
 
-    private async Task UpdateIngestionPhaseProgressAsync(
-        Guid importId,
-        int filesProcessed,
-        IngestionTotals totals,
-        IngestionCurrentFileStatus? currentFileStatus,
-        CancellationToken ct)
-    {
-        await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
-        {
-            Status = PhaseStatus.Started,
-            FilesProcessed = filesProcessed,
-            RecordsCreated = totals.RecordsCreated,
-            RecordsUpdated = totals.RecordsUpdated,
-            RecordsDeleted = totals.RecordsDeleted,
-            CurrentFileStatus = currentFileStatus
-        }, ct);
-    }
-
-    private async Task UpdateIngestionPhaseProgressWithFileStatusAsync(
-        Guid importId,
-        IngestionTotals totals,
-        IngestionCurrentFileStatus currentFileStatus,
-        CancellationToken ct)
-    {
-        await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
-        {
-            Status = PhaseStatus.Started,
-            FilesProcessed = 0, // Not updated during file processing
-            RecordsCreated = totals.RecordsCreated,
-            RecordsUpdated = totals.RecordsUpdated,
-            RecordsDeleted = totals.RecordsDeleted,
-            CurrentFileStatus = currentFileStatus
-        }, ct);
-    }
-
-    private async Task UpdateIngestionPhaseCompletedAsync(
-        Guid importId,
-        int filesProcessed,
-        int recordsCreated,
-        int recordsUpdated,
-        int recordsDeleted,
-        CancellationToken ct)
-    {
-        await reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
-        {
-            Status = PhaseStatus.Completed,
-            FilesProcessed = filesProcessed,
-            RecordsCreated = recordsCreated,
-            RecordsUpdated = recordsUpdated,
-            RecordsDeleted = recordsDeleted,
-            CompletedAtUtc = DateTime.UtcNow
-        }, ct);
-    }
-
     private void LogPipelineCompletion(Guid importId, Stopwatch stopwatch)
     {
         stopwatch.Stop();
@@ -1140,6 +1095,7 @@ public class IngestionPipeline(
     private record IngestionTotals
     {
         public int FilesProcessed { get; init; }
+        public int FilesSkipped { get; init; }
         public int RecordsCreated { get; init; }
         public int RecordsUpdated { get; init; }
         public int RecordsDeleted { get; init; }
@@ -1147,6 +1103,7 @@ public class IngestionPipeline(
         public IngestionTotals Add(IngestionTotals other) => new()
         {
             FilesProcessed = FilesProcessed + other.FilesProcessed,
+            FilesSkipped = FilesSkipped + other.FilesSkipped,
             RecordsCreated = RecordsCreated + other.RecordsCreated,
             RecordsUpdated = RecordsUpdated + other.RecordsUpdated,
             RecordsDeleted = RecordsDeleted + other.RecordsDeleted

@@ -70,119 +70,53 @@ public class ImportReportingService : IImportReportingService
         return MapToImportReport(document);
     }
 
-    public async Task UpdateAcquisitionPhaseAsync(Guid importId, AcquisitionPhaseUpdate update, CancellationToken ct)
+    public async Task UpsertImportReportAsync(ImportReport report, CancellationToken ct)
     {
-        _logger.LogDebug("Updating acquisition phase for ImportId: {ImportId}", importId);
+        _logger.LogDebug("Upserting import report for ImportId: {ImportId}", report.ImportId);
 
-        var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
-
-        // First, check if StartedAtUtc needs to be set
-        bool needsStartTime = false;
-        if (update.Status == PhaseStatus.Started)
+        var document = new ImportReportDocument
         {
-            var currentDoc = await _importReports.Find(filter).FirstOrDefaultAsync(ct);
-            needsStartTime = currentDoc?.AcquisitionPhase?.StartedAtUtc == null;
-        }
-
-        var updateBuilder = Builders<ImportReportDocument>.Update;
-
-        var updates = new List<UpdateDefinition<ImportReportDocument>>
-        {
-            updateBuilder.Set("AcquisitionPhase.Status", update.Status.ToString()),
-            updateBuilder.Set("AcquisitionPhase.FilesDiscovered", update.FilesDiscovered),
-            updateBuilder.Set("AcquisitionPhase.FilesProcessed", update.FilesProcessed),
-            updateBuilder.Set("AcquisitionPhase.FilesFailed", update.FilesFailed)
-        };
-
-        if (needsStartTime)
-        {
-            updates.Add(updateBuilder.Set("AcquisitionPhase.StartedAtUtc", DateTime.UtcNow));
-        }
-
-        if (update.CompletedAtUtc.HasValue)
-        {
-            updates.Add(updateBuilder.Set("AcquisitionPhase.CompletedAtUtc", update.CompletedAtUtc.Value));
-        }
-
-        var combinedUpdate = updateBuilder.Combine(updates);
-        await _importReports.UpdateOneAsync(filter, combinedUpdate, cancellationToken: ct);
-    }
-
-    public async Task UpdateIngestionPhaseAsync(Guid importId, IngestionPhaseUpdate update, CancellationToken ct)
-    {
-        _logger.LogDebug("Updating ingestion phase for ImportId: {ImportId}", importId);
-
-        var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
-
-        // First, check if StartedAtUtc needs to be set
-        bool needsStartTime = false;
-        if (update.Status == PhaseStatus.Started)
-        {
-            var currentDoc = await _importReports.Find(filter).FirstOrDefaultAsync(ct);
-            needsStartTime = currentDoc?.IngestionPhase?.StartedAtUtc == null;
-        }
-
-        var updateBuilder = Builders<ImportReportDocument>.Update;
-
-        var updates = new List<UpdateDefinition<ImportReportDocument>>
-        {
-            updateBuilder.Set("IngestionPhase.Status", update.Status.ToString()),
-            updateBuilder.Set("IngestionPhase.FilesProcessed", update.FilesProcessed),
-            updateBuilder.Set("IngestionPhase.RecordsCreated", update.RecordsCreated),
-            updateBuilder.Set("IngestionPhase.RecordsUpdated", update.RecordsUpdated),
-            updateBuilder.Set("IngestionPhase.RecordsDeleted", update.RecordsDeleted)
-        };
-
-        if (needsStartTime)
-        {
-            updates.Add(updateBuilder.Set("IngestionPhase.StartedAtUtc", DateTime.UtcNow));
-        }
-
-        if (update.CompletedAtUtc.HasValue)
-        {
-            updates.Add(updateBuilder.Set("IngestionPhase.CompletedAtUtc", update.CompletedAtUtc.Value));
-        }
-
-        // Update CurrentFileStatus if provided
-        if (update.CurrentFileStatus != null)
-        {
-            var statusDoc = new IngestionCurrentFileStatusDocument
+            ImportId = report.ImportId,
+            SourceType = report.SourceType,
+            Status = report.Status.ToString(),
+            StartedAtUtc = report.StartedAtUtc,
+            CompletedAtUtc = report.CompletedAtUtc,
+            AcquisitionPhase = report.AcquisitionPhase != null ? new AcquisitionPhaseDocument
             {
-                FileName = update.CurrentFileStatus.FileName,
-                TotalRows = update.CurrentFileStatus.TotalRows,
-                RowNumber = update.CurrentFileStatus.RowNumber,
-                PercentageCompleted = update.CurrentFileStatus.PercentageCompleted,
-                RowsPerMinute = update.CurrentFileStatus.RowsPerMinute,
-                EstimatedTimeRemaining = update.CurrentFileStatus.EstimatedTimeRemaining,
-                EstimatedCompletionUtc = update.CurrentFileStatus.EstimatedCompletionUtc
-            };
-            updates.Add(updateBuilder.Set("IngestionPhase.CurrentFileStatus", statusDoc));
-        }
-        else
-        {
-            // Clear CurrentFileStatus if null is provided
-            updates.Add(updateBuilder.Unset("IngestionPhase.CurrentFileStatus"));
-        }
+                Status = report.AcquisitionPhase.Status.ToString(),
+                FilesDiscovered = report.AcquisitionPhase.FilesDiscovered,
+                FilesProcessed = report.AcquisitionPhase.FilesProcessed,
+                FilesFailed = report.AcquisitionPhase.FilesFailed,
+                StartedAtUtc = report.AcquisitionPhase.StartedAtUtc,
+                CompletedAtUtc = report.AcquisitionPhase.CompletedAtUtc
+            } : null,
+            IngestionPhase = report.IngestionPhase != null ? new IngestionPhaseDocument
+            {
+                Status = report.IngestionPhase.Status.ToString(),
+                FilesProcessed = report.IngestionPhase.FilesProcessed,
+                RecordsCreated = report.IngestionPhase.RecordsCreated,
+                RecordsUpdated = report.IngestionPhase.RecordsUpdated,
+                RecordsDeleted = report.IngestionPhase.RecordsDeleted,
+                StartedAtUtc = report.IngestionPhase.StartedAtUtc,
+                CompletedAtUtc = report.IngestionPhase.CompletedAtUtc,
+                CurrentFileStatus = report.IngestionPhase.CurrentFileStatus != null ? new IngestionCurrentFileStatusDocument
+                {
+                    FileName = report.IngestionPhase.CurrentFileStatus.FileName,
+                    TotalRows = report.IngestionPhase.CurrentFileStatus.TotalRows,
+                    RowNumber = report.IngestionPhase.CurrentFileStatus.RowNumber,
+                    PercentageCompleted = report.IngestionPhase.CurrentFileStatus.PercentageCompleted,
+                    RowsPerMinute = report.IngestionPhase.CurrentFileStatus.RowsPerMinute,
+                    EstimatedTimeRemaining = report.IngestionPhase.CurrentFileStatus.EstimatedTimeRemaining,
+                    EstimatedCompletionUtc = report.IngestionPhase.CurrentFileStatus.EstimatedCompletionUtc
+                } : null
+            } : null,
+            Error = report.Error
+        };
 
-        var combinedUpdate = updateBuilder.Combine(updates);
-        await _importReports.UpdateOneAsync(filter, combinedUpdate, cancellationToken: ct);
-    }
-
-    public async Task CompleteImportAsync(Guid importId, ImportStatus status, string? error, CancellationToken ct)
-    {
-        _logger.LogInformation("Completing import report for ImportId: {ImportId}, Status: {Status}", importId, status);
-
-        var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
-        var updateBuilder = Builders<ImportReportDocument>.Update
-            .Set(x => x.Status, status.ToString())
-            .Set(x => x.CompletedAtUtc, DateTime.UtcNow);
-
-        if (!string.IsNullOrWhiteSpace(error))
-        {
-            updateBuilder = updateBuilder.Set(x => x.Error, error);
-        }
-
-        await _importReports.UpdateOneAsync(filter, updateBuilder, cancellationToken: ct);
+        var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, report.ImportId);
+        var options = new ReplaceOptions { IsUpsert = true };
+        
+        await _importReports.ReplaceOneAsync(filter, document, options, cancellationToken: ct);
     }
 
     public async Task<bool> IsFileProcessedAsync(string fileKey, string md5Hash, CancellationToken ct)
@@ -192,6 +126,18 @@ public class ImportReportingService : IImportReportingService
             Builders<ImportFileDocument>.Filter.Eq(x => x.Md5Hash, md5Hash),
             Builders<ImportFileDocument>.Filter.In(x => x.Status,
                 new[] { FileProcessingStatus.Acquired.ToString(), FileProcessingStatus.Ingested.ToString() })
+        );
+
+        var count = await _importFiles.CountDocumentsAsync(filter, cancellationToken: ct);
+        return count > 0;
+    }
+
+    public async Task<bool> IsFileIngestedAsync(string fileKey, string md5Hash, CancellationToken ct)
+    {
+        var filter = Builders<ImportFileDocument>.Filter.And(
+            Builders<ImportFileDocument>.Filter.Eq(x => x.FileKey, fileKey),
+            Builders<ImportFileDocument>.Filter.Eq(x => x.Md5Hash, md5Hash),
+            Builders<ImportFileDocument>.Filter.Eq(x => x.Status, FileProcessingStatus.Ingested.ToString())
         );
 
         var count = await _importFiles.CountDocumentsAsync(filter, cancellationToken: ct);

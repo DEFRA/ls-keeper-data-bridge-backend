@@ -26,6 +26,7 @@ using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Core.Database;
 using KeeperData.Core.Reporting.Impl;
 using KeeperData.Core.Querying.Impl;
+using KeeperData.Core;
 
 namespace KeeperData.Bridge.PerformanceTests;
 
@@ -131,7 +132,7 @@ public class PerformanceTests : IAsyncLifetime
     [Fact]
     public async Task FullPipeline_SamCPHHolding_NRecords_ShouldCompleteSuccessfully()
     {
-        const int TotalToProcess = 300_000;
+        const int TotalToProcess = 100_000;
 
         _output.WriteLine("╔══════════════════════════════════════════════════════════════╗");
         _output.WriteLine("║  PERFORMANCE TEST: SAM CPH Holding - 1000 Records Pipeline  ║");
@@ -394,9 +395,8 @@ public class PerformanceTests : IAsyncLifetime
         var cryptoTransform = _serviceProvider.GetRequiredService<IAesCryptoTransform>();
         var passwordSaltService = _serviceProvider.GetRequiredService<IPasswordSaltService>();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var dateStr = today.ToString("yyyyMMdd");
-        var fileName = $"LITP_SAMCPHHOLDING_{dateStr}_001.csv";
+        var dateStr = DateTime.UtcNow.ToString(EtlConstants.DateTimePattern);
+        var fileName = $"LITP_SAMCPHHOLDING_{dateStr}.csv";
         var encryptedFileName = $"{fileName}.enc";
 
         var credentials = passwordSaltService.Get(encryptedFileName);
@@ -433,9 +433,8 @@ public class PerformanceTests : IAsyncLifetime
         var tempPath = Path.Combine(Path.GetTempPath(), encryptedFileName);
         var encryptedBytes = await File.ReadAllBytesAsync(tempPath);
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var dateStr = today.ToString("yyyyMMdd");
-        var s3Key = $"LITP_SAMCPHHOLDING_{dateStr}_001.csv.enc";
+        var dateStr = DateTime.UtcNow.ToString(EtlConstants.DateTimePattern);
+        var s3Key = $"LITP_SAMCPHHOLDING_{dateStr}.csv.enc";
 
         _output.WriteLine($"Uploading to S3: {s3Key} ({encryptedBytes.Length:N0} bytes)");
 

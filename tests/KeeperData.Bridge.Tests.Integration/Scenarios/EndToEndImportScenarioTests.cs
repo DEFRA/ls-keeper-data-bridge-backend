@@ -1,5 +1,6 @@
 using FluentAssertions;
 using KeeperData.Bridge.Tests.Integration.Helpers;
+using KeeperData.Core;
 using KeeperData.Core.Crypto;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Querying.Abstract;
@@ -147,7 +148,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
         var passwordSaltService = _serviceProvider.GetRequiredService<IPasswordSaltService>();
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var dateStr = DateTime.UtcNow.ToString(EtlFileTimestampPatterns.DateTimePattern);
+        var dateStr = DateTime.UtcNow.ToString(EtlConstants.DateTimePattern);
         var fileName = $"LITP_TEST_PERSONS_{dateStr}.csv";
         var encryptedFileName = $"{fileName}.enc";
 
@@ -186,7 +187,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
         var tempPath = Path.Combine(Path.GetTempPath(), encryptedFileName);
         var encryptedBytes = await File.ReadAllBytesAsync(tempPath);
 
-        var dateStr = DateTime.UtcNow.ToString(EtlFileTimestampPatterns.DateTimePattern);
+        var dateStr = DateTime.UtcNow.ToString(EtlConstants.DateTimePattern);
         var s3Key = $"LITP_TEST_PERSONS_{dateStr}.csv.enc";
 
         _output.WriteLine($"Uploading encrypted file to S3: {s3Key}");

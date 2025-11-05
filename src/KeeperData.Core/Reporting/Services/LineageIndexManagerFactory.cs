@@ -31,7 +31,7 @@ public class LineageIndexManagerFactory : ILineageIndexManagerFactory
     public ILineageIndexManager Create(IMongoCollection<LineageEventDocument> collection)
     {
         if (collection == null) throw new ArgumentNullException(nameof(collection));
-        
+
         var logger = _loggerFactory.CreateLogger<LineageIndexManager>();
         return new LineageIndexManager(collection, logger);
     }

@@ -98,12 +98,10 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
     private DataSetDefinition CreateTestDataSetDefinition()
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var dateStr = today.ToString("yyyyMMdd");
 
         return new DataSetDefinition(
             Name: CollectionName,
-            FilePrefixFormat: $"LITP_TEST_PERSONS_{{0}}",
-            DatePattern: "yyyyMMdd",
+            FilePrefixFormat: "LITP_TEST_PERSONS_{0}",
             PrimaryKeyHeaderNames: ["PersonId"],
             ChangeTypeHeaderName: "CHANGETYPE",
             Accumulators: []);
@@ -149,8 +147,8 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
         var passwordSaltService = _serviceProvider.GetRequiredService<IPasswordSaltService>();
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var dateStr = today.ToString("yyyyMMdd");
-        var fileName = $"LITP_TEST_PERSONS_{dateStr}_001.csv";
+        var dateStr = DateTime.UtcNow.ToString(EtlFileTimestampPatterns.DateTimePattern);
+        var fileName = $"LITP_TEST_PERSONS_{dateStr}.csv";
         var encryptedFileName = $"{fileName}.enc";
 
         var credentials = passwordSaltService.Get(encryptedFileName);
@@ -188,9 +186,8 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
         var tempPath = Path.Combine(Path.GetTempPath(), encryptedFileName);
         var encryptedBytes = await File.ReadAllBytesAsync(tempPath);
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var dateStr = today.ToString("yyyyMMdd");
-        var s3Key = $"LITP_TEST_PERSONS_{dateStr}_001.csv.enc";
+        var dateStr = DateTime.UtcNow.ToString(EtlFileTimestampPatterns.DateTimePattern);
+        var s3Key = $"LITP_TEST_PERSONS_{dateStr}.csv.enc";
 
         _output.WriteLine($"Uploading encrypted file to S3: {s3Key}");
 

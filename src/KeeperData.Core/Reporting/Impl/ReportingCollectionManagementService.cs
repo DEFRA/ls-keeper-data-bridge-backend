@@ -35,7 +35,7 @@ public class ReportingCollectionManagementService : IReportingCollectionManageme
     }
 
     public async Task<DeleteReportingCollectionResult> DeleteReportingCollectionAsync(
-        string collectionName, 
+        string collectionName,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Attempting to delete reporting collection: {CollectionName}", collectionName);
@@ -60,7 +60,7 @@ public class ReportingCollectionManagementService : IReportingCollectionManageme
 
             // Normalize the collection name to match the exact casing in MongoDB
             // MongoDB collection names are case-sensitive
-            var normalizedCollectionName = ReportingCollections.First(c => 
+            var normalizedCollectionName = ReportingCollections.First(c =>
                 c.Equals(collectionName, StringComparison.OrdinalIgnoreCase));
 
             var database = _mongoClient.GetDatabase(_databaseConfig.DatabaseName);

@@ -77,7 +77,7 @@ public class AcquisitionPipeline(
     {
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
 
-        var fileSets = await catalogueService.GetFileSetsAsync(20, ct);
+        var fileSets = await catalogueService.GetFileSetsAsync(100, ct);
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
 
         logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",
@@ -150,7 +150,7 @@ public class AcquisitionPipeline(
     private async Task<bool> ProcessSingleFileAsync(
         Guid importId,
         FileSet fileSet,
-        StorageObjectInfo file,
+        EtlFile file,
         int currentFileNumber,
         int totalFiles,
         IBlobStorageServiceReadOnly sourceBlobs,
@@ -162,7 +162,7 @@ public class AcquisitionPipeline(
         logger.LogInformation("Processing file {CurrentFile}/{TotalFiles}: {FileKey} for ImportId: {ImportId}",
             currentFileNumber,
             totalFiles,
-            file.Key,
+            file.StorageObject.Key,
             importId);
 
         try
@@ -170,7 +170,7 @@ public class AcquisitionPipeline(
             var fileContext = await PrepareFileContextAsync(file, sourceBlobs, destinationBlobs, ct);
 
             var transferDecision = await DetermineFileTransferRequirementAsync(
-                file.Key,
+                file.StorageObject.Key,
                 fileContext.EncryptedMetadata.ContentLength,
                 destinationBlobs,
                 importId,
@@ -184,7 +184,7 @@ public class AcquisitionPipeline(
 
             fileStopwatch.Stop();
 
-            await CheckForDuplicateProcessingAsync(file.Key, acquisitionResult.Md5Hash, importId, ct);
+            await CheckForDuplicateProcessingAsync(file.StorageObject.Key, acquisitionResult.Md5Hash, importId, ct);
 
             await RecordSuccessfulAcquisitionAsync(
                 importId,
@@ -200,7 +200,7 @@ public class AcquisitionPipeline(
         {
             fileStopwatch.Stop();
             logger.LogError(ex, "Failed to process file: {FileKey} after {Duration}ms for ImportId: {ImportId}",
-                file.Key,
+                file.StorageObject.Key,
                 fileStopwatch.ElapsedMilliseconds,
                 importId);
 
@@ -211,21 +211,21 @@ public class AcquisitionPipeline(
     }
 
     private async Task<FileContext> PrepareFileContextAsync(
-        StorageObjectInfo file,
+        EtlFile file,
         IBlobStorageServiceReadOnly sourceBlobs,
         IBlobStorageService destinationBlobs,
         CancellationToken ct)
     {
-        var encryptedStream = await sourceBlobs.OpenReadAsync(file.Key, ct);
-        var encryptedMetadata = await sourceBlobs.GetMetadataAsync(file.Key, ct);
-        var credentials = passwordSalt.Get(file.Key);
+        var encryptedStream = await sourceBlobs.OpenReadAsync(file.StorageObject.Key, ct);
+        var encryptedMetadata = await sourceBlobs.GetMetadataAsync(file.StorageObject.Key, ct);
+        var credentials = passwordSalt.Get(file.StorageObject.Key);
 
         logger.LogDebug("Loaded file context: {FileKey}, ContentLength: {ContentLength} bytes",
-            file.Key,
+            file.StorageObject.Key,
             encryptedMetadata.ContentLength);
 
         return new FileContext(
-            file.Key,
+            file.StorageObject.Key,
             encryptedStream,
             encryptedMetadata,
             credentials.Password,
@@ -350,19 +350,19 @@ public class AcquisitionPipeline(
     private async Task RecordSuccessfulAcquisitionAsync(
         Guid importId,
         FileSet fileSet,
-        StorageObjectInfo file,
+        EtlFile file,
         FileAcquisitionResult acquisitionResult,
         long durationMs,
         CancellationToken ct)
     {
         await reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
         {
-            FileName = Path.GetFileName(file.Key),
-            FileKey = file.Key,
+            FileName = Path.GetFileName(file.StorageObject.Key),
+            FileKey = file.StorageObject.Key,
             DatasetName = fileSet.Definition.Name,
             Md5Hash = acquisitionResult.Md5Hash,
             FileSize = acquisitionResult.FileSize,
-            SourceKey = file.Key,
+            SourceKey = file.StorageObject.Key,
             DecryptionDurationMs = durationMs,
             AcquiredAtUtc = DateTime.UtcNow,
             Status = FileProcessingStatus.Acquired
@@ -372,7 +372,7 @@ public class AcquisitionPipeline(
     private async Task RecordFailedAcquisitionAsync(
         Guid importId,
         FileSet fileSet,
-        StorageObjectInfo file,
+        EtlFile file,
         long durationMs,
         Exception ex,
         CancellationToken ct)
@@ -381,12 +381,12 @@ public class AcquisitionPipeline(
         {
             await reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
             {
-                FileName = Path.GetFileName(file.Key),
-                FileKey = file.Key,
+                FileName = Path.GetFileName(file.StorageObject.Key),
+                FileKey = file.StorageObject.Key,
                 DatasetName = fileSet.Definition.Name,
                 Md5Hash = string.Empty,
                 FileSize = 0,
-                SourceKey = file.Key,
+                SourceKey = file.StorageObject.Key,
                 DecryptionDurationMs = durationMs,
                 AcquiredAtUtc = DateTime.UtcNow,
                 Status = FileProcessingStatus.Failed,
@@ -395,7 +395,7 @@ public class AcquisitionPipeline(
         }
         catch (Exception reportEx)
         {
-            logger.LogError(reportEx, "Failed to record acquisition failure for file: {FileKey}", file.Key);
+            logger.LogError(reportEx, "Failed to record acquisition failure for file: {FileKey}", file.StorageObject.Key);
         }
     }
 

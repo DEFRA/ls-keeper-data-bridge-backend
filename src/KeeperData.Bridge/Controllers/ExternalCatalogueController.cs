@@ -232,15 +232,15 @@ public class ExternalCatalogueController(
             if (fileSet.Files.Any())
             {
                 report.AppendLine("  Files:");
-                foreach (var file in fileSet.Files.OrderByDescending(f => f.LastModified))
+                foreach (var file in fileSet.Files.OrderBy(f => f.Timestamp))
                 {
-                    var sizeKB = file.Size / 1024.0;
+                    var sizeKB = file.StorageObject.Size / 1024.0;
                     var sizeDisplay = sizeKB < 1024 ? $"{sizeKB:F1} KB" : $"{sizeKB / 1024:F1} MB";
 
-                    report.AppendLine($"    - {file.Key}");
+                    report.AppendLine($"    - {file.StorageObject.Key}");
                     report.AppendLine($"      Size: {sizeDisplay}");
-                    report.AppendLine($"      Last Modified: {file.LastModified:yyyy-MM-dd HH:mm:ss} UTC");
-                    report.AppendLine($"      ETag: {file.ETag}");
+                    report.AppendLine($"      Last Modified: {file.StorageObject.LastModified:yyyy-MM-dd HH:mm:ss} UTC");
+                    report.AppendLine($"      ETag: {file.StorageObject.ETag}");
                 }
             }
             else
@@ -288,7 +288,7 @@ public class ExternalCatalogueController(
         try
         {
             var prefixPattern = definition.FilePrefixFormat.Replace("{0}", "");
-            var dateTimePattern = StandardDataSetDefinitionsBuilder.DateTimePattern;
+            var dateTimePattern = EtlFileTimestampPatterns.DateTimePattern;
 
             var expectedPattern = prefixPattern + dateTimePattern;
 
@@ -312,7 +312,7 @@ public class ExternalCatalogueController(
 
             return DateTime.TryParseExact(
                 dateTimeString,
-                StandardDataSetDefinitionsBuilder.DateTimePattern,
+                EtlFileTimestampPatterns.DateTimePattern,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
                 out _);
@@ -326,7 +326,7 @@ public class ExternalCatalogueController(
     private static string FormatExampleFileName(DataSetDefinition definition)
     {
         var prefix = definition.FilePrefixFormat.Replace("{0}", "");
-        return $"{prefix}{StandardDataSetDefinitionsBuilder.DateTimePattern}.csv (e.g., {prefix}20241201123045.csv)";
+        return $"{prefix}{EtlFileTimestampPatterns.DateTimePattern}.csv (e.g., {prefix}20241201123045.csv)";
     }
 
     private ValidationProblemDetails CreateValidationProblem(string errorMessage, string fieldName)

@@ -42,7 +42,7 @@ public class CsvDataGenerator
     {
         Directory.CreateDirectory(_options.OutputDirectory);
 
-        var timestamp = DateTime.Now.ToString(StandardDataSetDefinitionsBuilder.DateTimePattern);
+        var timestamp = DateTime.Now.ToString(EtlFileTimestampPatterns.DateTimePattern);
         var filePrefix = string.Format(definition.FilePrefixFormat, timestamp);
 
         // Generate main file

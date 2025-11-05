@@ -37,7 +37,7 @@ public class MongoQueryServiceTests
 
         var definitions = new[]
         {
-            new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMdd", ["CPH"], "CHANGETYPE", [])
+            new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", ["CPH"], "CHANGETYPE", [])
         };
         _dataSetDefinitionsMock.Setup(x => x.All).Returns(definitions.ToImmutableArray());
 

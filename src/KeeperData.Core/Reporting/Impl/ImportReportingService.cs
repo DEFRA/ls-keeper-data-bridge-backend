@@ -271,7 +271,7 @@ public class ImportReportingService : IImportReportingService
         await _indexManager.EnsureIndexesAsync(ct);
 
         // Group events by lineage document ID for efficient parent upserts
-        var groupedEvents = eventsList.GroupBy(e => 
+        var groupedEvents = eventsList.GroupBy(e =>
             _idGenerator.GenerateLineageDocumentId(e.CollectionName, e.RecordId));
 
         var parentUpserts = new List<WriteModel<RecordLineageDocument>>();
@@ -289,10 +289,10 @@ public class ImportReportingService : IImportReportingService
             foreach (var evt in group)
             {
                 var eventId = _idGenerator.GenerateLineageEventId(
-                    evt.CollectionName, 
-                    evt.RecordId, 
+                    evt.CollectionName,
+                    evt.RecordId,
                     evt.EventDateUtc);
-                
+
                 eventInserts.Add(_mapper.MapToEventDocument(evt, eventId, lineageDocId));
             }
         }
@@ -302,7 +302,7 @@ public class ImportReportingService : IImportReportingService
     }
 
     private WriteModel<RecordLineageDocument> CreateParentUpsert(
-        string lineageDocId, 
+        string lineageDocId,
         RecordLineageEvent latestEvent)
     {
         var filter = Builders<RecordLineageDocument>.Filter.Eq(x => x.Id, lineageDocId);
@@ -364,11 +364,11 @@ public class ImportReportingService : IImportReportingService
     public async Task<RecordLifecycle?> GetRecordLifecycleAsync(string collectionName, string recordId, CancellationToken ct)
     {
         var lineageDocId = _idGenerator.GenerateLineageDocumentId(collectionName, recordId);
-        
+
         // Get parent document (O(1) direct lookup by composite _id)
         var parentFilter = Builders<RecordLineageDocument>.Filter.Eq(x => x.Id, lineageDocId);
         var parentDoc = await _recordLineage.Find(parentFilter).FirstOrDefaultAsync(ct);
-        
+
         if (parentDoc == null) return null;
 
         // Get all events for this record (efficiently indexed query)

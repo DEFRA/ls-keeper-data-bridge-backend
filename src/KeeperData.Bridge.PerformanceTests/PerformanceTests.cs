@@ -63,7 +63,7 @@ public class PerformanceTests : IAsyncLifetime
         _localStackContainer = new LocalStackBuilder()
             .WithImage("localstack/localstack:3.0")
             .Build();
-        
+
         await _localStackContainer.StartAsync();
         _output.WriteLine(" LocalStack container started");
 
@@ -85,7 +85,7 @@ public class PerformanceTests : IAsyncLifetime
         _mongoDbContainer = new MongoDbBuilder()
             .WithImage("mongo:7.0")
             .Build();
-        
+
         await _mongoDbContainer.StartAsync();
         _output.WriteLine(" MongoDB container started");
 
@@ -131,7 +131,7 @@ public class PerformanceTests : IAsyncLifetime
     [Fact]
     public async Task FullPipeline_SamCPHHolding_NRecords_ShouldCompleteSuccessfully()
     {
-        const int TotalToProcess = 300_000;   
+        const int TotalToProcess = 300_000;
 
         _output.WriteLine("╔══════════════════════════════════════════════════════════════╗");
         _output.WriteLine("║  PERFORMANCE TEST: SAM CPH Holding - 1000 Records Pipeline  ║");
@@ -177,9 +177,9 @@ public class PerformanceTests : IAsyncLifetime
 
         // Step 10: Verify data integrity
         VerifyDataIntegrity(queryResults, recordCount);
-        
+
         stopwatch.Stop();
-        
+
         _output.WriteLine($" Step 10: Data integrity verified - {stopwatch.ElapsedMilliseconds}ms\n");
 
         _output.WriteLine("╔══════════════════════════════════════════════════════════════╗");
@@ -198,7 +198,7 @@ public class PerformanceTests : IAsyncLifetime
 
         var cacheDir = Path.Combine(Path.GetTempPath(), "KeeperDataPerformanceTests");
         Directory.CreateDirectory(cacheDir);
-        
+
         var cachedFilePath = Path.Combine(cacheDir, cachedDataFileName);
 
         if (File.Exists(cachedFilePath))
@@ -212,17 +212,17 @@ public class PerformanceTests : IAsyncLifetime
 
         _output.WriteLine($"Generating new test data ({totalToProcess} records)...");
         var (csvContent, recordCount) = GenerateSamCPHHoldingData(totalToProcess);
-        
+
         await File.WriteAllTextAsync(cachedFilePath, csvContent);
         _output.WriteLine($"Cached test data to: {cachedFilePath}");
-        
+
         return (csvContent, recordCount);
     }
 
     private (string CsvContent, int RecordCount) GenerateSamCPHHoldingData(int recordCount)
     {
         var csv = new StringBuilder();
-        
+
         // Write header based on samCPHHolding definition
         csv.AppendLine("CPH|ADDRESS_PK|DISEASE_TYPE|INTERVAL|INTERVAL_UNIT_OF_TIME|CPH_RELATIONSHIP_TYPE|SECONDARY_CPH|ANIMAL_SPECIES_CODE|ANIMAL_PRODUCTION_USAGE_CODE|CHANGETYPE");
 
@@ -263,7 +263,7 @@ public class PerformanceTests : IAsyncLifetime
     private DataSetDefinition CreateSamCPHHoldingDefinition()
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        
+
         return new DataSetDefinition(
             Name: "sam_cph_holdings",
             FilePrefixFormat: "LITP_SAMCPHHOLDING_{0}",
@@ -291,7 +291,7 @@ public class PerformanceTests : IAsyncLifetime
             builder.AddConsole();
             builder.SetMinimumLevel(LogLevel.Warning); // Reduce noise in performance tests
         });
-        
+
         services.AddSingleton(TimeProvider.System);
 
         var configuration = new ConfigurationBuilder()
@@ -495,7 +495,7 @@ public class PerformanceTests : IAsyncLifetime
             if (report.Status == ImportStatus.Completed)
             {
                 _output.WriteLine("Import completed successfully!");
-                
+
                 report.AcquisitionPhase.Should().NotBeNull();
                 report.AcquisitionPhase!.Status.Should().Be(PhaseStatus.Completed);
                 report.AcquisitionPhase.FilesProcessed.Should().BeGreaterThan(0);
@@ -506,7 +506,7 @@ public class PerformanceTests : IAsyncLifetime
 
                 _output.WriteLine($"  Files Processed: {report.AcquisitionPhase.FilesProcessed}");
                 _output.WriteLine($"  Records Created: {report.IngestionPhase.RecordsCreated}");
-                
+
                 return;
             }
 

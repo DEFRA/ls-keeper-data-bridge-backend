@@ -72,7 +72,7 @@ public class LineageIdGeneratorTests
         // Assert
         result.Should().StartWith("sam_cph_holdings__CPH001__20241215143045123456__");
         result.Should().MatchRegex(@"^sam_cph_holdings__CPH001__\d{20}__\d{6}$");
-        
+
         // Extract components
         var parts = result.Split("__");
         parts.Should().HaveCount(4);
@@ -106,7 +106,7 @@ public class LineageIdGeneratorTests
         // Arrange
         var collectionName = "sam_cph_holdings";
         var recordId = "CPH001";
-        
+
         var timestamp1 = new DateTime(2024, 12, 15, 10, 0, 0, DateTimeKind.Utc);
         var timestamp2 = new DateTime(2024, 12, 15, 10, 0, 1, DateTimeKind.Utc);
         var timestamp3 = new DateTime(2024, 12, 15, 10, 1, 0, DateTimeKind.Utc);
@@ -125,7 +125,7 @@ public class LineageIdGeneratorTests
         // Assert - When sorted lexicographically, they should be in chronological order
         var sortedIds = ids.OrderBy(x => x).ToArray();
         sortedIds.Should().Equal(ids, "IDs should naturally sort chronologically");
-        
+
         // Verify ordering explicitly
         string.Compare(id1, id2, StringComparison.Ordinal).Should().BeLessThan(0);
         string.Compare(id2, id3, StringComparison.Ordinal).Should().BeLessThan(0);
@@ -147,8 +147,8 @@ public class LineageIdGeneratorTests
             {
                 Timestamp = baseTime.AddMilliseconds(i),
                 Id = _generator.GenerateLineageEventId(
-                    collectionName, 
-                    recordId, 
+                    collectionName,
+                    recordId,
                     baseTime.AddMilliseconds(i))
             })
             .ToList();
@@ -181,7 +181,7 @@ public class LineageIdGeneratorTests
         foreach (var id in ids)
         {
             var randomPart = id.Split("__")[3];
-            randomPart.Should().MatchRegex(@"^\d{6}$", 
+            randomPart.Should().MatchRegex(@"^\d{6}$",
                 "random component should be exactly 6 digits");
             randomPart.Length.Should().Be(6);
         }
@@ -193,7 +193,7 @@ public class LineageIdGeneratorTests
         // Arrange
         var collectionName = "sam_cph_holdings";
         var recordId = "CPH001";
-        
+
         // Test with various dates to ensure consistent width
         var dates = new[]
         {
@@ -207,8 +207,8 @@ public class LineageIdGeneratorTests
         {
             var id = _generator.GenerateLineageEventId(collectionName, recordId, date);
             var timestampPart = id.Split("__")[2];
-            
-            timestampPart.Length.Should().Be(20, 
+
+            timestampPart.Length.Should().Be(20,
                 $"timestamp should always be 20 characters for date {date}");
             timestampPart.Should().MatchRegex(@"^\d{20}$");
         }

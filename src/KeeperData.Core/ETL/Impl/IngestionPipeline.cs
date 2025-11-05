@@ -184,7 +184,7 @@ public class IngestionPipeline(
     private async Task<IngestionTotals> ProcessSingleFileAsync(
         Guid importId,
         FileSet fileSet,
-        StorageObjectInfo file,
+        EtlFile file,
         int currentFileNumber,
         int totalFiles,
         IBlobStorageService blobStorage,
@@ -192,11 +192,11 @@ public class IngestionPipeline(
     {
         var fileStopwatch = Stopwatch.StartNew();
 
-        Debug.WriteLine($"[keepetl] Processing file {currentFileNumber}/{totalFiles}: {file.Key}");
+        Debug.WriteLine($"[keepetl] Processing file {currentFileNumber}/{totalFiles}: {file.StorageObject.Key}");
         logger.LogInformation("Processing file {CurrentFile}/{TotalFiles}: {FileKey} for ImportId: {ImportId}",
             currentFileNumber,
             totalFiles,
-            file.Key,
+            file.StorageObject.Key,
             importId);
 
         try
@@ -206,9 +206,9 @@ public class IngestionPipeline(
 
             await RecordSuccessfulIngestionAsync(importId, file, fileMetrics, fileStopwatch.ElapsedMilliseconds, ct);
 
-            Debug.WriteLine($"[keepetl] Successfully ingested file: {file.Key} - Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}, Duration: {fileStopwatch.ElapsedMilliseconds}ms");
+            Debug.WriteLine($"[keepetl] Successfully ingested file: {file.StorageObject.Key} - Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}, Duration: {fileStopwatch.ElapsedMilliseconds}ms");
             logger.LogInformation("Successfully ingested file: {FileKey} - Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms",
-                file.Key,
+                file.StorageObject.Key,
                 fileMetrics.RecordsCreated,
                 fileMetrics.RecordsUpdated,
                 fileMetrics.RecordsDeleted,
@@ -224,9 +224,9 @@ public class IngestionPipeline(
         catch (Exception ex)
         {
             fileStopwatch.Stop();
-            Debug.WriteLine($"[keepetl] Failed to ingest file: {file.Key} after {fileStopwatch.ElapsedMilliseconds}ms - Error: {ex.Message}");
+            Debug.WriteLine($"[keepetl] Failed to ingest file: {file.StorageObject.Key} after {fileStopwatch.ElapsedMilliseconds}ms - Error: {ex.Message}");
             logger.LogError(ex, "Failed to ingest file: {FileKey} after {Duration}ms for ImportId: {ImportId}",
-                file.Key,
+                file.StorageObject.Key,
                 fileStopwatch.ElapsedMilliseconds,
                 importId);
 
@@ -240,15 +240,15 @@ public class IngestionPipeline(
         Guid importId,
         IBlobStorageService blobs,
         FileSet fileSet,
-        StorageObjectInfo file,
+        EtlFile file,
         CancellationToken ct)
     {
         var overallStopwatch = Stopwatch.StartNew();
         var collectionName = fileSet.Definition.Name;
 
-        Debug.WriteLine($"[keepetl] Starting ingestion of file {file.Key} into collection {collectionName}");
+        Debug.WriteLine($"[keepetl] Starting ingestion of file {file.StorageObject.Key} into collection {collectionName}");
         logger.LogInformation("Starting ingestion of file {FileKey} into collection {CollectionName}",
-            file.Key, collectionName);
+            file.StorageObject.Key, collectionName);
 
         var collection = await EnsureCollectionExistsAsync(collectionName, ct);
         await EnsureWildcardIndexExistsAsync(collection, ct);
@@ -260,20 +260,20 @@ public class IngestionPipeline(
         {
             // Track S3 download time
             var downloadStopwatch = Stopwatch.StartNew();
-            tempFilePath = await DownloadToTempFileAsync(blobs, file.Key, ct);
+            tempFilePath = await DownloadToTempFileAsync(blobs, file.StorageObject.Key, ct);
             downloadStopwatch.Stop();
 
-            Debug.WriteLine($"[keepetl] Downloaded file {file.Key} to temp storage: {tempFilePath} in {downloadStopwatch.ElapsedMilliseconds}ms");
+            Debug.WriteLine($"[keepetl] Downloaded file {file.StorageObject.Key} to temp storage: {tempFilePath} in {downloadStopwatch.ElapsedMilliseconds}ms");
             logger.LogInformation("Downloaded file {FileKey} to temp storage: {TempPath} in {DownloadDuration}ms",
-                file.Key, tempFilePath, downloadStopwatch.ElapsedMilliseconds);
+                file.StorageObject.Key, tempFilePath, downloadStopwatch.ElapsedMilliseconds);
 
             // Count rows for progress tracking
             var estimatedRowCount = await _rowCounter.CountRowsAsync(tempFilePath, ct);
-            progressTracker = new IngestionProgressTracker(file.Key, estimatedRowCount);
+            progressTracker = new IngestionProgressTracker(file.StorageObject.Key, estimatedRowCount);
 
-            Debug.WriteLine($"[keepetl] File {file.Key} has approximately {estimatedRowCount} data rows to process");
+            Debug.WriteLine($"[keepetl] File {file.StorageObject.Key} has approximately {estimatedRowCount} data rows to process");
             logger.LogInformation("File {FileKey} has approximately {RowCount} data rows to process",
-                file.Key, estimatedRowCount);
+                file.StorageObject.Key, estimatedRowCount);
 
             // Track MongoDB ingestion time
             var mongoIngestionStopwatch = Stopwatch.StartNew();
@@ -282,7 +282,7 @@ public class IngestionPipeline(
 
             var headers = await ReadAndValidateHeadersAsync(
                 csvContext.Csv,
-                file.Key,
+                file.StorageObject.Key,
                 fileSet.Definition.PrimaryKeyHeaderNames,
                 fileSet.Definition.ChangeTypeHeaderName);
 
@@ -291,7 +291,7 @@ public class IngestionPipeline(
                 collection,
                 csvContext.Csv,
                 headers,
-                file.Key,
+                file.StorageObject.Key,
                 collectionName,
                 fileSet.Definition,
                 progressTracker,
@@ -302,9 +302,9 @@ public class IngestionPipeline(
             mongoIngestionStopwatch.Stop();
             overallStopwatch.Stop();
 
-            Debug.WriteLine($"[keepetl] Completed ingestion of file {file.Key}. Total records: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}, S3 Download: {downloadStopwatch.ElapsedMilliseconds}ms, MongoDB Ingestion: {mongoIngestionStopwatch.ElapsedMilliseconds}ms, Total Duration: {overallStopwatch.ElapsedMilliseconds}ms, Avg Record Processing: {metrics.AverageMongoIngestionMs:F2}ms/record");
+            Debug.WriteLine($"[keepetl] Completed ingestion of file {file.StorageObject.Key}. Total records: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}, S3 Download: {downloadStopwatch.ElapsedMilliseconds}ms, MongoDB Ingestion: {mongoIngestionStopwatch.ElapsedMilliseconds}ms, Total Duration: {overallStopwatch.ElapsedMilliseconds}ms, Avg Record Processing: {metrics.AverageMongoIngestionMs:F2}ms/record");
             logger.LogInformation("Completed ingestion of file {FileKey}. Total records: {TotalRecords}, Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, S3 Download: {DownloadDuration}ms, MongoDB Ingestion: {MongoIngestionDuration}ms, Total Duration: {TotalDuration}ms, Avg Record Processing: {AvgMs:F2}ms/record",
-                file.Key,
+                file.StorageObject.Key,
                 metrics.RecordsProcessed,
                 metrics.RecordsCreated,
                 metrics.RecordsUpdated,
@@ -998,14 +998,14 @@ public class IngestionPipeline(
 
     private async Task RecordSuccessfulIngestionAsync(
         Guid importId,
-        StorageObjectInfo file,
+        EtlFile file,
         FileIngestionMetrics metrics,
         long durationMs,
         CancellationToken ct)
     {
         await reportingService.RecordFileIngestionAsync(importId, new FileIngestionRecord
         {
-            FileKey = file.Key,
+            FileKey = file.StorageObject.Key,
             RecordsProcessed = metrics.RecordsProcessed,
             RecordsCreated = metrics.RecordsCreated,
             RecordsUpdated = metrics.RecordsUpdated,
@@ -1021,16 +1021,16 @@ public class IngestionPipeline(
 
     private async Task RecordFailedIngestionAsync(
         Guid importId,
-        StorageObjectInfo file,
-     long durationMs,
+        EtlFile file,
+        long durationMs,
         Exception ex,
-     CancellationToken ct)
+        CancellationToken ct)
     {
         try
         {
             await reportingService.RecordFileIngestionAsync(importId, new FileIngestionRecord
             {
-                FileKey = file.Key,
+                FileKey = file.StorageObject.Key,
                 RecordsProcessed = 0,
                 RecordsCreated = 0,
                 RecordsUpdated = 0,
@@ -1046,7 +1046,7 @@ public class IngestionPipeline(
         }
         catch (Exception reportEx)
         {
-            logger.LogError(reportEx, "Failed to record ingestion failure for file: {FileKey}", file.Key);
+            logger.LogError(reportEx, "Failed to record ingestion failure for file: {FileKey}", file.StorageObject.Key);
         }
     }
 

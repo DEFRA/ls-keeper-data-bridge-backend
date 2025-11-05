@@ -5,7 +5,7 @@ public record FileAcquisitionRecord
     public required string FileName { get; init; }
     public required string FileKey { get; init; }
     public required string DatasetName { get; init; }
-    public required string Md5Hash { get; init; }
+    public required string ETag { get; init; }
     public long FileSize { get; init; }
     public required string SourceKey { get; init; }
     public long DecryptionDurationMs { get; init; }

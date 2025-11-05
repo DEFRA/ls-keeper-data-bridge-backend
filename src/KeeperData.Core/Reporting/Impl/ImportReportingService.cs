@@ -87,6 +87,7 @@ public class ImportReportingService : IImportReportingService
                 FilesDiscovered = report.AcquisitionPhase.FilesDiscovered,
                 FilesProcessed = report.AcquisitionPhase.FilesProcessed,
                 FilesFailed = report.AcquisitionPhase.FilesFailed,
+                FilesSkipped = report.AcquisitionPhase.FilesSkipped,
                 StartedAtUtc = report.AcquisitionPhase.StartedAtUtc,
                 CompletedAtUtc = report.AcquisitionPhase.CompletedAtUtc
             } : null,
@@ -94,6 +95,7 @@ public class ImportReportingService : IImportReportingService
             {
                 Status = report.IngestionPhase.Status.ToString(),
                 FilesProcessed = report.IngestionPhase.FilesProcessed,
+                FilesSkipped = report.IngestionPhase.FilesSkipped,
                 RecordsCreated = report.IngestionPhase.RecordsCreated,
                 RecordsUpdated = report.IngestionPhase.RecordsUpdated,
                 RecordsDeleted = report.IngestionPhase.RecordsDeleted,
@@ -115,15 +117,15 @@ public class ImportReportingService : IImportReportingService
 
         var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, report.ImportId);
         var options = new ReplaceOptions { IsUpsert = true };
-        
+
         await _importReports.ReplaceOneAsync(filter, document, options, cancellationToken: ct);
     }
 
-    public async Task<bool> IsFileProcessedAsync(string fileKey, string md5Hash, CancellationToken ct)
+    public async Task<bool> IsFileProcessedAsync(string fileKey, string etag, CancellationToken ct)
     {
         var filter = Builders<ImportFileDocument>.Filter.And(
             Builders<ImportFileDocument>.Filter.Eq(x => x.FileKey, fileKey),
-            Builders<ImportFileDocument>.Filter.Eq(x => x.Md5Hash, md5Hash),
+            Builders<ImportFileDocument>.Filter.Eq(x => x.ETag, etag),
             Builders<ImportFileDocument>.Filter.In(x => x.Status,
                 new[] { FileProcessingStatus.Acquired.ToString(), FileProcessingStatus.Ingested.ToString() })
         );
@@ -132,11 +134,11 @@ public class ImportReportingService : IImportReportingService
         return count > 0;
     }
 
-    public async Task<bool> IsFileIngestedAsync(string fileKey, string md5Hash, CancellationToken ct)
+    public async Task<bool> IsFileIngestedAsync(string fileKey, string etag, CancellationToken ct)
     {
         var filter = Builders<ImportFileDocument>.Filter.And(
             Builders<ImportFileDocument>.Filter.Eq(x => x.FileKey, fileKey),
-            Builders<ImportFileDocument>.Filter.Eq(x => x.Md5Hash, md5Hash),
+            Builders<ImportFileDocument>.Filter.Eq(x => x.ETag, etag),
             Builders<ImportFileDocument>.Filter.Eq(x => x.Status, FileProcessingStatus.Ingested.ToString())
         );
 
@@ -154,7 +156,7 @@ public class ImportReportingService : IImportReportingService
             FileName = record.FileName,
             FileKey = record.FileKey,
             DatasetName = record.DatasetName,
-            Md5Hash = record.Md5Hash,
+            ETag = record.ETag,
             FileSize = record.FileSize,
             Status = record.Status.ToString(),
             AcquisitionDetails = new FileAcquisitionDetailsDocument
@@ -363,6 +365,7 @@ public class ImportReportingService : IImportReportingService
                 FilesDiscovered = doc.AcquisitionPhase.FilesDiscovered,
                 FilesProcessed = doc.AcquisitionPhase.FilesProcessed,
                 FilesFailed = doc.AcquisitionPhase.FilesFailed,
+                FilesSkipped = doc.AcquisitionPhase.FilesSkipped,
                 StartedAtUtc = doc.AcquisitionPhase.StartedAtUtc,
                 CompletedAtUtc = doc.AcquisitionPhase.CompletedAtUtc
             } : null,
@@ -373,6 +376,7 @@ public class ImportReportingService : IImportReportingService
                 RecordsCreated = doc.IngestionPhase.RecordsCreated,
                 RecordsUpdated = doc.IngestionPhase.RecordsUpdated,
                 RecordsDeleted = doc.IngestionPhase.RecordsDeleted,
+                FilesSkipped = doc.IngestionPhase.FilesSkipped,
                 StartedAtUtc = doc.IngestionPhase.StartedAtUtc,
                 CompletedAtUtc = doc.IngestionPhase.CompletedAtUtc,
                 CurrentFileStatus = doc.IngestionPhase.CurrentFileStatus != null ? new IngestionCurrentFileStatus
@@ -398,7 +402,7 @@ public class ImportReportingService : IImportReportingService
             FileName = doc.FileName,
             FileKey = doc.FileKey,
             DatasetName = doc.DatasetName,
-            Md5Hash = doc.Md5Hash,
+            ETag = doc.ETag,
             FileSize = doc.FileSize,
             Status = Enum.Parse<FileProcessingStatus>(doc.Status),
             Acquisition = doc.AcquisitionDetails != null ? new AcquisitionDetails

@@ -118,7 +118,7 @@ public class IngestionPipeline(
         return (fileSets, totalFiles);
     }
 
-    private async Task<IngestionTotals> ProcessAllFilesAsync(ImportReport report, ImmutableList<FileSet> fileSets, int totalFiles, 
+    private async Task<IngestionTotals> ProcessAllFilesAsync(ImportReport report, ImmutableList<FileSet> fileSets, int totalFiles,
         IBlobStorageService blobStorage, CancellationToken ct)
     {
         Debug.WriteLine($"[keepetl] Step 2: Processing and ingesting {totalFiles} files for ImportId: {report.ImportId}");
@@ -132,7 +132,9 @@ public class IngestionPipeline(
             Debug.WriteLine($"[keepetl] Processing file set: {fileSet.Definition.Name} with {fileSet.Files.Length} file(s)");
             logger.LogDebug("Processing file set for definition: {DefinitionName} with {FileCount} file(s) for ImportId: {ImportId}", fileSet.Definition.Name, fileSet.Files.Length, report.ImportId);
 
-            foreach (var file in fileSet.Files)
+            var orderedFiles = fileSet.Files.OrderBy(f => f.Timestamp).ToArray();
+
+            foreach (var file in orderedFiles)
             {
                 processedFileCount++;
 
@@ -159,7 +161,7 @@ public class IngestionPipeline(
         return totals with { FilesProcessed = processedFileCount };
     }
 
-    private async Task<IngestionTotals> ProcessSingleFileAsync(Guid importId, FileSet fileSet, EtlFile file, int currentFileNumber, 
+    private async Task<IngestionTotals> ProcessSingleFileAsync(Guid importId, FileSet fileSet, EtlFile file, int currentFileNumber,
         int totalFiles, IBlobStorageService blobStorage, ImportReport report, CancellationToken ct)
     {
         var fileStopwatch = Stopwatch.StartNew();
@@ -169,7 +171,7 @@ public class IngestionPipeline(
 
         try
         {
-            // Check if file has already been ingested by retrieving MD5 from S3 metadata
+            // Check if file has already been ingested by retrieving ETag from S3 metadata
             var isAlreadyIngested = await IsFileAlreadyIngestedAsync(file.StorageObject.Key, blobStorage, ct);
             if (isAlreadyIngested)
             {
@@ -177,9 +179,9 @@ public class IngestionPipeline(
                 Debug.WriteLine($"[keepetl] Skipping file {file.StorageObject.Key} - already ingested in a previous import");
                 logger.LogInformation("Skipping file {FileKey} - already ingested in a previous import for ImportId: {ImportId}", file.StorageObject.Key, importId);
 
-                return new IngestionTotals() 
-                { 
-                    FilesSkipped = 1 
+                return new IngestionTotals()
+                {
+                    FilesSkipped = 1
                 };
             }
 
@@ -189,7 +191,7 @@ public class IngestionPipeline(
             await RecordSuccessfulIngestionAsync(importId, file, fileMetrics, fileStopwatch.ElapsedMilliseconds, ct);
 
             Debug.WriteLine($"[keepetl] Successfully ingested file: {file.StorageObject.Key} - Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}, Duration: {fileStopwatch.ElapsedMilliseconds}ms");
-            logger.LogInformation("Successfully ingested file: {FileKey} - Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms", 
+            logger.LogInformation("Successfully ingested file: {FileKey} - Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, Duration: {Duration}ms",
                 file.StorageObject.Key, fileMetrics.RecordsCreated, fileMetrics.RecordsUpdated, fileMetrics.RecordsDeleted, fileStopwatch.ElapsedMilliseconds);
 
             return new IngestionTotals
@@ -221,23 +223,23 @@ public class IngestionPipeline(
     {
         try
         {
-            // Retrieve file metadata from S3 to get the MD5 hash
+            // Retrieve file metadata from S3 to get the ETag
             var metadata = await blobStorage.GetMetadataAsync(fileKey, ct);
 
-            if (!metadata.UserMetadata.TryGetValue("MD5Hash", out var md5Hash) || string.IsNullOrEmpty(md5Hash))
+            if (string.IsNullOrEmpty(metadata.ETag))
             {
-                Debug.WriteLine($"[keepetl] No MD5 hash found in S3 metadata for file {fileKey} - will proceed with ingestion");
-                logger.LogDebug("No MD5 hash found in S3 metadata for file {FileKey} - will proceed with ingestion", fileKey);
+                Debug.WriteLine($"[keepetl] No ETag found for file {fileKey} - will proceed with ingestion");
+                logger.LogDebug("No ETag found for file {FileKey} - will proceed with ingestion", fileKey);
                 return false;
             }
 
-            // Check if a file with this key and MD5 has been previously ingested (not just acquired)
-            var isIngested = await reportingService.IsFileIngestedAsync(fileKey, md5Hash, ct);
+            // Check if a file with this key and ETag has been previously ingested (not just acquired)
+            var isIngested = await reportingService.IsFileIngestedAsync(fileKey, metadata.ETag, ct);
 
             if (isIngested)
             {
-                Debug.WriteLine($"[keepetl] File {fileKey} with MD5 {md5Hash} has already been ingested");
-                logger.LogWarning("File {FileKey} with MD5 {Md5Hash} has already been ingested in a previous import", fileKey, md5Hash);
+                Debug.WriteLine($"[keepetl] File {fileKey} with ETag {metadata.ETag} has already been ingested");
+                logger.LogWarning("File {FileKey} with ETag {ETag} has already been ingested in a previous import", fileKey, metadata.ETag);
             }
 
             return isIngested;
@@ -296,7 +298,7 @@ public class IngestionPipeline(
                 fileSet.Definition.PrimaryKeyHeaderNames,
                 fileSet.Definition.ChangeTypeHeaderName);
 
-            var metrics = await ProcessCsvRecordsAsync(importId, collection, csvContext.Csv, headers, file.StorageObject.Key, 
+            var metrics = await ProcessCsvRecordsAsync(importId, collection, csvContext.Csv, headers, file.StorageObject.Key,
                 collectionName, fileSet.Definition, progressTracker, report, ct);
 
             await csvContext.DisposeAsync();
@@ -448,8 +450,8 @@ public class IngestionPipeline(
     }
 
 
-    private async Task<FileIngestionMetrics> ProcessCsvRecordsAsync(Guid importId, IMongoCollection<BsonDocument> collection, CsvReader csv, 
-        CsvHeaders headers, string fileKey, string collectionName, DataSetDefinition definition, IngestionProgressTracker progressTracker, 
+    private async Task<FileIngestionMetrics> ProcessCsvRecordsAsync(Guid importId, IMongoCollection<BsonDocument> collection, CsvReader csv,
+        CsvHeaders headers, string fileKey, string collectionName, DataSetDefinition definition, IngestionProgressTracker progressTracker,
         ImportReport report, CancellationToken ct)
     {
         Debug.WriteLine($"[keepetl] Starting to process CSV records for file: {fileKey}");

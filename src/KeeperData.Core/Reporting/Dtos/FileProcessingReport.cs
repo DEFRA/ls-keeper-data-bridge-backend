@@ -26,9 +26,9 @@ public record FileProcessingReport
     public required string DatasetName { get; init; }
 
     /// <summary>
-    /// Gets the MD5 hash of the file content for integrity verification.
+    /// Gets the ETag of the file content for integrity verification.
     /// </summary>
-    public required string Md5Hash { get; init; }
+    public required string ETag { get; init; }
 
     /// <summary>
     /// Gets the file size in bytes.

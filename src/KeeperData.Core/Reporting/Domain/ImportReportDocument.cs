@@ -28,6 +28,7 @@ public class AcquisitionPhaseDocument
     public int FilesDiscovered { get; set; }
     public int FilesProcessed { get; set; }
     public int FilesFailed { get; set; }
+    public int FilesSkipped { get; set; }
     public DateTime? StartedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
 }
@@ -36,6 +37,7 @@ public class IngestionPhaseDocument
 {
     public required string Status { get; set; }
     public int FilesProcessed { get; set; }
+    public int FilesSkipped { get; set; }
     public int RecordsCreated { get; set; }
     public int RecordsUpdated { get; set; }
     public int RecordsDeleted { get; set; }

@@ -128,7 +128,7 @@ public record IngestionPhaseReport
     public DateTime? CompletedAtUtc { get; set; }
 
     public IngestionCurrentFileStatus? CurrentFileStatus { get; set; }
-    
+
     public int FilesSkipped { get; set; }
 }
 

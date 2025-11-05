@@ -5,6 +5,7 @@ using KeeperData.Core.Crypto;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Querying.Abstract;
 using KeeperData.Core.Reporting;
+using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
@@ -94,7 +95,142 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
         _output.WriteLine("=== End-to-End Import Scenario Test PASSED ===");
     }
 
+    [Fact]
+    public async Task EndToEndImport_ShouldSkipFilesOnDuplicateImport()
+    {
+        _output.WriteLine("=== Starting End-to-End Duplicate Import Scenario Test ===");
+
+        var dataSetDefinition = CreateTestDataSetDefinition();
+        _output.WriteLine($"✓ Step 1: Created DataSetDefinition for collection '{CollectionName}'");
+
+        var (csvContent, sourceRecords) = GenerateTestCsvData(recordCount: 10);
+        _output.WriteLine($"✓ Step 2: Generated {sourceRecords.Count} fake person records");
+
+        _serviceProvider = ConfigureServices(dataSetDefinition);
+        _output.WriteLine("✓ Step 3: Configured IoC container with all dependencies");
+
+        var encryptedFileName = await EncryptCsvFileAsync(csvContent);
+        _output.WriteLine($"✓ Step 4: Encrypted CSV file: {encryptedFileName}");
+
+        await UploadEncryptedFileToS3Async(encryptedFileName);
+        _output.WriteLine($"✓ Step 5: Uploaded encrypted file to S3 source location");
+
+        // First import
+        var firstImportId = await StartImportAsync();
+        _output.WriteLine($"✓ Step 6: Started first import with ID: {firstImportId}");
+
+        await VerifyImportCompletedAsync(firstImportId, expectRecordsCreated: true);
+        _output.WriteLine($"✓ Step 7: First import completed successfully");
+
+        var firstImportReport = await GetImportReportAsync(firstImportId);
+        var firstImportAcquisitionFileCount = firstImportReport.AcquisitionPhase?.FilesProcessed ?? 0;
+        var firstImportRecordsCreated = firstImportReport.IngestionPhase?.RecordsCreated ?? 0;
+        _output.WriteLine($"✓ Step 8: First import acquired {firstImportAcquisitionFileCount} file(s)");
+
+        var firstImportFileReports = await GetFileReportsAsync(firstImportId);
+        _output.WriteLine($"✓ Step 9: First import ingested {firstImportFileReports.Count} file(s), created {firstImportRecordsCreated} records");
+
+        // Capture the ETag from the first import for verification
+        var firstImportFileReport = firstImportFileReports.First();
+        var firstImportETag = firstImportFileReport.ETag;
+        _output.WriteLine($"✓ First import file ETag: {firstImportETag}");
+
+        // Second import with same files
+        _output.WriteLine("");
+        _output.WriteLine("=== Running Duplicate Import ===");
+        var secondImportId = await StartImportAsync();
+        _output.WriteLine($"✓ Step 10: Started second import with ID: {secondImportId}");
+
+        await VerifyImportCompletedAsync(secondImportId, expectRecordsCreated: false);
+        _output.WriteLine($"✓ Step 11: Second import completed");
+
+        // Verify the second import reports
+        var secondImportReport = await GetImportReportAsync(secondImportId);
+        secondImportReport.AcquisitionPhase.Should().NotBeNull();
+        secondImportReport.AcquisitionPhase!.Status.Should().Be(PhaseStatus.Completed);
+
+        _output.WriteLine($"✓ Step 12: Acquisition phase - Discovered: {secondImportReport.AcquisitionPhase.FilesDiscovered}, Processed: {secondImportReport.AcquisitionPhase.FilesProcessed}, Skipped: {secondImportReport.AcquisitionPhase.FilesSkipped}");
+
+        // Verify files were discovered 
+        secondImportReport.AcquisitionPhase.FilesDiscovered.Should().Be(firstImportAcquisitionFileCount,
+            $"Should discover {firstImportAcquisitionFileCount} file(s) in S3");
+        _output.WriteLine($"✓ Step 13: Verified acquisition phase discovered {secondImportReport.AcquisitionPhase.FilesDiscovered} file(s)");
+
+        // Get file reports for second import
+        var secondImportFileReports = await GetFileReportsAsync(secondImportId);
+        _output.WriteLine($"Second import file reports: {secondImportFileReports.Count}");
+
+        foreach (var report in secondImportFileReports)
+        {
+            _output.WriteLine($"  File: {report.FileName}");
+            _output.WriteLine($"    Status: {report.Status}");
+            _output.WriteLine($"    ETag: {report.ETag}");
+            _output.WriteLine($"    Records Processed: {report.Ingestion?.RecordsProcessed ?? 0}");
+            _output.WriteLine($"    Records Created: {report.Ingestion?.RecordsCreated ?? 0}");
+            _output.WriteLine($"    Records Updated: {report.Ingestion?.RecordsUpdated ?? 0}");
+        }
+
+        // With ETag-based skipping at BOTH acquisition AND ingestion levels:
+        // 1. Acquisition phase: Files are discovered (1 file)
+        // 2. Acquisition phase: File transfer is skipped (ETag + length match)
+        // 3. Acquisition phase: File acquisition documents ARE still created (for ingestion to find)
+        // 4. Ingestion phase: File is checked against import_files collection by FileKey + ETag
+        // 5. Ingestion phase: File is skipped because it was already ingested with the same ETag
+        // 6. Result: No records are created, updated, or deleted
+
+        // Verify the acquisition phase skipped the file transfer
+        secondImportReport.AcquisitionPhase.FilesProcessed.Should().Be(1,
+            "Should evaluate 1 file for acquisition in the second import");
+        secondImportReport.AcquisitionPhase.FilesSkipped.Should().Be(1,
+            "Should skip 1 file transfer at acquisition level (same ETag + length)");
+
+        // Verify the ingestion phase ALSO skipped the file
+        secondImportReport.IngestionPhase.Should().NotBeNull();
+        secondImportReport.IngestionPhase!.Status.Should().Be(PhaseStatus.Completed,
+            "Ingestion phase should complete successfully even when skipping files");
+        secondImportReport.IngestionPhase.FilesProcessed.Should().Be(1,
+            "Ingestion should evaluate 1 file (the skipped acquisition file)");
+        secondImportReport.IngestionPhase.FilesSkipped.Should().Be(1,
+            "Ingestion phase should skip 1 file because it was already ingested with the same ETag");
+        secondImportReport.IngestionPhase.RecordsCreated.Should().Be(0,
+            "No new records should be created on duplicate import");
+        secondImportReport.IngestionPhase.RecordsUpdated.Should().Be(0,
+            "No records should be updated on duplicate import (file was skipped entirely)");
+        secondImportReport.IngestionPhase.RecordsDeleted.Should().Be(0,
+            "No records should be deleted on duplicate import");
+
+        // Verify the file report shows the same ETag
+        var secondImportFileReport = secondImportFileReports.FirstOrDefault();
+        if (secondImportFileReport != null)
+        {
+            secondImportFileReport.ETag.Should().Be(firstImportETag,
+                "Second import should have the same ETag as the first import");
+            _output.WriteLine($"✓ Step 14: Verified file ETag consistency: {secondImportFileReport.ETag}");
+        }
+
+        _output.WriteLine("");
+        _output.WriteLine("=== Summary ===");
+        _output.WriteLine($"✓ First Import: {firstImportRecordsCreated} records created");
+        _output.WriteLine($"✓ Second Import: Acquisition skipped 1 file, Ingestion skipped 1 file");
+        _output.WriteLine($"✓ No duplicate processing occurred - ETag-based deduplication working correctly!");
+    }
+
     #region Helper Methods
+
+    private async Task<ImportReport> GetImportReportAsync(Guid importId)
+    {
+        var reportingService = _serviceProvider!.GetRequiredService<IImportReportingService>();
+        var report = await reportingService.GetImportReportAsync(importId, CancellationToken.None);
+        report.Should().NotBeNull("Import report should exist");
+        return report!;
+    }
+
+    private async Task<IReadOnlyList<FileProcessingReport>> GetFileReportsAsync(Guid importId)
+    {
+        var reportingService = _serviceProvider!.GetRequiredService<IImportReportingService>();
+        var fileReports = await reportingService.GetFileReportsAsync(importId, CancellationToken.None);
+        return fileReports;
+    }
 
     private DataSetDefinition CreateTestDataSetDefinition()
     {
@@ -220,7 +356,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
         return importId;
     }
 
-    private async Task VerifyImportCompletedAsync(Guid importId)
+    private async Task VerifyImportCompletedAsync(Guid importId, bool expectRecordsCreated = true)
     {
         var reportingService = _serviceProvider!.GetRequiredService<IImportReportingService>();
 
@@ -249,11 +385,19 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
 
                 report.AcquisitionPhase.Should().NotBeNull();
                 report.AcquisitionPhase!.Status.Should().Be(PhaseStatus.Completed);
-                report.AcquisitionPhase.FilesProcessed.Should().BeGreaterThan(0);
+
+                if (expectRecordsCreated)
+                {
+                    report.AcquisitionPhase.FilesProcessed.Should().BeGreaterThan(0);
+                }
 
                 report.IngestionPhase.Should().NotBeNull();
                 report.IngestionPhase!.Status.Should().Be(PhaseStatus.Completed);
-                report.IngestionPhase.RecordsCreated.Should().BeGreaterThan(0);
+
+                if (expectRecordsCreated)
+                {
+                    report.IngestionPhase.RecordsCreated.Should().BeGreaterThan(0);
+                }
 
                 return;
             }

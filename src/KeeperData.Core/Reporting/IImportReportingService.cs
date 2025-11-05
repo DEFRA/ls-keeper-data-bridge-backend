@@ -9,8 +9,8 @@ public interface IImportReportingService
     Task UpsertImportReportAsync(ImportReport report, CancellationToken ct);
 
     // File-level operations
-    Task<bool> IsFileProcessedAsync(string fileKey, string md5Hash, CancellationToken ct);
-    Task<bool> IsFileIngestedAsync(string fileKey, string md5Hash, CancellationToken ct);
+    Task<bool> IsFileProcessedAsync(string fileKey, string etag, CancellationToken ct);
+    Task<bool> IsFileIngestedAsync(string fileKey, string etag, CancellationToken ct);
     Task RecordFileAcquisitionAsync(Guid importId, FileAcquisitionRecord record, CancellationToken ct);
     Task RecordFileIngestionAsync(Guid importId, FileIngestionRecord record, CancellationToken ct);
 

@@ -260,7 +260,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
             FileName = "test_file.csv",
             FileKey = "dest/test_file.csv",
             DatasetName = "sam_cph_holdings",
-            Md5Hash = "abc123def456",
+            ETag = "abc123def456",
             FileSize = 1024 * 1024, // 1MB
             SourceKey = "source/test_file.csv.enc",
             DecryptionDurationMs = 1500,
@@ -280,7 +280,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         report.FileName.Should().Be(fileRecord.FileName);
         report.FileKey.Should().Be(fileRecord.FileKey);
         report.DatasetName.Should().Be(fileRecord.DatasetName);
-        report.Md5Hash.Should().Be(fileRecord.Md5Hash);
+        report.ETag.Should().Be(fileRecord.ETag);
         report.FileSize.Should().Be(fileRecord.FileSize);
         report.Status.Should().Be(FileProcessingStatus.Acquired);
 
@@ -306,7 +306,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
             FileName = "test_file.csv",
             FileKey = fileKey,
             DatasetName = "sam_cph_holdings",
-            Md5Hash = "abc123def456",
+            ETag = "abc123def456",
             FileSize = 1024 * 1024,
             SourceKey = "source/test_file.csv.enc",
             DecryptionDurationMs = 1500,
@@ -352,14 +352,14 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var fileKey = "dest/new_file.csv";
-        var md5Hash = "newfilehash123";
+        var etag = "newfilehash123";
 
         // Act
-        var result = await _reportingService.IsFileProcessedAsync(fileKey, md5Hash, CancellationToken.None);
+        var result = await _reportingService.IsFileProcessedAsync(fileKey, etag, CancellationToken.None);
 
         // Assert
         result.Should().BeFalse();
-        _testOutputHelper.WriteLine($"File {fileKey} with MD5 {md5Hash} is not processed (new file)");
+        _testOutputHelper.WriteLine($"File {fileKey} with ETag {etag} is not processed (new file)");
     }
 
     [Fact]
@@ -370,14 +370,14 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
 
         var fileKey = "dest/processed_file.csv";
-        var md5Hash = "processedfilehash123";
+        var etag = "processedfilehash123";
 
         await _reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
         {
             FileName = "processed_file.csv",
             FileKey = fileKey,
             DatasetName = "sam_cph_holdings",
-            Md5Hash = md5Hash,
+            ETag = etag,
             FileSize = 1024,
             SourceKey = "source/processed_file.csv.enc",
             DecryptionDurationMs = 100,
@@ -386,30 +386,30 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         }, CancellationToken.None);
 
         // Act
-        var result = await _reportingService.IsFileProcessedAsync(fileKey, md5Hash, CancellationToken.None);
+        var result = await _reportingService.IsFileProcessedAsync(fileKey, etag, CancellationToken.None);
 
         // Assert
         result.Should().BeTrue();
-        _testOutputHelper.WriteLine($"File {fileKey} with MD5 {md5Hash} was already processed");
+        _testOutputHelper.WriteLine($"File {fileKey} with ETag {etag} was already processed");
     }
 
     [Fact]
-    public async Task IsFileProcessedAsync_WithSameFileKeyButDifferentMd5_ShouldReturnFalse()
+    public async Task IsFileProcessedAsync_WithSameFileKeyButDifferentETag_ShouldReturnFalse()
     {
         // Arrange
         var importId = Guid.NewGuid();
         await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
 
         var fileKey = "dest/same_name.csv";
-        var md5Hash1 = "originalhash123";
-        var md5Hash2 = "modifiedhash456";
+        var etag1 = "originalhash123";
+        var etag2 = "modifiedhash456";
 
         await _reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
         {
             FileName = "same_name.csv",
             FileKey = fileKey,
             DatasetName = "sam_cph_holdings",
-            Md5Hash = md5Hash1,
+            ETag = etag1,
             FileSize = 1024,
             SourceKey = "source/same_name.csv.enc",
             DecryptionDurationMs = 100,
@@ -418,11 +418,11 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         }, CancellationToken.None);
 
         // Act
-        var result = await _reportingService.IsFileProcessedAsync(fileKey, md5Hash2, CancellationToken.None);
+        var result = await _reportingService.IsFileProcessedAsync(fileKey, etag2, CancellationToken.None);
 
         // Assert
-        result.Should().BeFalse("file content has changed (different MD5)");
-        _testOutputHelper.WriteLine($"File {fileKey} has different MD5, treating as new file");
+        result.Should().BeFalse("file content has changed (different ETag)");
+        _testOutputHelper.WriteLine($"File {fileKey} has different ETag, treating as new file");
     }
 
     [Fact]
@@ -437,7 +437,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
             FileName = "failed_file.csv",
             FileKey = "dest/failed_file.csv",
             DatasetName = "sam_cph_holdings",
-            Md5Hash = string.Empty,
+            ETag = string.Empty,
             FileSize = 0,
             SourceKey = "source/failed_file.csv.enc",
             DecryptionDurationMs = 500,
@@ -756,7 +756,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
                 FileName = $"file{i}.csv",
                 FileKey = $"dest/file{i}.csv",
                 DatasetName = "sam_cph_holdings",
-                Md5Hash = $"hash{i}",
+                ETag = $"hash{i}",
                 FileSize = 1024 * i,
                 SourceKey = $"source/file{i}.csv.enc",
                 DecryptionDurationMs = 100 * i,

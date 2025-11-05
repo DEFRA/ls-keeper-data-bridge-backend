@@ -31,7 +31,7 @@ public class ImportOrchestrator(
             report.CompletedAtUtc = DateTime.UtcNow;
             report.Error = ex.Message;
             await reportingService.UpsertImportReportAsync(report, ct);
-            
+
             throw;
         }
     }

@@ -71,10 +71,7 @@ public class AcquisitionPipeline(
         return (sourceBlobs, catalogueService, destinationBlobs);
     }
 
-    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(
-        Guid importId,
-        IExternalCatalogueService catalogueService,
-        CancellationToken ct)
+    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(Guid importId, IExternalCatalogueService catalogueService, CancellationToken ct)
     {
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
 

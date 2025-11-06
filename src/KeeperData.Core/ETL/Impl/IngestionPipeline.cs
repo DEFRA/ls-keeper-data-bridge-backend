@@ -110,10 +110,7 @@ public class IngestionPipeline(
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
 
         Debug.WriteLine($"[keepetl] Discovered {fileSets.Count} file set(s) containing {totalFiles} file(s) for ImportId: {importId}");
-        logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",
-            fileSets.Count,
-            totalFiles,
-            importId);
+        logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}", fileSets.Count, totalFiles, importId);
 
         return (fileSets, totalFiles);
     }
@@ -216,10 +213,7 @@ public class IngestionPipeline(
         }
     }
 
-    private async Task<bool> IsFileAlreadyIngestedAsync(
-        string fileKey,
-        IBlobStorageService blobStorage,
-        CancellationToken ct)
+    private async Task<bool> IsFileAlreadyIngestedAsync(string fileKey, IBlobStorageService blobStorage, CancellationToken ct)
     {
         try
         {
@@ -229,7 +223,7 @@ public class IngestionPipeline(
             if (string.IsNullOrEmpty(metadata.ETag))
             {
                 Debug.WriteLine($"[keepetl] No ETag found for file {fileKey} - will proceed with ingestion");
-                logger.LogDebug("No ETag found for file {FileKey} - will proceed with ingestion", fileKey);
+                logger.LogInformation("No ETag found for file {FileKey} - will proceed with ingestion", fileKey);
                 return false;
             }
 
@@ -239,7 +233,11 @@ public class IngestionPipeline(
             if (isIngested)
             {
                 Debug.WriteLine($"[keepetl] File {fileKey} with ETag {metadata.ETag} has already been ingested");
-                logger.LogWarning("File {FileKey} with ETag {ETag} has already been ingested in a previous import", fileKey, metadata.ETag);
+                logger.LogInformation("File {FileKey} with ETag {ETag} has already been ingested in a previous import", fileKey, metadata.ETag);
+            }
+            else
+            {
+                logger.LogInformation("File {FileKey} with ETag {ETag} has NOT been ingested in a previously.", fileKey, metadata.ETag);
             }
 
             return isIngested;
@@ -248,7 +246,6 @@ public class IngestionPipeline(
         {
             Debug.WriteLine($"[keepetl] Error checking if file was already ingested: {fileKey} - Error: {ex.Message}");
             logger.LogWarning(ex, "Error checking if file {FileKey} was already ingested - will proceed with ingestion", fileKey);
-            // If we can't determine if file was ingested, proceed with ingestion to avoid silently skipping files
             return false;
         }
     }

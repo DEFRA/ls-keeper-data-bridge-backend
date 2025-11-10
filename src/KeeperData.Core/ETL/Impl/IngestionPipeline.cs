@@ -1,12 +1,11 @@
-using CsvHelper;
-using CsvHelper.Configuration;
 using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
-using KeeperData.Core.Storage.Dtos;
+using CsvHelper;
+using CsvHelper.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
@@ -36,6 +35,7 @@ public class IngestionPipeline(
     private const int LineageEventBatchSize = DefaultInterval;
     private readonly IDatabaseConfig _databaseConfig = databaseConfig.Value;
     private readonly CsvRowCounter _rowCounter = csvRowCounter;
+    private readonly RecordIdGenerator _recordIdGenerator = new();
 
     // MongoDB field name constants
     private const string FieldId = "_id";
@@ -500,7 +500,6 @@ public class IngestionPipeline(
                 Debug.WriteLine($"[keepetl] Processed batch of {BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}");
                 Debug.WriteLine($"[keepetl] -- END BATCH ({batchStopwatch.Elapsed.TotalSeconds}s, {batchStopwatch.ElapsedMilliseconds}ms) --");
                 Debug.WriteLine($"[keepetl] ");
-                Debug.WriteLine($"[keepetl] ");
 
                 batch.Clear();
             }
@@ -724,9 +723,9 @@ public class IngestionPipeline(
         var now = DateTime.UtcNow;
         var accumulatorSet = new HashSet<string>(definition.Accumulators ?? []);
 
-        // Create composite primary key for _id
+        // Create URL-safe composite primary key for _id using RecordIdGenerator
         var compositeKeyParts = headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty);
-        document[FieldId] = string.Join(EtlConstants.CompositeKeyDelimiter, compositeKeyParts);
+        document[FieldId] = _recordIdGenerator.GenerateId(compositeKeyParts);
 
         foreach (var header in headers.AllHeaders)
         {

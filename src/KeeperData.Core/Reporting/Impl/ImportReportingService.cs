@@ -350,6 +350,59 @@ public class ImportReportingService : IImportReportingService
         return documents.Select(MapToImportSummary).ToList();
     }
 
+    public async Task<PaginatedLineageEvents> GetRecordLineageEventsPaginatedAsync(
+        string collectionName,
+        string recordId,
+        int skip = 0,
+        int top = 10,
+        CancellationToken ct = default)
+    {
+        _logger.LogDebug("Getting paginated lineage events for {CollectionName}/{RecordId} with skip: {Skip}, top: {Top}",
+            collectionName, recordId, skip, top);
+
+        var lineageDocId = _idGenerator.GenerateLineageDocumentId(collectionName, recordId);
+
+        // Get parent document (O(1) direct lookup by composite _id)
+        var parentFilter = Builders<RecordLineageDocument>.Filter.Eq(x => x.Id, lineageDocId);
+        var parentDoc = await _recordLineage.Find(parentFilter).FirstOrDefaultAsync(ct);
+
+        if (parentDoc == null)
+        {
+            throw new KeyNotFoundException($"No lineage found for record {recordId} in collection {collectionName}");
+        }
+
+        // Get total count of events
+        var eventsFilter = Builders<LineageEventDocument>.Filter.Eq(x => x.LineageDocumentId, lineageDocId);
+        var totalEvents = await _recordLineageEvents.CountDocumentsAsync(eventsFilter, cancellationToken: ct);
+
+        // Get paginated events (efficiently indexed query)
+        var eventsSort = Builders<LineageEventDocument>.Sort.Ascending(x => x.Id); // Chronological by design
+        var events = await _recordLineageEvents
+            .Find(eventsFilter)
+            .Sort(eventsSort)
+            .Skip(skip)
+            .Limit(top)
+            .ToListAsync(ct);
+
+        var mappedEvents = events.Select(e => _mapper.MapToLineageEvent(e, parentDoc.RecordId, parentDoc.CollectionName)).ToList();
+
+        return new PaginatedLineageEvents
+        {
+            RecordId = parentDoc.RecordId,
+            CollectionName = parentDoc.CollectionName,
+            CurrentStatus = parentDoc.CurrentStatus,
+            TotalEvents = (int)totalEvents,
+            Skip = skip,
+            Top = top,
+            Count = mappedEvents.Count,
+            Events = mappedEvents,
+            CreatedAtUtc = parentDoc.CreatedAtUtc,
+            LastModifiedAtUtc = parentDoc.LastModifiedAtUtc,
+            CreatedByImport = parentDoc.CreatedByImport,
+            LastModifiedByImport = parentDoc.LastModifiedByImport
+        };
+    }
+
     private static ImportReport MapToImportReport(ImportReportDocument doc)
     {
         return new ImportReport

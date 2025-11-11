@@ -98,15 +98,12 @@ public class IngestionPipeline(
         return (blobs, catalogueService);
     }
 
-    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(
-        Guid importId,
-        ExternalCatalogueService catalogueService,
-        CancellationToken ct)
+    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(Guid importId, ExternalCatalogueService catalogueService, CancellationToken ct)
     {
         Debug.WriteLine($"[keepetl] Step 1: Discovering files for ImportId: {importId}");
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
 
-        var fileSets = await catalogueService.GetFileSetsAsync(20, ct);
+        var fileSets = await catalogueService.GetFileSetsAsync(EtlConstants.DefaultLookbackDays, ct);
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
 
         Debug.WriteLine($"[keepetl] Discovered {fileSets.Count} file set(s) containing {totalFiles} file(s) for ImportId: {importId}");

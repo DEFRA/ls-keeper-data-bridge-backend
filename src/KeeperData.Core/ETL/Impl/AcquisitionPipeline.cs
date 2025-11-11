@@ -19,8 +19,7 @@ public class AcquisitionPipeline(
     ILogger<AcquisitionPipeline> logger) : IAcquisitionPipeline
 {
     private const string MimeTypeTextCsv = "text/csv";
-    private const int DefaultLookbackDays = 200;
-
+    
     public async Task StartAsync(ImportReport report, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -76,7 +75,7 @@ public class AcquisitionPipeline(
     {
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
 
-        var fileSets = await catalogueService.GetFileSetsAsync(DefaultLookbackDays, ct);
+        var fileSets = await catalogueService.GetFileSetsAsync(EtlConstants.DefaultLookbackDays, ct);
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
 
         logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",

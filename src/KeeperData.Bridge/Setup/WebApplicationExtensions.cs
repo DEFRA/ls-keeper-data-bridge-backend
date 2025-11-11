@@ -29,6 +29,9 @@ public static class WebApplicationExtensions
 
         app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+        // Configure request localization for en-GB culture
+        app.UseRequestLocalization();
+
         // Enable Swagger and Swagger UI
         app.UseSwagger();
         app.UseSwaggerUI(options =>

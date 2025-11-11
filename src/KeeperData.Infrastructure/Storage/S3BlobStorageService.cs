@@ -179,9 +179,7 @@ public class S3BlobStorageService : S3BlobStorageServiceReadOnly, IBlobStorageSe
         }
     }
 
-    public async Task DeleteAsync(
-        string objectKey,
-        CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(string objectKey, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -199,6 +197,83 @@ public class S3BlobStorageService : S3BlobStorageServiceReadOnly, IBlobStorageSe
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to delete object {ObjectKey} from container {Container}", objectKey, _bucketName);
+            throw;
+        }
+    }
+
+    public async Task<ClearDownResult> ClearDownAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var prefix = string.IsNullOrEmpty(_topLevelFolder)
+                ? null
+                : _topLevelFolder.TrimEnd('/');
+
+            _logger.LogInformation("Starting clear down operation for container {Container} with prefix {Prefix}",
+                _bucketName, prefix ?? "(none)");
+
+            var deletedKeys = new List<string>();
+            string? continuationToken = null;
+
+            do
+            {
+                // List objects under the prefix
+                var listRequest = new ListObjectsV2Request
+                {
+                    BucketName = _bucketName,
+                    Prefix = prefix,
+                    MaxKeys = 1000,
+                    ContinuationToken = continuationToken
+                };
+
+                var listResponse = await _s3Client.ListObjectsV2Async(listRequest, cancellationToken).ConfigureAwait(false);
+
+                if (listResponse.S3Objects.Count > 0)
+                {
+                    // Delete objects in batches (S3 allows up to 1000 per batch)
+                    var deleteRequest = new DeleteObjectsRequest
+                    {
+                        BucketName = _bucketName,
+                        Objects = listResponse.S3Objects
+                            .Select(obj => new KeyVersion { Key = obj.Key })
+                            .ToList()
+                    };
+
+                    var deleteResponse = await _s3Client.DeleteObjectsAsync(deleteRequest, cancellationToken).ConfigureAwait(false);
+
+                    // Collect deleted keys
+                    deletedKeys.AddRange(deleteResponse.DeletedObjects.Select(obj => obj.Key));
+
+                    _logger.LogDebug("Deleted {Count} objects from container {Container}",
+                        deleteResponse.DeletedObjects.Count, _bucketName);
+
+                    if (deleteResponse.DeleteErrors.Count > 0)
+                    {
+                        foreach (var error in deleteResponse.DeleteErrors)
+                        {
+                            _logger.LogWarning("Failed to delete object {Key}: {Code} - {Message}",
+                                error.Key, error.Code, error.Message);
+                        }
+                    }
+                }
+
+                continuationToken = listResponse.NextContinuationToken;
+            }
+            while (!string.IsNullOrEmpty(continuationToken));
+
+            _logger.LogInformation("Clear down operation completed for container {Container} with prefix {Prefix}. Total objects deleted: {TotalDeleted}",
+                _bucketName, prefix ?? "(none)", deletedKeys.Count);
+
+            return new ClearDownResult
+            {
+                DeletedKeys = deletedKeys,
+                TotalDeleted = deletedKeys.Count
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clear down container {Container} with prefix {Prefix}",
+                _bucketName, _topLevelFolder ?? "(none)");
             throw;
         }
     }

@@ -4,6 +4,7 @@ using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
+using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,7 +17,8 @@ public class ImportController(
     IImportReportingService importReportingService,
     ILogger<ImportController> logger,
     ICollectionManagementService collectionManagementService,
-    IReportingCollectionManagementService reportingCollectionManagementService) : ControllerBase
+    IReportingCollectionManagementService reportingCollectionManagementService,
+    IBlobStorageServiceFactory blobStorageServiceFactory) : ControllerBase
 {
     private readonly RecordIdGenerator _recordIdGenerator = new();
 
@@ -588,6 +590,83 @@ public class ImportController(
             });
         }
     }
+
+    /// <summary>
+    /// Deletes all objects from the internal target storage under the configured top-level folder prefix.
+    /// This will clear down all files that were ingested into the target internal storage.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Summary of deleted objects</returns>
+    [HttpDelete("internal-storage")]
+    [ProducesResponseType(typeof(ClearDownStorageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
+    public async Task<IActionResult> ClearDownInternalStorage(CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Received request to clear down internal target storage");
+
+        try
+        {
+            var blobStorageService = blobStorageServiceFactory.Get();
+            var result = await blobStorageService.ClearDownAsync(cancellationToken);
+
+            logger.LogInformation("Successfully cleared down internal storage. Total objects deleted: {TotalDeleted}",
+                result.TotalDeleted);
+
+            return Ok(new ClearDownStorageResponse
+            {
+                DeletedKeys = result.DeletedKeys,
+                TotalDeleted = result.TotalDeleted,
+                Success = true,
+                Message = $"Successfully deleted {result.TotalDeleted} object(s) from internal target storage.",
+                DeletedAtUtc = DateTime.UtcNow
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogWarning("Clear down internal storage request was cancelled");
+            return StatusCode(499, new ErrorResponse
+            {
+                Message = "Request was cancelled.",
+                Timestamp = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to clear down internal storage");
+            throw;
+        }
+    }
+}
+
+/// <summary>
+/// Response from clearing down internal storage.
+/// </summary>
+public record ClearDownStorageResponse
+{
+    /// <summary>
+    /// List of object keys that were deleted.
+    /// </summary>
+    public required IReadOnlyList<string> DeletedKeys { get; init; }
+
+    /// <summary>
+    /// Total number of objects deleted.
+    /// </summary>
+    public required int TotalDeleted { get; init; }
+
+    /// <summary>
+    /// Indicates whether the operation was successful.
+    /// </summary>
+    public required bool Success { get; init; }
+
+    /// <summary>
+    /// Success message.
+    /// </summary>
+    public required string Message { get; init; }
+
+    /// <summary>
+    /// UTC timestamp when the clear down operation completed.
+    /// </summary>
+    public DateTime DeletedAtUtc { get; init; }
 }
 
 /// <summary>

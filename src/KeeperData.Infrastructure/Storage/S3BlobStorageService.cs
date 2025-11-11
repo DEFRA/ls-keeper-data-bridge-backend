@@ -228,7 +228,7 @@ public class S3BlobStorageService : S3BlobStorageServiceReadOnly, IBlobStorageSe
 
                 var listResponse = await _s3Client.ListObjectsV2Async(listRequest, cancellationToken).ConfigureAwait(false);
 
-                if (listResponse.S3Objects.Count > 0)
+                if (listResponse.S3Objects?.Count > 0)
                 {
                     // Delete objects in batches (S3 allows up to 1000 per batch)
                     var deleteRequest = new DeleteObjectsRequest
@@ -247,7 +247,7 @@ public class S3BlobStorageService : S3BlobStorageServiceReadOnly, IBlobStorageSe
                     _logger.LogDebug("Deleted {Count} objects from container {Container}",
                         deleteResponse.DeletedObjects.Count, _bucketName);
 
-                    if (deleteResponse.DeleteErrors.Count > 0)
+                    if (deleteResponse.DeleteErrors?.Count > 0)
                     {
                         foreach (var error in deleteResponse.DeleteErrors)
                         {

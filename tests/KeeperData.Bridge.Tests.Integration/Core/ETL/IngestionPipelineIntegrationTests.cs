@@ -2,6 +2,8 @@ using Amazon.S3.Model;
 using FluentAssertions;
 using KeeperData.Bridge.Tests.Integration.Helpers;
 using KeeperData.Core.Database;
+using KeeperData.Core.Database.Configuration;
+using KeeperData.Core.Database.Resilience;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.ETL.Utils;
@@ -72,6 +74,11 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var reportingServiceMock = new Mock<IImportReportingService>();
         var csvRowCounterMock = new Mock<CsvRowCounter>(new Mock<ILogger<CsvRowCounter>>().Object);
 
+        // Create mock for ResilientMongoOperations
+        var resilientMongoOpsMock = new Mock<ResilientMongoOperations>(
+            Options.Create(new MongoResilienceConfig()),
+            new Mock<ILogger<ResilientMongoOperations>>().Object);
+
         _ingestionPipeline = new IngestionPipeline(
             blobStorageFactory,
             externalCatalogueServiceFactory,
@@ -79,6 +86,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             mongoConfig,
             reportingServiceMock.Object,
             csvRowCounterMock.Object,
+            resilientMongoOpsMock.Object,
             _loggerMock.Object);
     }
 

@@ -127,7 +127,7 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetFileSetsAsync_DateRangeMultipleDefinitions_ShouldGroupByDefinitionAndOrderByLastModified()
+    public async Task GetFileSetsAsync_DateRangeMultipleDefinitions_ShouldGroupByDefinitionAndOrderByTimestamp()
     {
         // Arrange
         var fromDate = new DateOnly(2024, 10, 13);
@@ -144,10 +144,11 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         {
             fileSet.Files.Should().HaveCount(5); // 5 days inclusive
 
-            // Files should be ordered by LastModified descending (reverse chronological)
+            // Files should be ordered by Timestamp ascending (oldest to newest)
             for (int i = 0; i < fileSet.Files.Length - 1; i++)
             {
-                fileSet.Files[i].StorageObject.LastModified.Should().BeOnOrAfter(fileSet.Files[i + 1].StorageObject.LastModified);
+                fileSet.Files[i].Timestamp.Should().BeOnOrBefore(fileSet.Files[i + 1].Timestamp,
+                    $"File at index {i} should have Timestamp <= file at index {i + 1}");
             }
         }
 
@@ -273,7 +274,7 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetFileSetsAsync_FilesOrderedByLastModifiedDescending_ShouldBeInCorrectOrder()
+    public async Task GetFileSetsAsync_FilesOrderedByTimestampAscending_ShouldBeInCorrectOrder()
     {
         // Arrange
         var fromDate = new DateOnly(2024, 12, 10);
@@ -288,17 +289,17 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         var fileSet = result[0];
         fileSet.Files.Should().HaveCount(6); // 6 days inclusive
 
-        // Verify files are ordered by LastModified descending
+        // Verify files are ordered by Timestamp ascending (oldest to newest)
         for (int i = 0; i < fileSet.Files.Length - 1; i++)
         {
-            fileSet.Files[i].StorageObject.LastModified.Should().BeOnOrAfter(fileSet.Files[i + 1].StorageObject.LastModified,
-                $"File at index {i} should have LastModified >= file at index {i + 1}");
+            fileSet.Files[i].Timestamp.Should().BeOnOrBefore(fileSet.Files[i + 1].Timestamp,
+                $"File at index {i} should have Timestamp <= file at index {i + 1}");
         }
 
-        // Verify that we have all the expected dates (order may vary due to S3 timestamp behavior)
-        var dates = fileSet.Files.Select(f => ExtractDateFromFileName(f.StorageObject.Key)).OrderBy(d => d).ToArray();
+        // Verify that we have all the expected dates in chronological order
+        var dates = fileSet.Files.Select(f => ExtractDateFromFileName(f.StorageObject.Key)).ToArray();
         var expectedDates = new[] { "20241210", "20241211", "20241212", "20241213", "20241214", "20241215" };
-        dates.Should().Equal(expectedDates, "All expected dates should be present");
+        dates.Should().Equal(expectedDates, "Files should be ordered chronologically by extracted date");
     }
 
     private async Task SetupTestDataAsync()

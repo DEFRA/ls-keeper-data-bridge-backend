@@ -96,10 +96,7 @@ public class ImportController(
     [HttpGet]
     [ProducesResponseType(typeof(ImportSummariesResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> GetImportSummaries(
-        [FromQuery] int skip = 0,
-        [FromQuery] int top = 10,
-        CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetImportSummaries([FromQuery] int skip = 0, [FromQuery] int top = 10, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Received request to get import summaries with skip={skip}, top={top}", skip, top);
 

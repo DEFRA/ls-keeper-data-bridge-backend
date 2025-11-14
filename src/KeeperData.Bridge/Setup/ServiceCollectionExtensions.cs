@@ -48,7 +48,7 @@ namespace KeeperData.Bridge.Setup
 
             services.AddStorageDependencies(configuration);
 
-            services.AddEtlDependencies();
+            services.AddEtlDependencies(configuration);
 
             services.AddCrypto(configuration);
 

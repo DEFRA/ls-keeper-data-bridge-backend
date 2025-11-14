@@ -13,6 +13,7 @@ using MongoDB.Driver;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
+using KeeperData.Core.Database.Resilience;
 
 namespace KeeperData.Core.ETL.Impl;
 
@@ -26,16 +27,18 @@ public class IngestionPipeline(
     IOptions<IDatabaseConfig> databaseConfig,
     IImportReportingService reportingService,
     CsvRowCounter csvRowCounter,
+    ResilientMongoOperations resilientMongoOps,
     ILogger<IngestionPipeline> logger) : IIngestionPipeline
 {
-    private const int DefaultInterval = 5000;
-    private const int BatchSize = DefaultInterval;
-    private const int LogInterval = DefaultInterval;
-    private const int ProgressUpdateInterval = DefaultInterval;
-    private const int LineageEventBatchSize = DefaultInterval;
+    private const int BatchSize = 200;
+    private const int BatchDelayMs = 500;
+    private const int LogInterval = BatchSize;
+    private const int ProgressUpdateInterval = BatchSize;
+
     private readonly IDatabaseConfig _databaseConfig = databaseConfig.Value;
     private readonly CsvRowCounter _rowCounter = csvRowCounter;
     private readonly RecordIdGenerator _recordIdGenerator = new();
+    private readonly ResilientMongoOperations _resilientMongoOps = resilientMongoOps;
 
     // MongoDB field name constants
     private const string FieldId = "_id";
@@ -107,7 +110,7 @@ public class IngestionPipeline(
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
 
         Debug.WriteLine($"[keepetl] Discovered {fileSets.Count} file set(s) containing {totalFiles} file(s) for ImportId: {importId}");
-        logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}", fileSets.Count, totalFiles, importId);
+        logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {importId}", fileSets.Count, totalFiles, importId);
 
         return (fileSets, totalFiles);
     }
@@ -481,7 +484,7 @@ public class IngestionPipeline(
 
                 var batchMetrics = await ProcessBatchAsync(importId, collection, batch, fileKey, collectionName, definition, lineageEvents, ct);
 
-                await FlushLineageEventsIfNeededAsync(lineageEvents, ct);
+                await FlushLineageEventsAsync(lineageEvents, ct);
 
                 metrics.AddBatch(batchMetrics);
                 totals = totals.Add(new IngestionTotals
@@ -496,12 +499,18 @@ public class IngestionPipeline(
 
                 Debug.WriteLine($"[keepetl] Processed batch of {BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}");
                 Debug.WriteLine($"[keepetl] -- END BATCH ({batchStopwatch.Elapsed.TotalSeconds}s, {batchStopwatch.ElapsedMilliseconds}ms) --");
+
+                if (BatchDelayMs > 0)
+                {
+                    Debug.WriteLine($"[keepetl] Throttling: waiting {BatchDelayMs}ms before next batch");
+                    await Task.Delay(BatchDelayMs, ct);
+                }
+
                 Debug.WriteLine($"[keepetl] ");
 
                 batch.Clear();
             }
 
-            // Check progress and report every ProgressUpdateInterval records (default: 10)
             if (metrics.RecordsProcessed > lastReportedRecordCount &&
                 metrics.RecordsProcessed - lastReportedRecordCount >= ProgressUpdateInterval)
             {
@@ -597,11 +606,9 @@ public class IngestionPipeline(
         }
     }
 
-    private async Task FlushLineageEventsIfNeededAsync(
-        List<RecordLineageEvent> lineageEvents,
-        CancellationToken ct)
+    private async Task FlushLineageEventsAsync(List<RecordLineageEvent> lineageEvents, CancellationToken ct)
     {
-        if (lineageEvents.Count >= LineageEventBatchSize)
+        if (lineageEvents.Count > 0)
         {
             var flushStopwatch = Stopwatch.StartNew();
             Debug.WriteLine($"[keepetl] Flushing {lineageEvents.Count} lineage events");
@@ -613,35 +620,17 @@ public class IngestionPipeline(
         }
     }
 
-    private async Task FlushLineageEventsAsync(
-        List<RecordLineageEvent> lineageEvents,
-        CancellationToken ct)
-    {
-        if (lineageEvents.Count > 0)
-        {
-            var flushStopwatch = Stopwatch.StartNew();
-            Debug.WriteLine($"[keepetl] Flushing final {lineageEvents.Count} lineage events");
-            await reportingService.RecordLineageEventsBatchAsync(lineageEvents, ct);
-            flushStopwatch.Stop();
-            var elapsedSeconds = flushStopwatch.Elapsed.TotalSeconds;
-            Debug.WriteLine($"[keepetl] Final lineage events flushed in {elapsedSeconds:F3}s");
-        }
-    }
-
-    private async Task<IMongoCollection<BsonDocument>> EnsureCollectionExistsAsync(
-        string collectionName,
-        CancellationToken ct)
+    private async Task<IMongoCollection<BsonDocument>> EnsureCollectionExistsAsync(string collectionName, CancellationToken ct)
     {
         var database = mongoClient.GetDatabase(_databaseConfig.DatabaseName);
 
-        var collections = await database.ListCollectionNamesAsync(cancellationToken: ct);
-        var collectionList = await collections.ToListAsync(ct);
+        var collectionList = await _resilientMongoOps.ListCollectionNamesAsync(database, ct);
 
         if (!collectionList.Contains(collectionName))
         {
             Debug.WriteLine($"[keepetl] Creating collection {collectionName}");
             logger.LogInformation("Creating collection {CollectionName}", collectionName);
-            await database.CreateCollectionAsync(collectionName, cancellationToken: ct);
+            await _resilientMongoOps.CreateCollectionAsync(database, collectionName, ct);
         }
         else
         {
@@ -679,8 +668,7 @@ public class IngestionPipeline(
         IMongoCollection<BsonDocument> collection,
         CancellationToken ct)
     {
-        var indexes = await collection.Indexes.ListAsync(ct);
-        var indexList = await indexes.ToListAsync(ct);
+        var indexList = await _resilientMongoOps.ListIndexesAsync(collection, ct);
 
         return indexList.Any(index =>
         {
@@ -704,7 +692,7 @@ public class IngestionPipeline(
         var wildcardIndexKeys = Builders<BsonDocument>.IndexKeys.Wildcard();
         var indexModel = new CreateIndexModel<BsonDocument>(wildcardIndexKeys);
 
-        await collection.Indexes.CreateOneAsync(indexModel, cancellationToken: ct);
+        await _resilientMongoOps.CreateIndexAsync(collection, indexModel, ct);
 
         Debug.WriteLine($"[keepetl] Wildcard index created successfully on collection {collection.CollectionNamespace.CollectionName}");
         logger.LogInformation("Wildcard index created successfully on collection {CollectionName}",
@@ -787,15 +775,8 @@ public class IngestionPipeline(
 
             if (changeType == ChangeType.Delete)
             {
-                ProcessDeleteOperation(bulkOps,
-                                       lineageEvents,
-                                       docId,
-                                       recordId,
-                                       existingDoc,
-                                       importId,
-                                       fileKey,
-                                       collectionName,
-                                       changeType);
+                ProcessDeleteOperation(bulkOps, lineageEvents, docId, recordId,
+                    existingDoc, importId, fileKey, collectionName, changeType);
 
                 metrics.Deleted++;
                 metrics.Processed++;
@@ -805,19 +786,8 @@ public class IngestionPipeline(
                 var isSoftDeleted = softDeletedIds.Contains(docId);
                 var isCreate = existingDoc == null;
 
-                ProcessUpsertOperation(bulkOps,
-                                       lineageEvents,
-                                       document,
-                                       docId,
-                                       recordId,
-                                       existingDoc,
-                                       isCreate,
-                                       isSoftDeleted,
-                                       importId,
-                                       fileKey,
-                                       collectionName,
-                                       changeType,
-                                       definition);
+                ProcessUpsertOperation(bulkOps, lineageEvents, document, docId, recordId, existingDoc, isCreate, isSoftDeleted,
+                    importId, fileKey, collectionName, changeType, definition);
 
                 if (isCreate)
                 {
@@ -834,7 +804,7 @@ public class IngestionPipeline(
         if (bulkOps.Count > 0)
         {
             Debug.WriteLine($"[keepetl] Executing bulk write of {bulkOps.Count} operations for collection {collectionName}");
-            await collection.BulkWriteAsync(bulkOps, new BulkWriteOptions { IsOrdered = false }, ct);
+            await _resilientMongoOps.BulkWriteAsync(collection, bulkOps, new BulkWriteOptions { IsOrdered = false }, ct);
         }
 
         batchStopwatch.Stop();
@@ -851,8 +821,7 @@ public class IngestionPipeline(
       CancellationToken ct)
     {
         var filter = Builders<BsonDocument>.Filter.In(FieldId, documentIds);
-        var existingDocs = await collection.Find(filter).ToListAsync(ct);
-        return existingDocs.ToDictionary(doc => doc[FieldId], doc => doc);
+        return await _resilientMongoOps.FindAndMapAsync(collection, filter, ct);
     }
 
     private HashSet<BsonValue> GetSoftDeletedIds(Dictionary<BsonValue, BsonDocument> existingDocsDict)

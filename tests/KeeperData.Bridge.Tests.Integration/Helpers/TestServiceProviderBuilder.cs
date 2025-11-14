@@ -1,6 +1,8 @@
 using Amazon.S3;
 using KeeperData.Core.Crypto;
 using KeeperData.Core.Database;
+using KeeperData.Core.Database.Configuration;
+using KeeperData.Core.Database.Resilience;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.ETL.Utils;
@@ -61,6 +63,11 @@ public static class TestServiceProviderBuilder
         services.AddSingleton<IOptions<MongoConfig>>(Options.Create(mongoConfig));
         services.AddSingleton<IOptions<IDatabaseConfig>>(Options.Create<IDatabaseConfig>(mongoConfig));
         services.AddSingleton(mongoClient);
+
+        var resilenceSection = configuration.GetSection("MongoResilience");
+        services.Configure<MongoResilienceConfig>(resilenceSection);
+
+        services.AddSingleton<ResilientMongoOperations>();
 
         services.AddSingleton<IDataSetDefinitions>(dataSetDefinitions);
 

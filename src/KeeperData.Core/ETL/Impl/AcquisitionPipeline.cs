@@ -19,7 +19,7 @@ public class AcquisitionPipeline(
     ILogger<AcquisitionPipeline> logger) : IAcquisitionPipeline
 {
     private const string MimeTypeTextCsv = "text/csv";
-    
+
     public async Task StartAsync(ImportReport report, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();

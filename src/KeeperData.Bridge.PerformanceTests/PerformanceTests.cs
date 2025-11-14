@@ -30,11 +30,6 @@ using KeeperData.Core;
 
 namespace KeeperData.Bridge.PerformanceTests;
 
-/// <summary>
-/// Performance tests for the complete import pipeline.
-/// WARNING: These tests are resource-intensive and designed for local execution only.
-/// They should NOT run in CI/CD pipelines.
-/// </summary>
 [Trait("testtype", "performance")]
 public class PerformanceTests : IAsyncLifetime
 {
@@ -315,7 +310,11 @@ public class PerformanceTests : IAsyncLifetime
         services.AddSingleton<IOptions<IDatabaseConfig>>(Options.Create<IDatabaseConfig>(mongoConfig));
         services.AddSingleton(_mongoClient!);
 
-        // Dataset definitions
+        var resilenceSection = configuration.GetSection("MongoResilience");
+        services.Configure<KeeperData.Core.Database.Configuration.MongoResilienceConfig>(resilenceSection);
+
+        services.AddSingleton<KeeperData.Core.Database.Resilience.ResilientMongoOperations>();
+
         var dataSetDefinitions = new DataSetDefinitions
         {
             SamCPHHolding = dataSetDefinition,
@@ -328,7 +327,6 @@ public class PerformanceTests : IAsyncLifetime
         };
         services.AddSingleton<Core.ETL.Abstract.IDataSetDefinitions>(dataSetDefinitions);
 
-        // Storage configuration
         var storageConfig = new KeeperData.Infrastructure.Storage.Configuration.StorageConfiguration
         {
             ExternalStorage = new KeeperData.Infrastructure.Storage.Configuration.StorageWithCredentialsConfiguration

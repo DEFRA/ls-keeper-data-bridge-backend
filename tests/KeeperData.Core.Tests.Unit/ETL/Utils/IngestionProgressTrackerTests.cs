@@ -545,7 +545,9 @@ public class IngestionProgressTrackerTests
         // Arrange
         var tracker = new IngestionProgressTracker(TestFileName, 100);
 
-        // Act
+        // Act - Need at least 2 updates to establish a rate for estimation
+        tracker.UpdateProgress(50); // First update to establish baseline
+        System.Threading.Thread.Sleep(50); // Small delay to create time delta
         tracker.UpdateProgress(100); // All rows processed
         var status = tracker.GetCurrentStatus();
 

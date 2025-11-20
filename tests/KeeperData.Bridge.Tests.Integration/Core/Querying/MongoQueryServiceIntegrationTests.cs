@@ -151,6 +151,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: null,
             orderBy: null,
+            select: null,
             skip: null,
             top: null,
             count: true,
@@ -177,6 +178,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
                 "invalid_collection",
                 filter: null,
                 orderBy: null,
+                select: null,
                 skip: null,
                 top: null,
                 count: true,
@@ -198,6 +200,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Category eq 'Electronics'",
             orderBy: null,
+            select: null,
             skip: null,
             top: null,
             count: true,
@@ -222,6 +225,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Category ne 'Electronics'",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -245,6 +249,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Price gt 500",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -265,6 +270,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Quantity ge 1000",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -285,6 +291,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Rating lt 2.5",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -305,6 +312,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Rating le 3.0",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -325,6 +333,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "IsDeleted eq false",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -357,6 +366,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Category eq 'Electronics' and Price gt 300",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -381,6 +391,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Category eq 'Electronics' or Category eq 'Books'",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -405,6 +416,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Category eq 'Electronics' and Price gt 200 and IsDeleted eq false",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -438,6 +450,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "contains(Name, 'Product 1')",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -463,6 +476,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "startswith(ProductId, 'PROD01')",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -488,6 +502,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "endswith(Brand, 'A')",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -517,6 +532,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Category eq 'Electronics'",
             orderBy: "Price asc",
+            select: null,
             skip: 0,
             top: 10,
             count: true,
@@ -538,6 +554,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "IsDeleted eq false",
             orderBy: "UpdatedAtUtc desc",
+            select: null,
             skip: 0,
             top: 20,
             count: true,
@@ -559,6 +576,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: null,
             orderBy: "Category asc, Price desc",
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -590,6 +608,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: null,
             orderBy: "ProductId asc",
+            select: null,
             skip: 0,
             top: 20,
             count: true,
@@ -600,6 +619,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: null,
             orderBy: "ProductId asc",
+            select: null,
             skip: 20,
             top: 20,
             count: true,
@@ -636,6 +656,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
                 _testCollectionName,
                 filter: null,
                 orderBy: "ProductId asc",
+                select: null,
                 skip: page * pageSize,
                 top: pageSize,
                 count: true,
@@ -666,6 +687,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: null,
             orderBy: "ProductId asc",
+            select: null,
             skip: 140,
             top: 10,
             count: true,
@@ -687,6 +709,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: null,
             orderBy: null,
+            select: null,
             skip: 0,
             top: 5000, // Exceeds max of 1000
             count: true,
@@ -707,6 +730,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Category eq 'Electronics'",
             orderBy: "Price asc",
+            select: null,
             skip: 5,
             top: 10,
             count: true,
@@ -740,6 +764,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "IsDeleted eq false",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 10,
             count: true,
@@ -760,6 +785,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "IsDeleted eq false",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 10,
             count: false,
@@ -784,6 +810,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Quantity eq 100",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 10,
             count: true,
@@ -804,6 +831,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Rating ge 4.0",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 20,
             count: true,
@@ -828,6 +856,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: $"CreatedAtUtc gt {cutoffDateString}",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 50,
             count: true,
@@ -852,6 +881,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Category eq 'Electronics' and Price gt 100 and IsDeleted eq false",
             orderBy: "Rating desc, Price asc",
+            select: null,
             skip: 5,
             top: 15,
             count: true,
@@ -888,6 +918,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Category eq 'Electronics'",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 5,
             count: false,
@@ -914,6 +945,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "Featured eq true",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 10,
             count: true,
@@ -942,6 +974,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
                 _testCollectionName,
                 filter: "Category eq 'Books' and Price lt 200",
                 orderBy: "ProductId asc",
+                select: null,
                 skip: 0,
                 top: 50,
                 count: true,
@@ -970,6 +1003,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "ProductId eq 'NONEXISTENT'",
             orderBy: null,
+            select: null,
             skip: 0,
             top: 10,
             count: true,
@@ -992,6 +1026,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
                 _testCollectionName,
                 filter: null,
                 orderBy: null,
+                select: null,
                 skip: 0,
                 top: 0,
                 count: true,
@@ -1010,6 +1045,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
                 _testCollectionName,
                 filter: "invalid filter syntax here",
                 orderBy: null,
+                select: null,
                 skip: 0,
                 top: 10,
                 count: true,
@@ -1034,6 +1070,7 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             _testCollectionName,
             filter: "IsDeleted eq false",
             orderBy: "UpdatedAtUtc desc",
+            select: null,
             skip: 0,
             top: 100,
             count: true,
@@ -1046,6 +1083,180 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
         stopwatch.ElapsedMilliseconds.Should().BeLessThan(5000, "Query should complete within 5 seconds");
 
         _testOutputHelper.WriteLine($"Query completed in {stopwatch.ElapsedMilliseconds}ms");
+    }
+
+    #endregion
+
+    #region Select Tests
+
+    [Fact]
+    public async Task QueryAsync_WithSelect_ReturnOnlySelectedFields()
+    {
+        // Act
+        var result = await _queryService.QueryAsync(
+            _testCollectionName,
+            filter: "Category eq 'Electronics'",
+            orderBy: null,
+            select: "ProductId,Name,Price",
+            skip: 0,
+            top: 10,
+            count: true,
+            CancellationToken.None);
+
+        // Assert
+        result.Data.Should().NotBeEmpty();
+        result.Select.Should().Be("ProductId,Name,Price");
+
+        foreach (var record in result.Data)
+        {
+            record.Keys.Should().HaveCount(3);
+            record.Should().ContainKey("ProductId");
+            record.Should().ContainKey("Name");
+            record.Should().ContainKey("Price");
+            record.Should().NotContainKey("Category");
+            record.Should().NotContainKey("Description");
+            record.Should().NotContainKey("Brand");
+        }
+
+        _testOutputHelper.WriteLine($"Retrieved {result.Count} records with only selected fields: ProductId, Name, Price");
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithSelectSingleField_ReturnsOnlyThatField()
+    {
+        // Act
+        var result = await _queryService.QueryAsync(
+            _testCollectionName,
+            filter: null,
+            orderBy: null,
+            select: "ProductId",
+            skip: 0,
+            top: 5,
+            count: false,
+            CancellationToken.None);
+
+        // Assert
+        result.Data.Should().NotBeEmpty();
+
+        foreach (var record in result.Data)
+        {
+            record.Keys.Should().HaveCount(1);
+            record.Should().ContainKey("ProductId");
+            record.Should().NotContainKey("Name");
+            record.Should().NotContainKey("Price");
+        }
+
+        _testOutputHelper.WriteLine($"Retrieved {result.Count} records with only ProductId field");
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithSelectAndFilterAndSort_CombinesCorrectly()
+    {
+        // Act
+        var result = await _queryService.QueryAsync(
+            _testCollectionName,
+            filter: "Category eq 'Electronics' and Price gt 200",
+            orderBy: "Price asc",
+            select: "ProductId,Price,Category",
+            skip: 0,
+            top: 10,
+            count: true,
+            CancellationToken.None);
+
+        // Assert
+        result.Data.Should().NotBeEmpty();
+
+        foreach (var record in result.Data)
+        {
+            // Only selected fields should be present
+            record.Keys.Should().HaveCount(3);
+            record.Should().ContainKey("ProductId");
+            record.Should().ContainKey("Price");
+            record.Should().ContainKey("Category");
+
+            // Filter should still apply
+            record["Category"]?.ToString().Should().Be("Electronics");
+            Convert.ToDouble(record["Price"]).Should().BeGreaterThan(200);
+        }
+
+        // Sort should still apply
+        var prices = result.Data.Select(d => Convert.ToDouble(d["Price"])).ToList();
+        prices.Should().BeInAscendingOrder();
+
+        _testOutputHelper.WriteLine($"Retrieved {result.Count} filtered and sorted records with selected fields");
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithSelectNonExistentField_ReturnsEmptyForThatField()
+    {
+        // Act
+        var result = await _queryService.QueryAsync(
+            _testCollectionName,
+            filter: null,
+            orderBy: null,
+            select: "ProductId,NonExistentField",
+            skip: 0,
+            top: 5,
+            count: false,
+            CancellationToken.None);
+
+        // Assert
+        result.Data.Should().NotBeEmpty();
+
+        foreach (var record in result.Data)
+        {
+            record.Should().ContainKey("ProductId");
+            record.Should().NotContainKey("NonExistentField");
+        }
+
+        _testOutputHelper.WriteLine($"Non-existent fields are excluded from results");
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithSelectNull_ReturnsAllFields()
+    {
+        // Act
+        var result = await _queryService.QueryAsync(
+            _testCollectionName,
+            filter: null,
+            orderBy: null,
+            select: null,
+            skip: 0,
+            top: 1,
+            count: false,
+            CancellationToken.None);
+
+        // Assert
+        result.Data.Should().NotBeEmpty();
+        result.Select.Should().BeNull();
+
+        var firstRecord = result.Data.First();
+        firstRecord.Keys.Count.Should().BeGreaterThan(3); // Should have many fields
+        firstRecord.Should().ContainKey("ProductId");
+        firstRecord.Should().ContainKey("Name");
+        firstRecord.Should().ContainKey("Price");
+        firstRecord.Should().ContainKey("Category");
+
+        _testOutputHelper.WriteLine($"Without select, all {firstRecord.Keys.Count} fields are returned");
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithInvalidSelectExpression_ThrowsArgumentException()
+    {
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _queryService.QueryAsync(
+                _testCollectionName,
+                filter: null,
+                orderBy: null,
+                select: "Field1,123InvalidField",
+                skip: 0,
+                top: 10,
+                count: true,
+                CancellationToken.None));
+
+        exception.Message.Should().Contain("Invalid");
+        _testOutputHelper.WriteLine($"Correctly rejected invalid select expression");
     }
 
     #endregion

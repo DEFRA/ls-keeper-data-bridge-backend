@@ -549,6 +549,7 @@ public class PerformanceTests : IAsyncLifetime
             collectionName: collectionName,
             filter: null,
             orderBy: "CPH asc",
+            select: null,
             skip: 0,
             top: 100,
             count: true,

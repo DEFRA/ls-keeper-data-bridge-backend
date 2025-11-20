@@ -46,6 +46,11 @@ public class QueryResult
     public string? OrderBy { get; init; }
 
     /// <summary>
+    /// OData select applied
+    /// </summary>
+    public string? Select { get; init; }
+
+    /// <summary>
     /// Timestamp when the query was executed
     /// </summary>
     public DateTime ExecutedAtUtc { get; init; } = DateTime.UtcNow;

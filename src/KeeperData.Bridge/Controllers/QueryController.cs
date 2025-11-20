@@ -27,6 +27,7 @@ public class QueryController : ControllerBase
     /// <param name="collectionName">Name of the collection to query (e.g., "sam_cph_holdings")</param>
     /// <param name="filter">OData $filter expression (e.g., "CPH eq 'ABC123' and IsDeleted eq false")</param>
     /// <param name="orderby">OData $orderby expression (e.g., "UpdatedAtUtc desc" or "CPH asc, UpdatedAtUtc desc")</param>
+    /// <param name="select">OData $select expression (e.g., "CPH,UpdatedAtUtc,IsDeleted")</param>
     /// <param name="skip">Number of records to skip for pagination (OData $skip)</param>
     /// <param name="top">Number of records to return (OData $top, max 1000, default 100)</param>
     /// <param name="count">Whether to include total count in response (OData $count, default true)</param>
@@ -39,6 +40,7 @@ public class QueryController : ControllerBase
     /// <example>
     /// GET /api/query/sam_cph_holdings?$filter=CPH eq 'ABC123'&amp;$top=50
     /// GET /api/query/sam_cph_holdings?$filter=contains(CPH,'ABC') and IsDeleted eq false&amp;$orderby=UpdatedAtUtc desc&amp;$skip=20&amp;$top=10
+    /// GET /api/query/sam_cph_holdings?$select=CPH,UpdatedAtUtc&amp;$filter=IsDeleted eq false&amp;$top=20
     /// </example>
     [HttpGet("{collectionName}")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
@@ -49,14 +51,15 @@ public class QueryController : ControllerBase
         [FromRoute] string collectionName,
         [FromQuery(Name = "$filter")] string? filter = null,
         [FromQuery(Name = "$orderby")] string? orderby = null,
+        [FromQuery(Name = "$select")] string? select = null,
         [FromQuery(Name = "$skip")] int? skip = null,
         [FromQuery(Name = "$top")] int? top = null,
         [FromQuery(Name = "$count")] bool count = true,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Received query request for collection '{CollectionName}' with filter='{Filter}', orderby='{OrderBy}', skip={Skip}, top={Top}",
-            collectionName, filter ?? "none", orderby ?? "none", skip, top);
+            "Received query request for collection '{CollectionName}' with filter='{Filter}', orderby='{OrderBy}', select='{Select}', skip={Skip}, top={Top}",
+            collectionName, filter ?? "none", orderby ?? "none", select ?? "none", skip, top);
 
         try
         {
@@ -64,6 +67,7 @@ public class QueryController : ControllerBase
                 collectionName,
                 filter,
                 orderby,
+                select,
                 skip,
                 top,
                 count,

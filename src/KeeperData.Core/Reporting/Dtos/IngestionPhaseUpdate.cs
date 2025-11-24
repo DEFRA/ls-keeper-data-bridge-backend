@@ -8,4 +8,5 @@ public record IngestionPhaseUpdate
     public int RecordsUpdated { get; init; }
     public int RecordsDeleted { get; init; }
     public DateTime? CompletedAtUtc { get; init; }
+    public IngestionCurrentFileStatus? CurrentFileStatus { get; init; }
 }

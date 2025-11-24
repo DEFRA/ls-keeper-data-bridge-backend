@@ -35,4 +35,9 @@ public interface IBlobStorageService : IBlobStorageServiceReadOnly
         string objectKey,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Deletes all objects under the configured top-level folder prefix.
+    /// Returns the list of deleted keys and the total count.
+    /// </summary>
+    Task<ClearDownResult> ClearDownAsync(CancellationToken cancellationToken = default);
 }

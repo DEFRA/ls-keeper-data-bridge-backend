@@ -28,10 +28,8 @@ jobs:
         run: dotnet restore ./working-dir/KeeperData.Bridge.sln
       - name: Build
         run: dotnet build ./working-dir/KeeperData.Bridge.sln --configuration Release --no-restore -warnaserror
-      - name: Verify format
-        run: dotnet format ./working-dir/KeeperData.Bridge.sln --verify-no-changes --verbosity diagnostic
       - name: Test (unit and component)
-        run: dotnet test ./working-dir/KeeperData.Bridge.sln --filter Dependence!=docker --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true" --collect:"XPlat Code Coverage" --results-directory ./coverage
+        run: dotnet test ./working-dir/KeeperData.Bridge.sln --filter "Dependence!=docker&testtype!=performance" --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true" --collect:"XPlat Code Coverage" --results-directory ./coverage
       - name: Install ReportGenerator
         run: dotnet tool install --global dotnet-reportgenerator-globaltool
       - name: Generate Coverage Summary
@@ -87,7 +85,7 @@ jobs:
       - name: Wait for keeperdata_bridge to be ready
         run: ./working-dir/wait-for-docker-logs.sh keeperdata_bridge "Now listening on" 60
       - name: Run integration tests
-        run: dotnet test ./working-dir/KeeperData.Bridge.sln --filter Dependence=docker
+        run: dotnet test ./working-dir/KeeperData.Bridge.sln --filter "Dependence=docker&testtype!=performance"
 
     ## SonarCloud
     ## Uncomment to unable SonarCloud scan

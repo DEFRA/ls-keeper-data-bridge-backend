@@ -4,6 +4,7 @@ using KeeperData.Core.Database;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Reporting.Impl;
+using KeeperData.Core.Reporting.Services;
 using KeeperData.Infrastructure.Database.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -45,11 +46,22 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         });
 
         var loggerMock = new Mock<ILogger<ImportReportingService>>();
+        var loggerFactoryMock = new Mock<ILoggerFactory>();
+        loggerFactoryMock.Setup(x => x.CreateLogger(It.IsAny<string>()))
+            .Returns(new Mock<ILogger>().Object);
+
+        // Create services required by ImportReportingService
+        var idGenerator = new LineageIdGenerator();
+        var mapper = new LineageMapper();
+        var indexManagerFactory = new LineageIndexManagerFactory(loggerFactoryMock.Object);
 
         // Create the service under test
         _reportingService = new ImportReportingService(
             _mongoClient,
             mongoConfig,
+            idGenerator,
+            mapper,
+            indexManagerFactory,
             loggerMock.Object);
     }
 
@@ -106,16 +118,13 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var importId = Guid.NewGuid();
-        await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
+        var report = await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
 
         // Act - Start acquisition
-        await _reportingService.UpdateAcquisitionPhaseAsync(importId, new AcquisitionPhaseUpdate
-        {
-            Status = PhaseStatus.Started,
-            FilesDiscovered = 10,
-            FilesProcessed = 0,
-            FilesFailed = 0
-        }, CancellationToken.None);
+        report.AcquisitionPhase!.Status = PhaseStatus.Started;
+        report.AcquisitionPhase.StartedAtUtc = DateTime.UtcNow;
+        report.AcquisitionPhase.FilesDiscovered = 10;
+        await _reportingService.UpsertImportReportAsync(report, CancellationToken.None);
 
         // Assert - Started
         var report1 = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);
@@ -125,14 +134,11 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
 
         // Act - Complete acquisition
         var completedAt = DateTime.UtcNow;
-        await _reportingService.UpdateAcquisitionPhaseAsync(importId, new AcquisitionPhaseUpdate
-        {
-            Status = PhaseStatus.Completed,
-            FilesDiscovered = 10,
-            FilesProcessed = 8,
-            FilesFailed = 2,
-            CompletedAtUtc = completedAt
-        }, CancellationToken.None);
+        report1.AcquisitionPhase!.Status = PhaseStatus.Completed;
+        report1.AcquisitionPhase.FilesProcessed = 8;
+        report1.AcquisitionPhase.FilesFailed = 2;
+        report1.AcquisitionPhase.CompletedAtUtc = completedAt;
+        await _reportingService.UpsertImportReportAsync(report1, CancellationToken.None);
 
         // Assert - Completed
         var report2 = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);
@@ -149,17 +155,12 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var importId = Guid.NewGuid();
-        await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
+        var report = await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
 
         // Act - Start ingestion
-        await _reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
-        {
-            Status = PhaseStatus.Started,
-            FilesProcessed = 0,
-            RecordsCreated = 0,
-            RecordsUpdated = 0,
-            RecordsDeleted = 0
-        }, CancellationToken.None);
+        report.IngestionPhase!.Status = PhaseStatus.Started;
+        report.IngestionPhase.StartedAtUtc = DateTime.UtcNow;
+        await _reportingService.UpsertImportReportAsync(report, CancellationToken.None);
 
         // Assert - Started
         var report1 = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);
@@ -167,14 +168,11 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         report1.IngestionPhase.StartedAtUtc.Should().NotBeNull();
 
         // Act - Update progress
-        await _reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
-        {
-            Status = PhaseStatus.Started,
-            FilesProcessed = 3,
-            RecordsCreated = 100,
-            RecordsUpdated = 50,
-            RecordsDeleted = 10
-        }, CancellationToken.None);
+        report1.IngestionPhase!.FilesProcessed = 3;
+        report1.IngestionPhase.RecordsCreated = 100;
+        report1.IngestionPhase.RecordsUpdated = 50;
+        report1.IngestionPhase.RecordsDeleted = 10;
+        await _reportingService.UpsertImportReportAsync(report1, CancellationToken.None);
 
         // Assert - Progress
         var report2 = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);
@@ -185,15 +183,13 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
 
         // Act - Complete ingestion
         var completedAt = DateTime.UtcNow;
-        await _reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
-        {
-            Status = PhaseStatus.Completed,
-            FilesProcessed = 5,
-            RecordsCreated = 200,
-            RecordsUpdated = 100,
-            RecordsDeleted = 20,
-            CompletedAtUtc = completedAt
-        }, CancellationToken.None);
+        report2.IngestionPhase!.Status = PhaseStatus.Completed;
+        report2.IngestionPhase.FilesProcessed = 5;
+        report2.IngestionPhase.RecordsCreated = 200;
+        report2.IngestionPhase.RecordsUpdated = 100;
+        report2.IngestionPhase.RecordsDeleted = 20;
+        report2.IngestionPhase.CompletedAtUtc = completedAt;
+        await _reportingService.UpsertImportReportAsync(report2, CancellationToken.None);
 
         // Assert - Completed
         var report3 = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);
@@ -208,17 +204,19 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var importId = Guid.NewGuid();
-        await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
+        var report = await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
 
         // Act
-        await _reportingService.CompleteImportAsync(importId, ImportStatus.Completed, null, CancellationToken.None);
+        report.Status = ImportStatus.Completed;
+        report.CompletedAtUtc = DateTime.UtcNow;
+        await _reportingService.UpsertImportReportAsync(report, CancellationToken.None);
 
         // Assert
-        var report = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);
-        report!.Status.Should().Be(ImportStatus.Completed);
-        report.CompletedAtUtc.Should().NotBeNull();
-        report.CompletedAtUtc.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
-        report.Error.Should().BeNull();
+        var retrievedReport = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);
+        retrievedReport!.Status.Should().Be(ImportStatus.Completed);
+        retrievedReport.CompletedAtUtc.Should().NotBeNull();
+        retrievedReport.CompletedAtUtc.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        retrievedReport.Error.Should().BeNull();
 
         _testOutputHelper.WriteLine($"Completed import successfully for ImportId: {importId}");
     }
@@ -228,17 +226,20 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var importId = Guid.NewGuid();
-        await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
+        var report = await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
         var errorMessage = "Failed to process file due to network error";
 
         // Act
-        await _reportingService.CompleteImportAsync(importId, ImportStatus.Failed, errorMessage, CancellationToken.None);
+        report.Status = ImportStatus.Failed;
+        report.CompletedAtUtc = DateTime.UtcNow;
+        report.Error = errorMessage;
+        await _reportingService.UpsertImportReportAsync(report, CancellationToken.None);
 
         // Assert
-        var report = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);
-        report!.Status.Should().Be(ImportStatus.Failed);
-        report.CompletedAtUtc.Should().NotBeNull();
-        report.Error.Should().Be(errorMessage);
+        var retrievedReport = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);
+        retrievedReport!.Status.Should().Be(ImportStatus.Failed);
+        retrievedReport.CompletedAtUtc.Should().NotBeNull();
+        retrievedReport.Error.Should().Be(errorMessage);
 
         _testOutputHelper.WriteLine($"Marked import as failed for ImportId: {importId} with error: {errorMessage}");
     }
@@ -259,7 +260,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
             FileName = "test_file.csv",
             FileKey = "dest/test_file.csv",
             DatasetName = "sam_cph_holdings",
-            Md5Hash = "abc123def456",
+            ETag = "abc123def456",
             FileSize = 1024 * 1024, // 1MB
             SourceKey = "source/test_file.csv.enc",
             DecryptionDurationMs = 1500,
@@ -279,7 +280,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         report.FileName.Should().Be(fileRecord.FileName);
         report.FileKey.Should().Be(fileRecord.FileKey);
         report.DatasetName.Should().Be(fileRecord.DatasetName);
-        report.Md5Hash.Should().Be(fileRecord.Md5Hash);
+        report.ETag.Should().Be(fileRecord.ETag);
         report.FileSize.Should().Be(fileRecord.FileSize);
         report.Status.Should().Be(FileProcessingStatus.Acquired);
 
@@ -305,7 +306,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
             FileName = "test_file.csv",
             FileKey = fileKey,
             DatasetName = "sam_cph_holdings",
-            Md5Hash = "abc123def456",
+            ETag = "abc123def456",
             FileSize = 1024 * 1024,
             SourceKey = "source/test_file.csv.enc",
             DecryptionDurationMs = 1500,
@@ -351,14 +352,14 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var fileKey = "dest/new_file.csv";
-        var md5Hash = "newfilehash123";
+        var etag = "newfilehash123";
 
         // Act
-        var result = await _reportingService.IsFileProcessedAsync(fileKey, md5Hash, CancellationToken.None);
+        var result = await _reportingService.IsFileProcessedAsync(fileKey, etag, CancellationToken.None);
 
         // Assert
         result.Should().BeFalse();
-        _testOutputHelper.WriteLine($"File {fileKey} with MD5 {md5Hash} is not processed (new file)");
+        _testOutputHelper.WriteLine($"File {fileKey} with ETag {etag} is not processed (new file)");
     }
 
     [Fact]
@@ -369,14 +370,14 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
 
         var fileKey = "dest/processed_file.csv";
-        var md5Hash = "processedfilehash123";
+        var etag = "processedfilehash123";
 
         await _reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
         {
             FileName = "processed_file.csv",
             FileKey = fileKey,
             DatasetName = "sam_cph_holdings",
-            Md5Hash = md5Hash,
+            ETag = etag,
             FileSize = 1024,
             SourceKey = "source/processed_file.csv.enc",
             DecryptionDurationMs = 100,
@@ -385,30 +386,30 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         }, CancellationToken.None);
 
         // Act
-        var result = await _reportingService.IsFileProcessedAsync(fileKey, md5Hash, CancellationToken.None);
+        var result = await _reportingService.IsFileProcessedAsync(fileKey, etag, CancellationToken.None);
 
         // Assert
         result.Should().BeTrue();
-        _testOutputHelper.WriteLine($"File {fileKey} with MD5 {md5Hash} was already processed");
+        _testOutputHelper.WriteLine($"File {fileKey} with ETag {etag} was already processed");
     }
 
     [Fact]
-    public async Task IsFileProcessedAsync_WithSameFileKeyButDifferentMd5_ShouldReturnFalse()
+    public async Task IsFileProcessedAsync_WithSameFileKeyButDifferentETag_ShouldReturnFalse()
     {
         // Arrange
         var importId = Guid.NewGuid();
         await _reportingService.StartImportAsync(importId, "External", CancellationToken.None);
 
         var fileKey = "dest/same_name.csv";
-        var md5Hash1 = "originalhash123";
-        var md5Hash2 = "modifiedhash456";
+        var etag1 = "originalhash123";
+        var etag2 = "modifiedhash456";
 
         await _reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
         {
             FileName = "same_name.csv",
             FileKey = fileKey,
             DatasetName = "sam_cph_holdings",
-            Md5Hash = md5Hash1,
+            ETag = etag1,
             FileSize = 1024,
             SourceKey = "source/same_name.csv.enc",
             DecryptionDurationMs = 100,
@@ -417,11 +418,11 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         }, CancellationToken.None);
 
         // Act
-        var result = await _reportingService.IsFileProcessedAsync(fileKey, md5Hash2, CancellationToken.None);
+        var result = await _reportingService.IsFileProcessedAsync(fileKey, etag2, CancellationToken.None);
 
         // Assert
-        result.Should().BeFalse("file content has changed (different MD5)");
-        _testOutputHelper.WriteLine($"File {fileKey} has different MD5, treating as new file");
+        result.Should().BeFalse("file content has changed (different ETag)");
+        _testOutputHelper.WriteLine($"File {fileKey} has different ETag, treating as new file");
     }
 
     [Fact]
@@ -436,7 +437,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
             FileName = "failed_file.csv",
             FileKey = "dest/failed_file.csv",
             DatasetName = "sam_cph_holdings",
-            Md5Hash = string.Empty,
+            ETag = string.Empty,
             FileSize = 0,
             SourceKey = "source/failed_file.csv.enc",
             DecryptionDurationMs = 500,
@@ -740,16 +741,12 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
         var sourceType = "External";
 
         // Act 1: Start import
-        await _reportingService.StartImportAsync(importId, sourceType, CancellationToken.None);
+        var report = await _reportingService.StartImportAsync(importId, sourceType, CancellationToken.None);
 
         // Act 2: Acquisition phase
-        await _reportingService.UpdateAcquisitionPhaseAsync(importId, new AcquisitionPhaseUpdate
-        {
-            Status = PhaseStatus.Started,
-            FilesDiscovered = 3,
-            FilesProcessed = 0,
-            FilesFailed = 0
-        }, CancellationToken.None);
+        report.AcquisitionPhase!.Status = PhaseStatus.Started;
+        report.AcquisitionPhase.FilesDiscovered = 3;
+        await _reportingService.UpsertImportReportAsync(report, CancellationToken.None);
 
         // Record 3 file acquisitions
         for (int i = 1; i <= 3; i++)
@@ -759,7 +756,7 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
                 FileName = $"file{i}.csv",
                 FileKey = $"dest/file{i}.csv",
                 DatasetName = "sam_cph_holdings",
-                Md5Hash = $"hash{i}",
+                ETag = $"hash{i}",
                 FileSize = 1024 * i,
                 SourceKey = $"source/file{i}.csv.enc",
                 DecryptionDurationMs = 100 * i,
@@ -768,24 +765,18 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
             }, CancellationToken.None);
         }
 
-        await _reportingService.UpdateAcquisitionPhaseAsync(importId, new AcquisitionPhaseUpdate
-        {
-            Status = PhaseStatus.Completed,
-            FilesDiscovered = 3,
-            FilesProcessed = 3,
-            FilesFailed = 0,
-            CompletedAtUtc = DateTime.UtcNow
-        }, CancellationToken.None);
+        // Fetch updated report
+        report = await _reportingService.GetImportReportAsync(importId, CancellationToken.None) ?? report;
+        report.AcquisitionPhase!.Status = PhaseStatus.Completed;
+        report.AcquisitionPhase.FilesProcessed = 3;
+        report.AcquisitionPhase.FilesFailed = 0;
+        report.AcquisitionPhase.CompletedAtUtc = DateTime.UtcNow;
+        await _reportingService.UpsertImportReportAsync(report, CancellationToken.None);
 
         // Act 3: Ingestion phase
-        await _reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
-        {
-            Status = PhaseStatus.Started,
-            FilesProcessed = 0,
-            RecordsCreated = 0,
-            RecordsUpdated = 0,
-            RecordsDeleted = 0
-        }, CancellationToken.None);
+        report = await _reportingService.GetImportReportAsync(importId, CancellationToken.None) ?? report;
+        report.IngestionPhase!.Status = PhaseStatus.Started;
+        await _reportingService.UpsertImportReportAsync(report, CancellationToken.None);
 
         // Record ingestion for each file
         var totalCreated = 0;
@@ -832,18 +823,18 @@ public class ImportReportingServiceIntegrationTests : IAsyncLifetime
             }
         }
 
-        await _reportingService.UpdateIngestionPhaseAsync(importId, new IngestionPhaseUpdate
-        {
-            Status = PhaseStatus.Completed,
-            FilesProcessed = 3,
-            RecordsCreated = totalCreated,
-            RecordsUpdated = totalUpdated,
-            RecordsDeleted = totalDeleted,
-            CompletedAtUtc = DateTime.UtcNow
-        }, CancellationToken.None);
+        report = await _reportingService.GetImportReportAsync(importId, CancellationToken.None) ?? report;
+        report.IngestionPhase!.Status = PhaseStatus.Completed;
+        report.IngestionPhase.FilesProcessed = 3;
+        report.IngestionPhase.RecordsCreated = totalCreated;
+        report.IngestionPhase.RecordsUpdated = totalUpdated;
+        report.IngestionPhase.RecordsDeleted = totalDeleted;
+        report.IngestionPhase.CompletedAtUtc = DateTime.UtcNow;
+        await _reportingService.UpsertImportReportAsync(report, CancellationToken.None);
 
         // Act 4: Complete import
-        await _reportingService.CompleteImportAsync(importId, ImportStatus.Completed, null, CancellationToken.None);
+        report.Status = ImportStatus.Completed;
+        await _reportingService.UpsertImportReportAsync(report, CancellationToken.None);
 
         // Assert: Verify complete import report
         var importReport = await _reportingService.GetImportReportAsync(importId, CancellationToken.None);

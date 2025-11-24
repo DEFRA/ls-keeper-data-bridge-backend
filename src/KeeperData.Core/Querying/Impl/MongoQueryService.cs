@@ -16,6 +16,7 @@ public class MongoQueryService : IMongoQueryService
     private readonly IDataSetDefinitions _dataSetDefinitions;
     private readonly ILogger<MongoQueryService> _logger;
     private readonly HashSet<string> _validCollectionNames;
+    private readonly DocumentProjector _documentProjector;
 
     private const int MaxPageSize = 1000;
     private const int DefaultPageSize = 100;
@@ -34,12 +35,15 @@ public class MongoQueryService : IMongoQueryService
         _validCollectionNames = _dataSetDefinitions.All
             .Select(d => d.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        _documentProjector = new DocumentProjector();
     }
 
     public async Task<QueryResult> QueryAsync(
         string collectionName,
         string? filter = null,
         string? orderBy = null,
+        string? select = null,
         int? skip = null,
         int? top = null,
         bool count = true,
@@ -51,13 +55,14 @@ public class MongoQueryService : IMongoQueryService
         var sanitizedSkip = skip ?? 0;
 
         _logger.LogInformation(
-            "Executing query on collection '{CollectionName}' with filter='{Filter}', orderBy='{OrderBy}', skip={Skip}, top={Top}",
-            collectionName, filter ?? "none", orderBy ?? "none", sanitizedSkip, sanitizedTop);
+            "Executing query on collection '{CollectionName}' with filter='{Filter}', orderBy='{OrderBy}', select='{Select}', skip={Skip}, top={Top}",
+            collectionName, filter ?? "none", orderBy ?? "none", select ?? "none", sanitizedSkip, sanitizedTop);
 
         var collection = GetCollection(collectionName);
 
         var filterDefinition = BuildFilterDefinition(filter);
         var sortDefinition = BuildSortDefinition(orderBy);
+        var fieldsToSelect = ParseSelectExpression(select);
 
         var documents = await ExecuteQueryAsync(
             collection,
@@ -71,7 +76,7 @@ public class MongoQueryService : IMongoQueryService
             ? await GetTotalCountAsync(collection, filterDefinition, cancellationToken)
             : (long?)null;
 
-        var data = ConvertDocumentsToDictionaries(documents);
+        var data = _documentProjector.ProjectDocuments(documents, fieldsToSelect);
 
         _logger.LogInformation(
             "Query executed successfully on collection '{CollectionName}'. Returned {Count} records, TotalCount={TotalCount}",
@@ -87,6 +92,7 @@ public class MongoQueryService : IMongoQueryService
             Top = sanitizedTop,
             Filter = filter,
             OrderBy = orderBy,
+            Select = select,
             ExecutedAtUtc = DateTime.UtcNow
         };
     }
@@ -172,6 +178,25 @@ public class MongoQueryService : IMongoQueryService
         {
             _logger.LogError(ex, "Failed to parse orderBy: {OrderBy}", orderBy);
             throw new ArgumentException($"Invalid orderBy expression: {ex.Message}", nameof(orderBy), ex);
+        }
+    }
+
+    private IReadOnlyList<string>? ParseSelectExpression(string? select)
+    {
+        if (string.IsNullOrWhiteSpace(select))
+        {
+            return null;
+        }
+
+        try
+        {
+            var parser = new ODataSelectParser();
+            return parser.Parse(select);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to parse select: {Select}", select);
+            throw new ArgumentException($"Invalid select expression: {ex.Message}", nameof(select), ex);
         }
     }
 

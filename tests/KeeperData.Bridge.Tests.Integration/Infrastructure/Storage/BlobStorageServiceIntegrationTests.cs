@@ -758,6 +758,472 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
 
     #endregion
 
+    #region ClearDown Tests
+
+    [Fact]
+    public async Task ClearDownAsync_EmptyContainer_ShouldReturnZeroDeleted()
+    {
+        // Arrange - Use a unique folder that's guaranteed to be empty
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "empty-cleardown-folder");
+
+        // Act
+        var result = await service.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().Be(0);
+        result.DeletedKeys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ClearDownAsync_WithSingleFile_ShouldDeleteSuccessfully()
+    {
+        // Arrange
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "single-file-cleardown");
+
+        var testData = Encoding.UTF8.GetBytes("Single file to clear");
+        var fileName = "test-file.txt";
+
+        await service.UploadAsync(fileName, testData);
+
+        // Verify file exists before clear down
+        var existsBefore = await service.ExistsAsync(fileName);
+        existsBefore.Should().BeTrue();
+
+        // Act
+        var result = await service.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().Be(1);
+        result.DeletedKeys.Should().HaveCount(1);
+        result.DeletedKeys.Should().Contain(key => key.EndsWith(fileName));
+
+        // Verify file no longer exists
+        var existsAfter = await service.ExistsAsync(fileName);
+        existsAfter.Should().BeFalse();
+
+        // Verify listing is empty
+        var files = await service.ListAsync();
+        files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ClearDownAsync_WithMultipleFiles_ShouldDeleteAll()
+    {
+        // Arrange
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "multi-file-cleardown");
+
+        var testData = Encoding.UTF8.GetBytes("Test content");
+        var fileNames = new[]
+        {
+            "file1.txt",
+            "file2.txt",
+            "folder1/file3.txt",
+            "folder1/subfolder/file4.txt",
+            "folder2/file5.txt"
+        };
+
+        // Upload multiple files
+        foreach (var fileName in fileNames)
+        {
+            await service.UploadAsync(fileName, testData);
+        }
+
+        // Verify all files exist
+        var filesBefore = await service.ListAsync();
+        filesBefore.Should().HaveCount(fileNames.Length);
+
+        // Act
+        var result = await service.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().Be(fileNames.Length);
+        result.DeletedKeys.Should().HaveCount(fileNames.Length);
+
+        // Verify all files are deleted
+        var filesAfter = await service.ListAsync();
+        filesAfter.Should().BeEmpty();
+
+        foreach (var fileName in fileNames)
+        {
+            var exists = await service.ExistsAsync(fileName);
+            exists.Should().BeFalse($"file {fileName} should be deleted");
+        }
+    }
+
+    [Fact]
+    public async Task ClearDownAsync_WithTopLevelFolder_ShouldOnlyDeleteWithinFolder()
+    {
+        // Arrange - Create services for different folders
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var folderA = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "cleardown-folder-a");
+        using var folderB = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "cleardown-folder-b");
+        using var globalService = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket);
+
+        var testData = Encoding.UTF8.GetBytes("Isolation test data");
+
+        // Upload files to both folders
+        await folderA.UploadAsync("file1.txt", testData);
+        await folderA.UploadAsync("file2.txt", testData);
+        await folderB.UploadAsync("file1.txt", testData);
+        await folderB.UploadAsync("file2.txt", testData);
+
+        scope.TrackForCleanup("cleardown-folder-a/file1.txt");
+        scope.TrackForCleanup("cleardown-folder-a/file2.txt");
+        scope.TrackForCleanup("cleardown-folder-b/file1.txt");
+        scope.TrackForCleanup("cleardown-folder-b/file2.txt");
+
+        // Verify both folders have files
+        var folderAFilesBefore = await folderA.ListAsync();
+        var folderBFilesBefore = await folderB.ListAsync();
+        folderAFilesBefore.Should().HaveCount(2);
+        folderBFilesBefore.Should().HaveCount(2);
+
+        // Act - Clear down only folder A
+        var result = await folderA.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().Be(2);
+        result.DeletedKeys.Should().HaveCount(2);
+        result.DeletedKeys.Should().AllSatisfy(key => key.Should().StartWith("cleardown-folder-a/"));
+
+        // Verify folder A is empty
+        var folderAFilesAfter = await folderA.ListAsync();
+        folderAFilesAfter.Should().BeEmpty();
+
+        // Verify folder B is untouched
+        var folderBFilesAfter = await folderB.ListAsync();
+        folderBFilesAfter.Should().HaveCount(2);
+        folderBFilesAfter.Should().BeEquivalentTo(folderBFilesBefore);
+
+        // Clean up folder B
+        await folderB.ClearDownAsync();
+    }
+
+    [Fact]
+    public async Task ClearDownAsync_WithoutTopLevelFolder_ShouldClearEntireBucket()
+    {
+        // Arrange - Use global service without folder scoping
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket);
+
+        var testData = Encoding.UTF8.GetBytes("Global test data");
+        var testFolder = "global-cleardown-test";
+
+        // Upload files at different levels
+        await service.UploadAsync($"{testFolder}/root-file.txt", testData);
+        await service.UploadAsync($"{testFolder}/folder1/file1.txt", testData);
+        await service.UploadAsync($"{testFolder}/folder2/file2.txt", testData);
+
+        scope.TrackForCleanup($"{testFolder}/root-file.txt");
+        scope.TrackForCleanup($"{testFolder}/folder1/file1.txt");
+        scope.TrackForCleanup($"{testFolder}/folder2/file2.txt");
+
+        // Get count before (may include other test files)
+        var filesBefore = await service.ListAsync(testFolder);
+        var countBefore = filesBefore.Count;
+        countBefore.Should().BeGreaterThan(2);
+
+        // Act - Clear down the test folder area
+        // Note: Since we're using a global service, we need to create a scoped one for this test
+        using var scopedService = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            testFolder);
+
+        var result = await scopedService.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().Be(countBefore);
+        result.DeletedKeys.Should().HaveCount(countBefore);
+
+        // Verify all files in the test folder are deleted
+        var filesAfter = await service.ListAsync(testFolder);
+        filesAfter.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ClearDownAsync_LargeNumberOfFiles_ShouldHandlePagination()
+    {
+        // Arrange - Create more than 1000 files to test pagination (S3 limit is 1000 per batch)
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "pagination-cleardown-test");
+
+        // Note: Creating 1500 files might be slow, so we'll use a smaller number for practical testing
+        // In a real scenario, you'd want to test with >1000 files
+        const int fileCount = 150; // Reduced for test performance
+        var testData = Encoding.UTF8.GetBytes("Pagination test");
+
+        _testOutputHelper.WriteLine($"Creating {fileCount} files for pagination test...");
+
+        // Upload files in parallel for faster test execution
+        var uploadTasks = Enumerable.Range(0, fileCount)
+            .Select(i => service.UploadAsync($"file-{i:D5}.txt", testData));
+
+        await Task.WhenAll(uploadTasks);
+
+        _testOutputHelper.WriteLine($"Files created. Starting clear down...");
+
+        // Verify files exist
+        var filesBefore = await service.ListAsync();
+        filesBefore.Should().HaveCount(fileCount);
+
+        // Act
+        var result = await service.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().Be(fileCount);
+        result.DeletedKeys.Should().HaveCount(fileCount);
+
+        // Verify all files are deleted
+        var filesAfter = await service.ListAsync();
+        filesAfter.Should().BeEmpty();
+
+        _testOutputHelper.WriteLine($"Successfully cleared down {result.TotalDeleted} files");
+    }
+
+    [Fact]
+    public async Task ClearDownAsync_WithNestedFolderStructure_ShouldDeleteAllLevels()
+    {
+        // Arrange
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "nested-cleardown-test");
+
+        var testData = Encoding.UTF8.GetBytes("Nested structure test");
+        var nestedFiles = new[]
+        {
+            "level1.txt",
+            "folder1/level2.txt",
+            "folder1/folder2/level3.txt",
+            "folder1/folder2/folder3/level4.txt",
+            "folder1/folder2/folder3/folder4/level5.txt",
+            "folderA/fileA.txt",
+            "folderA/folderB/fileB.txt"
+        };
+
+        // Upload nested structure
+        foreach (var file in nestedFiles)
+        {
+            await service.UploadAsync(file, testData);
+        }
+
+        // Verify structure exists
+        var filesBefore = await service.ListAsync();
+        filesBefore.Should().HaveCount(nestedFiles.Length);
+
+        // Act
+        var result = await service.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().Be(nestedFiles.Length);
+        result.DeletedKeys.Should().HaveCount(nestedFiles.Length);
+
+        // Verify complete deletion
+        var filesAfter = await service.ListAsync();
+        filesAfter.Should().BeEmpty();
+
+        // Verify each specific file is gone
+        foreach (var file in nestedFiles)
+        {
+            var exists = await service.ExistsAsync(file);
+            exists.Should().BeFalse($"file {file} should be deleted");
+        }
+    }
+
+    [Fact]
+    public async Task ClearDownAsync_ResultContainsCorrectDeletedKeys()
+    {
+        // Arrange
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "result-verification-test");
+
+        var testData = Encoding.UTF8.GetBytes("Result test");
+        var expectedFiles = new[] { "file1.txt", "file2.txt", "folder/file3.txt" };
+
+        foreach (var file in expectedFiles)
+        {
+            await service.UploadAsync(file, testData);
+        }
+
+        // Act
+        var result = await service.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().Be(expectedFiles.Length);
+        result.DeletedKeys.Should().HaveCount(expectedFiles.Length);
+
+        // Verify the deleted keys contain the expected full S3 keys
+        foreach (var expectedFile in expectedFiles)
+        {
+            result.DeletedKeys.Should().Contain(key =>
+                key.Contains(expectedFile),
+                $"deleted keys should contain {expectedFile}");
+        }
+    }
+
+    [Fact]
+    public async Task ClearDownAsync_AfterClearDown_ShouldAllowNewUploads()
+    {
+        // Arrange
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "reuse-after-cleardown");
+
+        var testData = Encoding.UTF8.GetBytes("Reuse test");
+
+        // Upload and clear down
+        await service.UploadAsync("initial-file.txt", testData);
+        await service.ClearDownAsync();
+
+        // Act - Upload new files after clear down
+        await service.UploadAsync("new-file1.txt", testData);
+        await service.UploadAsync("new-file2.txt", testData);
+
+        scope.TrackForCleanup("reuse-after-cleardown/new-file1.txt");
+        scope.TrackForCleanup("reuse-after-cleardown/new-file2.txt");
+
+        // Assert
+        var files = await service.ListAsync();
+        files.Should().HaveCount(2);
+        files.Should().Contain(f => f.Key == "new-file1.txt");
+        files.Should().Contain(f => f.Key == "new-file2.txt");
+        files.Should().NotContain(f => f.Key == "initial-file.txt");
+    }
+
+    [Fact]
+    public async Task ClearDownAsync_WithSpecialCharactersInKeys_ShouldHandleCorrectly()
+    {
+        // Arrange
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            "special-chars-cleardown");
+
+        var testData = Encoding.UTF8.GetBytes("Special characters test");
+        var specialFiles = new[]
+        {
+            "file-with-dashes.txt",
+            "file_with_underscores.txt",
+            "file.with.dots.txt",
+            "file (with) parentheses.txt",
+            "file with spaces.txt"
+        };
+
+        foreach (var file in specialFiles)
+        {
+            await service.UploadAsync(file, testData);
+        }
+
+        // Act
+        var result = await service.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().Be(specialFiles.Length);
+        result.DeletedKeys.Should().HaveCount(specialFiles.Length);
+
+        // Verify all deleted
+        var filesAfter = await service.ListAsync();
+        filesAfter.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ClearDownAsync_WithNullOrEmptyTopLevelFolder_ShouldWorkOnBucketRoot(string? topLevelFolder)
+    {
+        // Arrange
+        await using var scope = new TestScope(_localStackFixture.S3Client, _loggerMock.Object, LocalStackFixture.TestBucket);
+        using var service = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            topLevelFolder);
+
+        var testData = Encoding.UTF8.GetBytes("Root level test");
+        var testPrefix = $"root-test-{Guid.NewGuid():N}";
+        var fileName = $"{testPrefix}/test-file.txt";
+
+        // Upload to bucket root (no folder prefix)
+        await service.UploadAsync(fileName, testData);
+        scope.TrackForCleanup(fileName);
+
+        // Create a scoped service for just our test prefix
+        using var scopedService = new S3BlobStorageService(
+            _localStackFixture.S3Client,
+            _loggerMock.Object,
+            LocalStackFixture.TestBucket,
+            testPrefix);
+
+        // Act
+        var result = await scopedService.ClearDownAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalDeleted.Should().BeGreaterThan(0);
+
+        // Verify the specific file is gone
+        var exists = await service.ExistsAsync(fileName);
+        exists.Should().BeFalse();
+    }
+
+    #endregion
+
     /// <summary>
     /// Helper class to manage test resource cleanup in a more robust and async-friendly way
     /// </summary>

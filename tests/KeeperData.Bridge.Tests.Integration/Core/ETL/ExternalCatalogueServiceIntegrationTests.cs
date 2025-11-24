@@ -75,9 +75,9 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         result.Should().NotBeNull();
         result.Definition.Should().Be(definition);
         result.Files.Should().HaveCount(1);
-        result.Files[0].Key.Should().Contain("LITP_SAMCPHHOLDING_20241015120000");
-        result.Files[0].Size.Should().Be(1); // Single space character
-        result.Files[0].Container.Should().Be(LocalStackFixture.TestBucket);
+        result.Files[0].StorageObject.Key.Should().Contain("LITP_SAMCPHHOLDING_20241015120000");
+        result.Files[0].StorageObject.Size.Should().Be(1); // Single space character
+        result.Files[0].StorageObject.Container.Should().Be(LocalStackFixture.TestBucket);
     }
 
     [Fact]
@@ -95,10 +95,10 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         result.Should().NotBeNull();
         result.Definition.Should().Be(definition);
         result.Files.Should().HaveCount(5); // 5 days inclusive
-        result.Files.Should().OnlyContain(f => f.Key.Contains("LITP_SAMCPHHOLDING_2024101"));
+        result.Files.Should().OnlyContain(f => f.StorageObject.Key.Contains("LITP_SAMCPHHOLDING_2024101"));
 
         // Verify all expected dates are present
-        var fileDates = result.Files.Select(f => ExtractDateFromFileName(f.Key)).OrderBy(d => d).ToArray();
+        var fileDates = result.Files.Select(f => ExtractDateFromFileName(f.StorageObject.Key)).OrderBy(d => d).ToArray();
         fileDates.Should().Equal("20241013", "20241014", "20241015", "20241016", "20241017");
     }
 
@@ -117,17 +117,17 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         result.Should().OnlyContain(fs => fs.Files.Length == 1);
 
         var samCphFileSet = result.First(fs => fs.Definition.Name == "sam_cph_holdings");
-        samCphFileSet.Files[0].Key.Should().Contain("LITP_SAMCPHHOLDING_20241015120000");
+        samCphFileSet.Files[0].StorageObject.Key.Should().Contain("LITP_SAMCPHHOLDING_20241015120000");
 
         var tradingFileSet = result.First(fs => fs.Definition.Name == "trading_data");
-        tradingFileSet.Files[0].Key.Should().Contain("LITP_TRADING_20241015120000");
+        tradingFileSet.Files[0].StorageObject.Key.Should().Contain("LITP_TRADING_20241015120000");
 
         var reportFileSet = result.First(fs => fs.Definition.Name == "daily_reports");
-        reportFileSet.Files[0].Key.Should().Contain("LITP_REPORTS_20241015120000");
+        reportFileSet.Files[0].StorageObject.Key.Should().Contain("LITP_REPORTS_20241015120000");
     }
 
     [Fact]
-    public async Task GetFileSetsAsync_DateRangeMultipleDefinitions_ShouldGroupByDefinitionAndOrderByLastModified()
+    public async Task GetFileSetsAsync_DateRangeMultipleDefinitions_ShouldGroupByDefinitionAndOrderByTimestamp()
     {
         // Arrange
         var fromDate = new DateOnly(2024, 10, 13);
@@ -144,10 +144,11 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         {
             fileSet.Files.Should().HaveCount(5); // 5 days inclusive
 
-            // Files should be ordered by LastModified descending (reverse chronological)
+            // Files should be ordered by Timestamp ascending (oldest to newest)
             for (int i = 0; i < fileSet.Files.Length - 1; i++)
             {
-                fileSet.Files[i].LastModified.Should().BeOnOrAfter(fileSet.Files[i + 1].LastModified);
+                fileSet.Files[i].Timestamp.Should().BeOnOrBefore(fileSet.Files[i + 1].Timestamp,
+                    $"File at index {i} should have Timestamp <= file at index {i + 1}");
             }
         }
 
@@ -167,7 +168,7 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         // Assert
         result.Should().HaveCount(3); // Three test definitions
         result.Should().OnlyContain(fs => fs.Files.Length == 1);
-        result.Should().OnlyContain(fs => fs.Files[0].Key.Contains("20241215120000"));
+        result.Should().OnlyContain(fs => fs.Files[0].StorageObject.Key.Contains("20241215120000"));
 
         // Verify all three dataset types are present
         var definitionNames = result.Select(fs => fs.Definition.Name).OrderBy(n => n).ToArray();
@@ -191,7 +192,7 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
             fileSet.Files.Should().HaveCount(5); // 5 days inclusive
 
             // Check date range - should contain files from 2024-12-11 to 2024-12-15
-            var dates = fileSet.Files.Select(f => ExtractDateFromFileName(f.Key)).OrderBy(d => d).ToArray();
+            var dates = fileSet.Files.Select(f => ExtractDateFromFileName(f.StorageObject.Key)).OrderBy(d => d).ToArray();
             dates.Should().Equal("20241211", "20241212", "20241213", "20241214", "20241215");
         }
     }
@@ -212,10 +213,10 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         foreach (var fileSet in result)
         {
             fileSet.Files.Should().HaveCount(5); // 5 days inclusive
-            fileSet.Files.Should().OnlyContain(f => f.Key.Contains("202411"));
+            fileSet.Files.Should().OnlyContain(f => f.StorageObject.Key.Contains("202411"));
 
             // Verify specific dates in range
-            var dates = fileSet.Files.Select(f => ExtractDateFromFileName(f.Key)).OrderBy(d => d).ToArray();
+            var dates = fileSet.Files.Select(f => ExtractDateFromFileName(f.StorageObject.Key)).OrderBy(d => d).ToArray();
             dates.Should().Equal("20241101", "20241102", "20241103", "20241104", "20241105");
         }
     }
@@ -232,7 +233,7 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         // Assert
         result.Should().HaveCount(3); // Three test definitions
         result.Should().OnlyContain(fs => fs.Files.Length == 1);
-        result.Should().OnlyContain(fs => fs.Files[0].Key.Contains("20241115120000"));
+        result.Should().OnlyContain(fs => fs.Files[0].StorageObject.Key.Contains("20241115120000"));
     }
 
     [Fact]
@@ -264,16 +265,16 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         result.Files.Should().HaveCount(1);
 
         var file = result.Files[0];
-        file.Container.Should().Be(LocalStackFixture.TestBucket);
-        file.Size.Should().Be(1); // Single space character
-        file.ETag.Should().NotBeNullOrEmpty();
-        file.StorageUri.Should().NotBeNull();
-        file.StorageUri.Scheme.Should().Be("s3");
-        file.LastModified.Should().BeAfter(DateTimeOffset.MinValue);
+        file.StorageObject.Container.Should().Be(LocalStackFixture.TestBucket);
+        file.StorageObject.Size.Should().Be(1); // Single space character
+        file.StorageObject.ETag.Should().NotBeNullOrEmpty();
+        file.StorageObject.StorageUri.Should().NotBeNull();
+        file.StorageObject.StorageUri.Scheme.Should().Be("s3");
+        file.StorageObject.LastModified.Should().BeAfter(DateTimeOffset.MinValue);
     }
 
     [Fact]
-    public async Task GetFileSetsAsync_FilesOrderedByLastModifiedDescending_ShouldBeInCorrectOrder()
+    public async Task GetFileSetsAsync_FilesOrderedByTimestampAscending_ShouldBeInCorrectOrder()
     {
         // Arrange
         var fromDate = new DateOnly(2024, 12, 10);
@@ -288,17 +289,17 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         var fileSet = result[0];
         fileSet.Files.Should().HaveCount(6); // 6 days inclusive
 
-        // Verify files are ordered by LastModified descending
+        // Verify files are ordered by Timestamp ascending (oldest to newest)
         for (int i = 0; i < fileSet.Files.Length - 1; i++)
         {
-            fileSet.Files[i].LastModified.Should().BeOnOrAfter(fileSet.Files[i + 1].LastModified,
-                $"File at index {i} should have LastModified >= file at index {i + 1}");
+            fileSet.Files[i].Timestamp.Should().BeOnOrBefore(fileSet.Files[i + 1].Timestamp,
+                $"File at index {i} should have Timestamp <= file at index {i + 1}");
         }
 
-        // Verify that we have all the expected dates (order may vary due to S3 timestamp behavior)
-        var dates = fileSet.Files.Select(f => ExtractDateFromFileName(f.Key)).OrderBy(d => d).ToArray();
+        // Verify that we have all the expected dates in chronological order
+        var dates = fileSet.Files.Select(f => ExtractDateFromFileName(f.StorageObject.Key)).ToArray();
         var expectedDates = new[] { "20241210", "20241211", "20241212", "20241213", "20241214", "20241215" };
-        dates.Should().Equal(expectedDates, "All expected dates should be present");
+        dates.Should().Equal(expectedDates, "Files should be ordered chronologically by extracted date");
     }
 
     private async Task SetupTestDataAsync()
@@ -442,9 +443,9 @@ public class TestDataSetDefinitions : IDataSetDefinitions
     public TestDataSetDefinitions()
     {
         // Use the datetime pattern as specified in the requirements (yyyyMMddHHmmss)
-        SamCPHHolding = new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMddHHmmss", ["CPH"], ChangeType.HeaderName, []);
-        TradingData = new DataSetDefinition("trading_data", "LITP_TRADING_{0}", "yyyyMMddHHmmss", ["TradeId"], ChangeType.HeaderName, []);
-        DailyReports = new DataSetDefinition("daily_reports", "LITP_REPORTS_{0}", "yyyyMMddHHmmss", ["ReportId"], ChangeType.HeaderName, []);
+        SamCPHHolding = new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", ["CPH"], ChangeType.HeaderName, [], "yyyyMMddHHmmss");
+        TradingData = new DataSetDefinition("trading_data", "LITP_TRADING_{0}", ["TradeId"], ChangeType.HeaderName, [], "yyyyMMddHHmmss");
+        DailyReports = new DataSetDefinition("daily_reports", "LITP_REPORTS_{0}", ["ReportId"], ChangeType.HeaderName, [], "yyyyMMddHHmmss");
 
         All = [SamCPHHolding, TradingData, DailyReports];
     }

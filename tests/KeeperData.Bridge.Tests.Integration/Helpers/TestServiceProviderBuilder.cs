@@ -1,12 +1,16 @@
 using Amazon.S3;
 using KeeperData.Core.Crypto;
 using KeeperData.Core.Database;
+using KeeperData.Core.Database.Configuration;
+using KeeperData.Core.Database.Resilience;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Querying.Abstract;
 using KeeperData.Core.Querying.Impl;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Impl;
+using KeeperData.Core.Reporting.Services;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Database.Configuration;
@@ -60,6 +64,11 @@ public static class TestServiceProviderBuilder
         services.AddSingleton<IOptions<IDatabaseConfig>>(Options.Create<IDatabaseConfig>(mongoConfig));
         services.AddSingleton(mongoClient);
 
+        var resilenceSection = configuration.GetSection("MongoResilience");
+        services.Configure<MongoResilienceConfig>(resilenceSection);
+
+        services.AddSingleton<ResilientMongoOperations>();
+
         services.AddSingleton<IDataSetDefinitions>(dataSetDefinitions);
 
         var storageConfig = new StorageConfiguration
@@ -100,8 +109,14 @@ public static class TestServiceProviderBuilder
         services.AddSingleton<IPasswordSaltService, PasswordSaltService>();
         services.AddSingleton<IAesCryptoTransform, AesCryptoTransform>();
 
+        // Register lineage services required by ImportReportingService
+        services.AddSingleton<ILineageIdGenerator, LineageIdGenerator>();
+        services.AddSingleton<ILineageMapper, LineageMapper>();
+        services.AddSingleton<ILineageIndexManagerFactory, LineageIndexManagerFactory>();
+
         services.AddScoped<IImportReportingService, ImportReportingService>();
 
+        services.AddTransient<CsvRowCounter>();
         services.AddTransient<IExternalCatalogueServiceFactory, ExternalCatalogueServiceFactory>();
 
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();

@@ -3,6 +3,7 @@ using KeeperData.Bridge.Utils;
 using KeeperData.Infrastructure.Telemetry.Logging;
 using Serilog;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
 var app = CreateWebApplication(args);
 await app.RunAsync();
@@ -52,6 +53,15 @@ static void ConfigureBuilder(WebApplicationBuilder builder)
         {
             options.Headers.Add(traceHeader);
         }
+    });
+
+    // Configure culture to en-GB
+    var supportedCultures = new[] { new CultureInfo("en-GB") };
+    builder.Services.Configure<RequestLocalizationOptions>(options =>
+    {
+        options.DefaultRequestCulture = new Microsoft.AspNetCore.Localization.RequestCulture("en-GB");
+        options.SupportedCultures = supportedCultures;
+        options.SupportedUICultures = supportedCultures;
     });
 
     builder.Services.ConfigureApi(builder.Configuration);

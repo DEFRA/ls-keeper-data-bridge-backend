@@ -37,7 +37,7 @@ public class MongoQueryServiceTests
 
         var definitions = new[]
         {
-            new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", "yyyyMMdd", ["CPH"], "CHANGETYPE", [])
+            new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", ["CPH"], "CHANGETYPE", [])
         };
         _dataSetDefinitionsMock.Setup(x => x.All).Returns(definitions.ToImmutableArray());
 
@@ -99,6 +99,7 @@ public class MongoQueryServiceTests
             "sam_cph_holdings",
             filter: null,
             orderBy: null,
+            select: null,
             skip: 0,
             top: 10,
             count: true,
@@ -123,6 +124,7 @@ public class MongoQueryServiceTests
                 "invalid_collection",
                 filter: null,
                 orderBy: null,
+                select: null,
                 skip: 0,
                 top: 10,
                 count: true,
@@ -138,6 +140,7 @@ public class MongoQueryServiceTests
                 "",
                 filter: null,
                 orderBy: null,
+                select: null,
                 skip: 0,
                 top: 10,
                 count: true,
@@ -176,6 +179,7 @@ public class MongoQueryServiceTests
             "sam_cph_holdings",
             filter: null,
             orderBy: null,
+            select: null,
             skip: 20,
             top: 10,
             count: true,
@@ -215,6 +219,7 @@ public class MongoQueryServiceTests
             "sam_cph_holdings",
             filter: null,
             orderBy: null,
+            select: null,
             skip: 0,
             top: 5000, // Greater than max of 1000
             count: true,
@@ -250,6 +255,7 @@ public class MongoQueryServiceTests
             "sam_cph_holdings",
             filter: null,
             orderBy: null,
+            select: null,
             skip: 0,
             top: 10,
             count: false,

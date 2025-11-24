@@ -1,6 +1,7 @@
 using Bogus;
 using CsvHelper;
 using CsvHelper.Configuration;
+using KeeperData.Core;
 using KeeperData.Core.ETL.Impl;
 using System.Globalization;
 
@@ -42,7 +43,7 @@ public class CsvDataGenerator
     {
         Directory.CreateDirectory(_options.OutputDirectory);
 
-        var timestamp = DateTime.Now.ToString(StandardDataSetDefinitionsBuilder.DateTimePattern);
+        var timestamp = DateTime.Now.ToString(EtlConstants.DateTimePattern);
         var filePrefix = string.Format(definition.FilePrefixFormat, timestamp);
 
         // Generate main file
@@ -63,6 +64,7 @@ public class CsvDataGenerator
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             HasHeaderRecord = true,
+            Delimiter = "|" // Use pipe delimiter to match production format
         };
 
         await using var writer = new StreamWriter(filePath);
@@ -83,7 +85,7 @@ public class CsvDataGenerator
             cancellationToken.ThrowIfCancellationRequested();
 
             var compositeKeyParts = GenerateCompositePrimaryKey(faker, definition.PrimaryKeyHeaderNames.Length);
-            var compositeKey = string.Join("__", compositeKeyParts);
+            var compositeKey = string.Join(EtlConstants.CompositeKeyDelimiter, compositeKeyParts);
             primaryKeys.Add(compositeKey);
 
             // Write primary key columns
@@ -116,6 +118,7 @@ public class CsvDataGenerator
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             HasHeaderRecord = true,
+            Delimiter = "|" // Use pipe delimiter to match production format
         };
 
         await using var writer = new StreamWriter(filePath);

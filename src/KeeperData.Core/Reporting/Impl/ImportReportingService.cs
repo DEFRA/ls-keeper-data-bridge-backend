@@ -1,6 +1,7 @@
 using KeeperData.Core.Database;
 using KeeperData.Core.Reporting.Domain;
 using KeeperData.Core.Reporting.Dtos;
+using KeeperData.Core.Reporting.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
@@ -12,18 +13,29 @@ public class ImportReportingService : IImportReportingService
     private readonly IMongoCollection<ImportReportDocument> _importReports;
     private readonly IMongoCollection<ImportFileDocument> _importFiles;
     private readonly IMongoCollection<RecordLineageDocument> _recordLineage;
+    private readonly IMongoCollection<LineageEventDocument> _recordLineageEvents;
+    private readonly ILineageIdGenerator _idGenerator;
+    private readonly ILineageMapper _mapper;
+    private readonly ILineageIndexManager _indexManager;
     private readonly ILogger<ImportReportingService> _logger;
 
     public ImportReportingService(
         IMongoClient mongoClient,
         IOptions<IDatabaseConfig> databaseConfig,
+        ILineageIdGenerator idGenerator,
+        ILineageMapper mapper,
+        ILineageIndexManagerFactory indexManagerFactory,
         ILogger<ImportReportingService> logger)
     {
         var database = mongoClient.GetDatabase(databaseConfig.Value.DatabaseName);
         _importReports = database.GetCollection<ImportReportDocument>("import_reports");
         _importFiles = database.GetCollection<ImportFileDocument>("import_files");
         _recordLineage = database.GetCollection<RecordLineageDocument>("record_lineage");
-        _logger = logger;
+        _recordLineageEvents = database.GetCollection<LineageEventDocument>("record_lineage_events");
+        _idGenerator = idGenerator ?? throw new ArgumentNullException(nameof(idGenerator));
+        _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+        _indexManager = indexManagerFactory?.Create(_recordLineageEvents) ?? throw new ArgumentNullException(nameof(indexManagerFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<ImportReport> StartImportAsync(Guid importId, string sourceType, CancellationToken ct)
@@ -58,107 +70,76 @@ public class ImportReportingService : IImportReportingService
         return MapToImportReport(document);
     }
 
-    public async Task UpdateAcquisitionPhaseAsync(Guid importId, AcquisitionPhaseUpdate update, CancellationToken ct)
+    public async Task UpsertImportReportAsync(ImportReport report, CancellationToken ct)
     {
-        _logger.LogDebug("Updating acquisition phase for ImportId: {ImportId}", importId);
+        _logger.LogDebug("Upserting import report for ImportId: {ImportId}", report.ImportId);
 
-        var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
-
-        // First, check if StartedAtUtc needs to be set
-        bool needsStartTime = false;
-        if (update.Status == PhaseStatus.Started)
+        var document = new ImportReportDocument
         {
-            var currentDoc = await _importReports.Find(filter).FirstOrDefaultAsync(ct);
-            needsStartTime = currentDoc?.AcquisitionPhase?.StartedAtUtc == null;
-        }
-
-        var updateBuilder = Builders<ImportReportDocument>.Update;
-
-        var updates = new List<UpdateDefinition<ImportReportDocument>>
-        {
-            updateBuilder.Set("AcquisitionPhase.Status", update.Status.ToString()),
-            updateBuilder.Set("AcquisitionPhase.FilesDiscovered", update.FilesDiscovered),
-            updateBuilder.Set("AcquisitionPhase.FilesProcessed", update.FilesProcessed),
-            updateBuilder.Set("AcquisitionPhase.FilesFailed", update.FilesFailed)
+            ImportId = report.ImportId,
+            SourceType = report.SourceType,
+            Status = report.Status.ToString(),
+            StartedAtUtc = report.StartedAtUtc,
+            CompletedAtUtc = report.CompletedAtUtc,
+            AcquisitionPhase = report.AcquisitionPhase != null ? new AcquisitionPhaseDocument
+            {
+                Status = report.AcquisitionPhase.Status.ToString(),
+                FilesDiscovered = report.AcquisitionPhase.FilesDiscovered,
+                FilesProcessed = report.AcquisitionPhase.FilesProcessed,
+                FilesFailed = report.AcquisitionPhase.FilesFailed,
+                FilesSkipped = report.AcquisitionPhase.FilesSkipped,
+                StartedAtUtc = report.AcquisitionPhase.StartedAtUtc,
+                CompletedAtUtc = report.AcquisitionPhase.CompletedAtUtc
+            } : null,
+            IngestionPhase = report.IngestionPhase != null ? new IngestionPhaseDocument
+            {
+                Status = report.IngestionPhase.Status.ToString(),
+                FilesProcessed = report.IngestionPhase.FilesProcessed,
+                FilesSkipped = report.IngestionPhase.FilesSkipped,
+                RecordsCreated = report.IngestionPhase.RecordsCreated,
+                RecordsUpdated = report.IngestionPhase.RecordsUpdated,
+                RecordsDeleted = report.IngestionPhase.RecordsDeleted,
+                StartedAtUtc = report.IngestionPhase.StartedAtUtc,
+                CompletedAtUtc = report.IngestionPhase.CompletedAtUtc,
+                CurrentFileStatus = report.IngestionPhase.CurrentFileStatus != null ? new IngestionCurrentFileStatusDocument
+                {
+                    FileName = report.IngestionPhase.CurrentFileStatus.FileName,
+                    TotalRows = report.IngestionPhase.CurrentFileStatus.TotalRows,
+                    RowNumber = report.IngestionPhase.CurrentFileStatus.RowNumber,
+                    PercentageCompleted = report.IngestionPhase.CurrentFileStatus.PercentageCompleted,
+                    RowsPerMinute = report.IngestionPhase.CurrentFileStatus.RowsPerMinute,
+                    EstimatedTimeRemaining = report.IngestionPhase.CurrentFileStatus.EstimatedTimeRemaining,
+                    EstimatedCompletionUtc = report.IngestionPhase.CurrentFileStatus.EstimatedCompletionUtc
+                } : null
+            } : null,
+            Error = report.Error
         };
 
-        if (needsStartTime)
-        {
-            updates.Add(updateBuilder.Set("AcquisitionPhase.StartedAtUtc", DateTime.UtcNow));
-        }
+        var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, report.ImportId);
+        var options = new ReplaceOptions { IsUpsert = true };
 
-        if (update.CompletedAtUtc.HasValue)
-        {
-            updates.Add(updateBuilder.Set("AcquisitionPhase.CompletedAtUtc", update.CompletedAtUtc.Value));
-        }
-
-        var combinedUpdate = updateBuilder.Combine(updates);
-        await _importReports.UpdateOneAsync(filter, combinedUpdate, cancellationToken: ct);
+        await _importReports.ReplaceOneAsync(filter, document, options, cancellationToken: ct);
     }
 
-    public async Task UpdateIngestionPhaseAsync(Guid importId, IngestionPhaseUpdate update, CancellationToken ct)
-    {
-        _logger.LogDebug("Updating ingestion phase for ImportId: {ImportId}", importId);
-
-        var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
-
-        // First, check if StartedAtUtc needs to be set
-        bool needsStartTime = false;
-        if (update.Status == PhaseStatus.Started)
-        {
-            var currentDoc = await _importReports.Find(filter).FirstOrDefaultAsync(ct);
-            needsStartTime = currentDoc?.IngestionPhase?.StartedAtUtc == null;
-        }
-
-        var updateBuilder = Builders<ImportReportDocument>.Update;
-
-        var updates = new List<UpdateDefinition<ImportReportDocument>>
-        {
-            updateBuilder.Set("IngestionPhase.Status", update.Status.ToString()),
-            updateBuilder.Set("IngestionPhase.FilesProcessed", update.FilesProcessed),
-            updateBuilder.Set("IngestionPhase.RecordsCreated", update.RecordsCreated),
-            updateBuilder.Set("IngestionPhase.RecordsUpdated", update.RecordsUpdated),
-            updateBuilder.Set("IngestionPhase.RecordsDeleted", update.RecordsDeleted)
-        };
-
-        if (needsStartTime)
-        {
-            updates.Add(updateBuilder.Set("IngestionPhase.StartedAtUtc", DateTime.UtcNow));
-        }
-
-        if (update.CompletedAtUtc.HasValue)
-        {
-            updates.Add(updateBuilder.Set("IngestionPhase.CompletedAtUtc", update.CompletedAtUtc.Value));
-        }
-
-        var combinedUpdate = updateBuilder.Combine(updates);
-        await _importReports.UpdateOneAsync(filter, combinedUpdate, cancellationToken: ct);
-    }
-
-    public async Task CompleteImportAsync(Guid importId, ImportStatus status, string? error, CancellationToken ct)
-    {
-        _logger.LogInformation("Completing import report for ImportId: {ImportId}, Status: {Status}", importId, status);
-
-        var filter = Builders<ImportReportDocument>.Filter.Eq(x => x.ImportId, importId);
-        var updateBuilder = Builders<ImportReportDocument>.Update
-            .Set(x => x.Status, status.ToString())
-            .Set(x => x.CompletedAtUtc, DateTime.UtcNow);
-
-        if (!string.IsNullOrWhiteSpace(error))
-        {
-            updateBuilder = updateBuilder.Set(x => x.Error, error);
-        }
-
-        await _importReports.UpdateOneAsync(filter, updateBuilder, cancellationToken: ct);
-    }
-
-    public async Task<bool> IsFileProcessedAsync(string fileKey, string md5Hash, CancellationToken ct)
+    public async Task<bool> IsFileProcessedAsync(string fileKey, string etag, CancellationToken ct)
     {
         var filter = Builders<ImportFileDocument>.Filter.And(
             Builders<ImportFileDocument>.Filter.Eq(x => x.FileKey, fileKey),
-            Builders<ImportFileDocument>.Filter.Eq(x => x.Md5Hash, md5Hash),
+            Builders<ImportFileDocument>.Filter.Eq(x => x.ETag, etag),
             Builders<ImportFileDocument>.Filter.In(x => x.Status,
                 new[] { FileProcessingStatus.Acquired.ToString(), FileProcessingStatus.Ingested.ToString() })
+        );
+
+        var count = await _importFiles.CountDocumentsAsync(filter, cancellationToken: ct);
+        return count > 0;
+    }
+
+    public async Task<bool> IsFileIngestedAsync(string fileKey, string etag, CancellationToken ct)
+    {
+        var filter = Builders<ImportFileDocument>.Filter.And(
+            Builders<ImportFileDocument>.Filter.Eq(x => x.FileKey, fileKey),
+            Builders<ImportFileDocument>.Filter.Eq(x => x.ETag, etag),
+            Builders<ImportFileDocument>.Filter.Eq(x => x.Status, FileProcessingStatus.Ingested.ToString())
         );
 
         var count = await _importFiles.CountDocumentsAsync(filter, cancellationToken: ct);
@@ -175,7 +156,7 @@ public class ImportReportingService : IImportReportingService
             FileName = record.FileName,
             FileKey = record.FileKey,
             DatasetName = record.DatasetName,
-            Md5Hash = record.Md5Hash,
+            ETag = record.ETag,
             FileSize = record.FileSize,
             Status = record.Status.ToString(),
             AcquisitionDetails = new FileAcquisitionDetailsDocument
@@ -234,44 +215,81 @@ public class ImportReportingService : IImportReportingService
 
         _logger.LogDebug("Recording {Count} lineage events", eventsList.Count);
 
-        var bulkOps = new List<WriteModel<RecordLineageDocument>>();
+        // Ensure indexes exist (idempotent, fast after first call)
+        await _indexManager.EnsureIndexesAsync(ct);
 
-        foreach (var lineageEvent in eventsList)
+        // Group events by lineage document ID for efficient parent upserts
+        var groupedEvents = eventsList.GroupBy(e =>
+            _idGenerator.GenerateLineageDocumentId(e.CollectionName, e.RecordId));
+
+        var parentUpserts = new List<WriteModel<RecordLineageDocument>>();
+        var eventInserts = new List<LineageEventDocument>();
+
+        foreach (var group in groupedEvents)
         {
-            var filter = Builders<RecordLineageDocument>.Filter.And(
-                Builders<RecordLineageDocument>.Filter.Eq(x => x.RecordId, lineageEvent.RecordId),
-                Builders<RecordLineageDocument>.Filter.Eq(x => x.CollectionName, lineageEvent.CollectionName)
-            );
+            var lineageDocId = group.Key;
+            var latestEvent = group.OrderByDescending(e => e.EventDateUtc).First();
 
-            var eventDoc = new LineageEventDocument
+            // Prepare parent document upsert
+            parentUpserts.Add(CreateParentUpsert(lineageDocId, latestEvent));
+
+            // Prepare event documents
+            foreach (var evt in group)
             {
-                EventType = lineageEvent.EventType.ToString(),
-                ImportId = lineageEvent.ImportId,
-                FileKey = lineageEvent.FileKey,
-                EventDateUtc = lineageEvent.EventDateUtc,
-                ChangeType = lineageEvent.ChangeType,
-                PreviousValues = lineageEvent.PreviousValues,
-                NewValues = lineageEvent.NewValues
-            };
+                var eventId = _idGenerator.GenerateLineageEventId(
+                    evt.CollectionName,
+                    evt.RecordId,
+                    evt.EventDateUtc);
 
-            var currentStatus = lineageEvent.EventType == RecordEventType.Deleted ? "Deleted" : "Active";
-
-            var update = Builders<RecordLineageDocument>.Update
-                .Push(x => x.Events, eventDoc)
-                .Set(x => x.CurrentStatus, currentStatus)
-                .Set(x => x.LastModifiedByImport, lineageEvent.ImportId)
-                .Set(x => x.LastModifiedAtUtc, lineageEvent.EventDateUtc)
-                .SetOnInsert(x => x.RecordId, lineageEvent.RecordId)
-                .SetOnInsert(x => x.CollectionName, lineageEvent.CollectionName)
-                .SetOnInsert(x => x.CreatedByImport, lineageEvent.ImportId)
-                .SetOnInsert(x => x.CreatedAtUtc, lineageEvent.EventDateUtc);
-
-            bulkOps.Add(new UpdateOneModel<RecordLineageDocument>(filter, update) { IsUpsert = true });
+                eventInserts.Add(_mapper.MapToEventDocument(evt, eventId, lineageDocId));
+            }
         }
 
-        if (bulkOps.Count > 0)
+        // Execute bulk operations
+        await ExecuteBulkOperationsAsync(parentUpserts, eventInserts, ct);
+    }
+
+    private WriteModel<RecordLineageDocument> CreateParentUpsert(
+        string lineageDocId,
+        RecordLineageEvent latestEvent)
+    {
+        var filter = Builders<RecordLineageDocument>.Filter.Eq(x => x.Id, lineageDocId);
+        var currentStatus = latestEvent.EventType == RecordEventType.Deleted ? "Deleted" : "Active";
+
+        var update = Builders<RecordLineageDocument>.Update
+            .Set(x => x.CurrentStatus, currentStatus)
+            .Set(x => x.LastModifiedByImport, latestEvent.ImportId)
+            .Set(x => x.LastModifiedAtUtc, latestEvent.EventDateUtc)
+            .SetOnInsert(x => x.Id, lineageDocId)
+            .SetOnInsert(x => x.RecordId, latestEvent.RecordId)
+            .SetOnInsert(x => x.CollectionName, latestEvent.CollectionName)
+            .SetOnInsert(x => x.CreatedByImport, latestEvent.ImportId)
+            .SetOnInsert(x => x.CreatedAtUtc, latestEvent.EventDateUtc);
+
+        return new UpdateOneModel<RecordLineageDocument>(filter, update) { IsUpsert = true };
+    }
+
+    private async Task ExecuteBulkOperationsAsync(
+        List<WriteModel<RecordLineageDocument>> parentUpserts,
+        List<LineageEventDocument> eventInserts,
+        CancellationToken ct)
+    {
+        // Execute parent upserts
+        if (parentUpserts.Count > 0)
         {
-            await _recordLineage.BulkWriteAsync(bulkOps, new BulkWriteOptions { IsOrdered = false }, ct);
+            await _recordLineage.BulkWriteAsync(
+                parentUpserts,
+                new BulkWriteOptions { IsOrdered = false },
+                ct);
+        }
+
+        // Execute event inserts
+        if (eventInserts.Count > 0)
+        {
+            await _recordLineageEvents.InsertManyAsync(
+                eventInserts,
+                new InsertManyOptions { IsOrdered = false },
+                ct);
         }
     }
 
@@ -293,14 +311,23 @@ public class ImportReportingService : IImportReportingService
 
     public async Task<RecordLifecycle?> GetRecordLifecycleAsync(string collectionName, string recordId, CancellationToken ct)
     {
-        var filter = Builders<RecordLineageDocument>.Filter.And(
-            Builders<RecordLineageDocument>.Filter.Eq(x => x.RecordId, recordId),
-            Builders<RecordLineageDocument>.Filter.Eq(x => x.CollectionName, collectionName)
-        );
+        var lineageDocId = _idGenerator.GenerateLineageDocumentId(collectionName, recordId);
 
-        var document = await _recordLineage.Find(filter).FirstOrDefaultAsync(ct);
+        // Get parent document (O(1) direct lookup by composite _id)
+        var parentFilter = Builders<RecordLineageDocument>.Filter.Eq(x => x.Id, lineageDocId);
+        var parentDoc = await _recordLineage.Find(parentFilter).FirstOrDefaultAsync(ct);
 
-        return document != null ? MapToRecordLifecycle(document) : null;
+        if (parentDoc == null) return null;
+
+        // Get all events for this record (efficiently indexed query)
+        var eventsFilter = Builders<LineageEventDocument>.Filter.Eq(x => x.LineageDocumentId, lineageDocId);
+        var eventsSort = Builders<LineageEventDocument>.Sort.Ascending(x => x.Id); // Chronological by design
+        var events = await _recordLineageEvents
+            .Find(eventsFilter)
+            .Sort(eventsSort)
+            .ToListAsync(ct);
+
+        return _mapper.MapToRecordLifecycle(parentDoc, events);
     }
 
     public async Task<IReadOnlyList<RecordLineageEvent>> GetRecordLineageAsync(string collectionName, string recordId, CancellationToken ct)
@@ -323,6 +350,59 @@ public class ImportReportingService : IImportReportingService
         return documents.Select(MapToImportSummary).ToList();
     }
 
+    public async Task<PaginatedLineageEvents> GetRecordLineageEventsPaginatedAsync(
+        string collectionName,
+        string recordId,
+        int skip = 0,
+        int top = 10,
+        CancellationToken ct = default)
+    {
+        _logger.LogDebug("Getting paginated lineage events for {CollectionName}/{RecordId} with skip: {Skip}, top: {Top}",
+            collectionName, recordId, skip, top);
+
+        var lineageDocId = _idGenerator.GenerateLineageDocumentId(collectionName, recordId);
+
+        // Get parent document (O(1) direct lookup by composite _id)
+        var parentFilter = Builders<RecordLineageDocument>.Filter.Eq(x => x.Id, lineageDocId);
+        var parentDoc = await _recordLineage.Find(parentFilter).FirstOrDefaultAsync(ct);
+
+        if (parentDoc == null)
+        {
+            throw new KeyNotFoundException($"No lineage found for record {recordId} in collection {collectionName}");
+        }
+
+        // Get total count of events
+        var eventsFilter = Builders<LineageEventDocument>.Filter.Eq(x => x.LineageDocumentId, lineageDocId);
+        var totalEvents = await _recordLineageEvents.CountDocumentsAsync(eventsFilter, cancellationToken: ct);
+
+        // Get paginated events (efficiently indexed query)
+        var eventsSort = Builders<LineageEventDocument>.Sort.Ascending(x => x.Id); // Chronological by design
+        var events = await _recordLineageEvents
+            .Find(eventsFilter)
+            .Sort(eventsSort)
+            .Skip(skip)
+            .Limit(top)
+            .ToListAsync(ct);
+
+        var mappedEvents = events.Select(e => _mapper.MapToLineageEvent(e, parentDoc.RecordId, parentDoc.CollectionName)).ToList();
+
+        return new PaginatedLineageEvents
+        {
+            RecordId = parentDoc.RecordId,
+            CollectionName = parentDoc.CollectionName,
+            CurrentStatus = parentDoc.CurrentStatus,
+            TotalEvents = (int)totalEvents,
+            Skip = skip,
+            Top = top,
+            Count = mappedEvents.Count,
+            Events = mappedEvents,
+            CreatedAtUtc = parentDoc.CreatedAtUtc,
+            LastModifiedAtUtc = parentDoc.LastModifiedAtUtc,
+            CreatedByImport = parentDoc.CreatedByImport,
+            LastModifiedByImport = parentDoc.LastModifiedByImport
+        };
+    }
+
     private static ImportReport MapToImportReport(ImportReportDocument doc)
     {
         return new ImportReport
@@ -338,6 +418,7 @@ public class ImportReportingService : IImportReportingService
                 FilesDiscovered = doc.AcquisitionPhase.FilesDiscovered,
                 FilesProcessed = doc.AcquisitionPhase.FilesProcessed,
                 FilesFailed = doc.AcquisitionPhase.FilesFailed,
+                FilesSkipped = doc.AcquisitionPhase.FilesSkipped,
                 StartedAtUtc = doc.AcquisitionPhase.StartedAtUtc,
                 CompletedAtUtc = doc.AcquisitionPhase.CompletedAtUtc
             } : null,
@@ -348,8 +429,19 @@ public class ImportReportingService : IImportReportingService
                 RecordsCreated = doc.IngestionPhase.RecordsCreated,
                 RecordsUpdated = doc.IngestionPhase.RecordsUpdated,
                 RecordsDeleted = doc.IngestionPhase.RecordsDeleted,
+                FilesSkipped = doc.IngestionPhase.FilesSkipped,
                 StartedAtUtc = doc.IngestionPhase.StartedAtUtc,
-                CompletedAtUtc = doc.IngestionPhase.CompletedAtUtc
+                CompletedAtUtc = doc.IngestionPhase.CompletedAtUtc,
+                CurrentFileStatus = doc.IngestionPhase.CurrentFileStatus != null ? new IngestionCurrentFileStatus
+                {
+                    FileName = doc.IngestionPhase.CurrentFileStatus.FileName,
+                    TotalRows = doc.IngestionPhase.CurrentFileStatus.TotalRows,
+                    RowNumber = doc.IngestionPhase.CurrentFileStatus.RowNumber,
+                    PercentageCompleted = doc.IngestionPhase.CurrentFileStatus.PercentageCompleted,
+                    RowsPerMinute = doc.IngestionPhase.CurrentFileStatus.RowsPerMinute,
+                    EstimatedTimeRemaining = doc.IngestionPhase.CurrentFileStatus.EstimatedTimeRemaining,
+                    EstimatedCompletionUtc = doc.IngestionPhase.CurrentFileStatus.EstimatedCompletionUtc
+                } : null
             } : null,
             Error = doc.Error
         };
@@ -363,7 +455,7 @@ public class ImportReportingService : IImportReportingService
             FileName = doc.FileName,
             FileKey = doc.FileKey,
             DatasetName = doc.DatasetName,
-            Md5Hash = doc.Md5Hash,
+            ETag = doc.ETag,
             FileSize = doc.FileSize,
             Status = Enum.Parse<FileProcessingStatus>(doc.Status),
             Acquisition = doc.AcquisitionDetails != null ? new AcquisitionDetails
@@ -382,32 +474,6 @@ public class ImportReportingService : IImportReportingService
                 IngestionDurationMs = doc.IngestionDetails.IngestionDurationMs
             } : null,
             Error = doc.Error
-        };
-    }
-
-    private static RecordLifecycle MapToRecordLifecycle(RecordLineageDocument doc)
-    {
-        return new RecordLifecycle
-        {
-            RecordId = doc.RecordId,
-            CollectionName = doc.CollectionName,
-            CurrentStatus = doc.CurrentStatus,
-            CreatedByImport = doc.CreatedByImport,
-            LastModifiedByImport = doc.LastModifiedByImport,
-            CreatedAtUtc = doc.CreatedAtUtc,
-            LastModifiedAtUtc = doc.LastModifiedAtUtc,
-            Events = doc.Events.Select(e => new RecordLineageEvent
-            {
-                RecordId = doc.RecordId,
-                CollectionName = doc.CollectionName,
-                EventType = Enum.Parse<RecordEventType>(e.EventType),
-                ImportId = e.ImportId,
-                FileKey = e.FileKey,
-                EventDateUtc = e.EventDateUtc,
-                ChangeType = e.ChangeType,
-                PreviousValues = e.PreviousValues,
-                NewValues = e.NewValues
-            }).ToList()
         };
     }
 

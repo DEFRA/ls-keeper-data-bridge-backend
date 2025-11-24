@@ -7,7 +7,6 @@ using KeeperData.Core.Storage.Dtos;
 using Microsoft.Extensions.Logging;
 using System.Collections.Immutable;
 using System.Diagnostics;
-using System.Security.Cryptography;
 
 namespace KeeperData.Core.ETL.Impl;
 
@@ -21,39 +20,41 @@ public class AcquisitionPipeline(
 {
     private const string MimeTypeTextCsv = "text/csv";
 
-    public async Task StartAsync(Guid importId, string sourceType, CancellationToken ct)
+    public async Task StartAsync(ImportReport report, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
-        logger.LogInformation("Starting import pipeline for ImportId: {ImportId}, SourceType: {SourceType}", importId, sourceType);
+        logger.LogInformation("Starting import pipeline for ImportId: {ImportId}, SourceType: {SourceType}", report.ImportId, report.SourceType);
 
         try
         {
-            var storageServices = InitializeStorageServices(importId, sourceType);
+            var storageServices = InitializeStorageServices(report.ImportId, report.SourceType);
 
-            var fileSets = await DiscoverFilesAsync(importId, storageServices.ExternalCatalogueService, ct);
+            var (fileSets, totalFiles) = await DiscoverFilesAsync(report.ImportId, storageServices.ExternalCatalogueService, ct);
 
-            await UpdateAcquisitionPhaseStartedAsync(importId, fileSets.TotalFiles, ct);
+            // Update acquisition phase to Started
+            report.AcquisitionPhase!.Status = PhaseStatus.Started;
+            report.AcquisitionPhase!.FilesDiscovered = totalFiles;
+            report.AcquisitionPhase!.StartedAtUtc = DateTime.UtcNow;
+            await reportingService.UpsertImportReportAsync(report, ct);
 
-            var processingResults = await ProcessAllFilesAsync(
-                importId,
-                fileSets.FileSets,
-                fileSets.TotalFiles,
-                storageServices.SourceBlobs,
-                storageServices.DestinationBlobs,
-                ct);
+            var (processedCount, skippedCount) = await ProcessAllFilesAsync(report, fileSets, totalFiles,
+                storageServices.SourceBlobs, storageServices.DestinationBlobs, ct);
 
-            await UpdateAcquisitionPhaseCompletedAsync(
-                importId,
-                fileSets.TotalFiles,
-                processingResults.ProcessedCount,
-                processingResults.FailedCount,
-                ct);
+            report.AcquisitionPhase!.Status = PhaseStatus.Completed;
+            report.AcquisitionPhase!.FilesProcessed = processedCount;
+            report.AcquisitionPhase!.FilesSkipped = skippedCount;
+            report.AcquisitionPhase!.CompletedAtUtc = DateTime.UtcNow;
+            await reportingService.UpsertImportReportAsync(report, ct);
 
-            LogPipelineCompletion(importId, stopwatch);
+            LogPipelineCompletion(report.ImportId, stopwatch);
         }
         catch (Exception ex)
         {
-            LogPipelineFailure(importId, stopwatch, ex);
+            report.AcquisitionPhase!.Status = PhaseStatus.Failed;
+            report.AcquisitionPhase!.CompletedAtUtc = DateTime.UtcNow;
+            await reportingService.UpsertImportReportAsync(report, ct);
+
+            LogPipelineFailure(report.ImportId, stopwatch, ex);
             throw;
         }
     }
@@ -70,14 +71,11 @@ public class AcquisitionPipeline(
         return (sourceBlobs, catalogueService, destinationBlobs);
     }
 
-    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(
-        Guid importId,
-        IExternalCatalogueService catalogueService,
-        CancellationToken ct)
+    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(Guid importId, IExternalCatalogueService catalogueService, CancellationToken ct)
     {
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
 
-        var fileSets = await catalogueService.GetFileSetsAsync(20, ct);
+        var fileSets = await catalogueService.GetFileSetsAsync(EtlConstants.DefaultLookbackDays, ct);
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
 
         logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}",
@@ -88,119 +86,92 @@ public class AcquisitionPipeline(
         return (fileSets, totalFiles);
     }
 
-    private async Task UpdateAcquisitionPhaseStartedAsync(Guid importId, int totalFiles, CancellationToken ct)
+    private async Task<(int ProcessedCount, int SkippedFileCount)> ProcessAllFilesAsync(ImportReport report, ImmutableList<FileSet> fileSets,
+        int totalFiles, IBlobStorageServiceReadOnly sourceBlobs, IBlobStorageService destinationBlobs, CancellationToken ct)
     {
-        await reportingService.UpdateAcquisitionPhaseAsync(importId, new AcquisitionPhaseUpdate
-        {
-            Status = PhaseStatus.Started,
-            FilesDiscovered = totalFiles,
-            FilesProcessed = 0,
-            FilesFailed = 0
-        }, ct);
-    }
-
-    private async Task<(int ProcessedCount, int FailedCount)> ProcessAllFilesAsync(
-        Guid importId,
-        ImmutableList<FileSet> fileSets,
-        int totalFiles,
-        IBlobStorageServiceReadOnly sourceBlobs,
-        IBlobStorageService destinationBlobs,
-        CancellationToken ct)
-    {
-        logger.LogInformation("Step 2: Processing and decrypting files for ImportId: {ImportId}", importId);
+        logger.LogInformation("Step 2: Processing and decrypting files for ImportId: {ImportId}", report.ImportId);
 
         var processedFileCount = 0;
-        var failedFileCount = 0;
+        var skippedFileCount = 0;
 
         foreach (var fileSet in fileSets)
         {
             logger.LogDebug("Processing file set for definition: {DefinitionName} with {FileCount} file(s) for ImportId: {ImportId}",
-                fileSet.Definition.Name,
-                fileSet.Files.Length,
-                importId);
+                fileSet.Definition.Name, fileSet.Files.Length, report.ImportId);
 
             foreach (var file in fileSet.Files)
             {
                 processedFileCount++;
 
-                var result = await ProcessSingleFileAsync(
-                    importId,
-                    fileSet,
-                    file,
-                    processedFileCount,
-                    totalFiles,
-                    sourceBlobs,
-                    destinationBlobs,
-                    ct);
+                var result = await ProcessSingleFileAsync(report.ImportId, fileSet, file, processedFileCount, totalFiles, sourceBlobs, destinationBlobs, ct);
 
-                if (!result)
+                if (result == ProcessSingleFileResult.Skipped)
                 {
-                    failedFileCount++;
+                    skippedFileCount++;
                 }
             }
         }
 
         logger.LogInformation("Step 2 completed: Processed {ProcessedFileCount} file(s) for ImportId: {ImportId}",
             processedFileCount,
-            importId);
+            report.ImportId);
 
-        return (processedFileCount, failedFileCount);
+        return (processedFileCount, skippedFileCount);
     }
 
-    private async Task<bool> ProcessSingleFileAsync(
-        Guid importId,
-        FileSet fileSet,
-        StorageObjectInfo file,
-        int currentFileNumber,
-        int totalFiles,
-        IBlobStorageServiceReadOnly sourceBlobs,
-        IBlobStorageService destinationBlobs,
-        CancellationToken ct)
+    private enum ProcessSingleFileResult
+    {
+        Skipped,
+        Processed,
+    }
+
+    private async Task<ProcessSingleFileResult> ProcessSingleFileAsync(Guid importId, FileSet fileSet, EtlFile file, int currentFileNumber, int totalFiles,
+        IBlobStorageServiceReadOnly sourceBlobs, IBlobStorageService destinationBlobs, CancellationToken ct)
     {
         var fileStopwatch = Stopwatch.StartNew();
 
-        logger.LogInformation("Processing file {CurrentFile}/{TotalFiles}: {FileKey} for ImportId: {ImportId}",
-            currentFileNumber,
-            totalFiles,
-            file.Key,
-            importId);
+        logger.LogInformation("Processing file {CurrentFile}/{TotalFiles}: {FileKey} for ImportId: {ImportId}", currentFileNumber,
+            totalFiles, file.StorageObject.Key, importId);
 
         try
         {
-            var fileContext = await PrepareFileContextAsync(file, sourceBlobs, destinationBlobs, ct);
+            var fileContext = await PrepareFileContextAsync(file, sourceBlobs, ct);
 
             var transferDecision = await DetermineFileTransferRequirementAsync(
-                file.Key,
+                file.StorageObject.Key,
                 fileContext.EncryptedMetadata.ContentLength,
+                fileContext.SourceETag,
                 destinationBlobs,
                 importId,
                 ct);
 
-            var acquisitionResult = await AcquireFileAsync(
-                fileContext,
-                transferDecision,
-                destinationBlobs,
-                ct);
+            // Early return for skipped files WITHOUT recording acquisition
+            if (transferDecision.ShouldSkip)
+            {
+                fileStopwatch.Stop();
+                logger.LogInformation("Skipped file {FileKey} - already acquired in previous import (Duration: {Duration}ms) for ImportId: {ImportId}",
+                    file.StorageObject.Key,
+                    fileStopwatch.ElapsedMilliseconds,
+                    importId);
+
+                return ProcessSingleFileResult.Skipped;
+            }
+
+            // File needs to be acquired
+            var acquisitionResult = await AcquireFileAsync(fileContext, transferDecision, destinationBlobs, ct);
 
             fileStopwatch.Stop();
 
-            await CheckForDuplicateProcessingAsync(file.Key, acquisitionResult.Md5Hash, importId, ct);
+            // Only record acquisition for files that were actually transferred
+            await RecordSuccessfulAcquisitionAsync(importId, fileSet, file, acquisitionResult, fileStopwatch.ElapsedMilliseconds, ct);
 
-            await RecordSuccessfulAcquisitionAsync(
-                importId,
-                fileSet,
-                file,
-                acquisitionResult,
-                fileStopwatch.ElapsedMilliseconds,
-                ct);
-
-            return true;
+            return ProcessSingleFileResult.Processed;
         }
         catch (Exception ex)
         {
             fileStopwatch.Stop();
             logger.LogError(ex, "Failed to process file: {FileKey} after {Duration}ms for ImportId: {ImportId}",
-                file.Key,
+                file.StorageObject.Key,
                 fileStopwatch.ElapsedMilliseconds,
                 importId);
 
@@ -210,31 +181,25 @@ public class AcquisitionPipeline(
         }
     }
 
-    private async Task<FileContext> PrepareFileContextAsync(
-        StorageObjectInfo file,
-        IBlobStorageServiceReadOnly sourceBlobs,
-        IBlobStorageService destinationBlobs,
-        CancellationToken ct)
+    private async Task<FileContext> PrepareFileContextAsync(EtlFile file, IBlobStorageServiceReadOnly sourceBlobs, CancellationToken ct)
     {
-        var encryptedStream = await sourceBlobs.OpenReadAsync(file.Key, ct);
-        var encryptedMetadata = await sourceBlobs.GetMetadataAsync(file.Key, ct);
-        var credentials = passwordSalt.Get(file.Key);
+        var encryptedStream = await sourceBlobs.OpenReadAsync(file.StorageObject.Key, ct);
+        var encryptedMetadata = await sourceBlobs.GetMetadataAsync(file.StorageObject.Key, ct);
+        var credentials = passwordSalt.Get(file.StorageObject.Key);
 
-        logger.LogDebug("Loaded file context: {FileKey}, ContentLength: {ContentLength} bytes",
-            file.Key,
-            encryptedMetadata.ContentLength);
+        // Capture source ETag for file comparison
+        var sourceETag = encryptedMetadata.ETag ?? string.Empty;
 
-        return new FileContext(
-            file.Key,
-            encryptedStream,
-            encryptedMetadata,
-            credentials.Password,
-            credentials.Salt);
+        logger.LogDebug("Loaded file context: {FileKey}, ContentLength: {ContentLength} bytes, SourceETag: {SourceETag}",
+            file.StorageObject.Key, encryptedMetadata.ContentLength, sourceETag);
+
+        return new FileContext(file.StorageObject.Key, encryptedStream, encryptedMetadata, credentials.Password, credentials.Salt, sourceETag);
     }
 
     private async Task<FileTransferDecision> DetermineFileTransferRequirementAsync(
         string fileKey,
         long sourceEncryptedLength,
+        string sourceETag,
         IBlobStorageService destinationBlobs,
         Guid importId,
         CancellationToken ct)
@@ -243,49 +208,84 @@ public class AcquisitionPipeline(
 
         if (!targetExists)
         {
+            logger.LogDebug("File transfer required for {FileKey} - target does not exist", fileKey);
             return FileTransferDecision.TransferRequired();
         }
 
         var targetMetadata = await destinationBlobs.GetMetadataAsync(fileKey, ct);
 
-        if (!targetMetadata.UserMetadata.TryGetValue("SourceEncryptedLength", out var storedSourceLength))
+        // Use S3-compliant metadata keys (lowercase with x-amz-meta- prefix)
+        if (!targetMetadata.UserMetadata.TryGetValue(EtlConstants.MetadataKeySourceEncryptedLength, out var storedSourceLength) ||
+            !targetMetadata.UserMetadata.TryGetValue(EtlConstants.MetadataKeySourceETag, out var storedSourceETag))
         {
+            logger.LogInformation("Re-acquiring {FileKey} - missing source metadata (will add metadata). Available keys: {Keys}",
+                fileKey, string.Join(", ", targetMetadata.UserMetadata.Keys));
             return FileTransferDecision.TransferRequired();
         }
 
+        // Compare source length
         if (!long.TryParse(storedSourceLength, out var storedLength) || storedLength != sourceEncryptedLength)
         {
+            logger.LogInformation("Re-acquiring {FileKey} - source length changed from {OldLength} to {NewLength} bytes",
+                fileKey, storedLength, sourceEncryptedLength);
             return FileTransferDecision.TransferRequired();
         }
 
-        // File exists with matching source length - skip transfer
-        targetMetadata.UserMetadata.TryGetValue("MD5Hash", out var existingMd5Hash);
+        // Normalize and compare ETags
+        var normalizedStoredETag = NormalizeETag(storedSourceETag);
+        var normalizedSourceETag = NormalizeETag(sourceETag);
 
-        logger.LogInformation("Skipping file transfer for {FileKey} - target exists with matching source length {SourceLength} bytes (decrypted size: {DecryptedSize} bytes) for ImportId: {ImportId}",
+        if (!string.Equals(normalizedStoredETag, normalizedSourceETag, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogInformation("Re-acquiring {FileKey} - source ETag changed from '{OldETag}' to '{NewETag}'",
+                fileKey, normalizedStoredETag, normalizedSourceETag);
+            return FileTransferDecision.TransferRequired();
+        }
+
+        // File is identical - skip transfer
+        var targetETag = targetMetadata.ETag ?? string.Empty;
+
+        logger.LogInformation("Skipping file transfer for {FileKey} - target exists with matching source (Length: {SourceLength} bytes, SourceETag: {SourceETag}, Target size: {TargetSize} bytes, TargetETag: {TargetETag}) for ImportId: {ImportId}",
             fileKey,
             sourceEncryptedLength,
+            normalizedSourceETag,
             targetMetadata.ContentLength,
+            targetETag,
             importId);
 
         return FileTransferDecision.SkipTransfer(
             targetMetadata.ContentLength,
-            existingMd5Hash ?? string.Empty);
+            targetETag);
     }
 
-    private async Task<FileAcquisitionResult> AcquireFileAsync(
-        FileContext fileContext,
-        FileTransferDecision transferDecision,
-        IBlobStorageService destinationBlobs,
-        CancellationToken ct)
+    /// <summary>
+    /// Normalizes an ETag for comparison by trimming quotes and whitespace.
+    /// S3 ETags are case-insensitive and may be quoted.
+    /// </summary>
+    /// <param name="etag">The ETag to normalize</param>
+    /// <returns>Normalized ETag string</returns>
+    private static string NormalizeETag(string? etag)
+    {
+        return (etag ?? string.Empty).Trim('"').Trim();
+    }
+
+    private async Task<FileAcquisitionResult> AcquireFileAsync(FileContext fileContext, FileTransferDecision transferDecision,
+        IBlobStorageService destinationBlobs, CancellationToken ct)
     {
         if (transferDecision.ShouldSkip)
         {
-            return new FileAcquisitionResult(
-                transferDecision.ExistingMd5Hash,
+            // File transfer is skipped, but return the existing metadata
+            // so it can still be recorded for ingestion to find
+            logger.LogInformation("Skipping file transfer for {FileKey} - using existing target file (ETag: {ETag}, Size: {FileSize} bytes)",
+                fileContext.FileKey,
+                transferDecision.ExistingETag,
                 transferDecision.ExistingFileSize);
+
+            return new FileAcquisitionResult(transferDecision.ExistingETag, transferDecision.ExistingFileSize);
         }
 
-        var (md5Hash, fileSize) = await DecryptAndUploadWithMd5Async(
+        // Decrypt and upload (without computing MD5)
+        var fileSize = await DecryptAndUploadAsync(
             fileContext.EncryptedStream,
             destinationBlobs,
             fileContext.FileKey,
@@ -294,75 +294,54 @@ public class AcquisitionPipeline(
             fileContext.EncryptedMetadata.ContentLength,
             ct);
 
+        // Store source metadata in target
         await StoreFileMetadataAsync(
             destinationBlobs,
             fileContext.FileKey,
             fileContext.EncryptedMetadata.ContentLength,
-            md5Hash,
+            fileContext.SourceETag,
             ct);
 
-        logger.LogInformation("Successfully processed file: {FileKey} ({SizeMB:F2} MB, MD5: {Md5Hash})",
+        // Get target file ETag after upload
+        var targetMetadata = await destinationBlobs.GetMetadataAsync(fileContext.FileKey, ct);
+        var targetETag = targetMetadata.ETag ?? string.Empty;
+
+        logger.LogInformation("Successfully processed file: {FileKey} ({SizeMB:F2} MB, Target ETag: {ETag})",
             fileContext.FileKey,
             fileSize / (1024.0 * 1024.0),
-            md5Hash);
+            targetETag);
 
-        return new FileAcquisitionResult(md5Hash, fileSize);
+        return new FileAcquisitionResult(targetETag, fileSize);
     }
 
     private async Task StoreFileMetadataAsync(
         IBlobStorageService destinationBlobs,
         string fileKey,
         long sourceEncryptedLength,
-        string md5Hash,
+        string sourceETag,
         CancellationToken ct)
     {
+        // Use S3-compliant metadata keys (lowercase with x-amz-meta- prefix)
         var metadata = new Dictionary<string, string>
         {
-            { "SourceEncryptedLength", sourceEncryptedLength.ToString() },
-            { "MD5Hash", md5Hash }
+            { EtlConstants.MetadataKeySourceEncryptedLength, sourceEncryptedLength.ToString() },
+            { EtlConstants.MetadataKeySourceETag, sourceETag }
         };
 
         await destinationBlobs.SetMetadataAsync(fileKey, metadata, ct);
     }
 
-    private async Task CheckForDuplicateProcessingAsync(
-        string fileKey,
-        string md5Hash,
-        Guid importId,
-        CancellationToken ct)
-    {
-        if (string.IsNullOrEmpty(md5Hash))
-        {
-            return;
-        }
-
-        var isAlreadyProcessed = await reportingService.IsFileProcessedAsync(fileKey, md5Hash, ct);
-
-        if (isAlreadyProcessed)
-        {
-            logger.LogWarning("File {FileKey} with MD5 {Md5Hash} was already processed in a previous import for ImportId: {ImportId}",
-                fileKey,
-                md5Hash,
-                importId);
-        }
-    }
-
-    private async Task RecordSuccessfulAcquisitionAsync(
-        Guid importId,
-        FileSet fileSet,
-        StorageObjectInfo file,
-        FileAcquisitionResult acquisitionResult,
-        long durationMs,
-        CancellationToken ct)
+    private async Task RecordSuccessfulAcquisitionAsync(Guid importId, FileSet fileSet, EtlFile file, FileAcquisitionResult acquisitionResult,
+        long durationMs, CancellationToken ct)
     {
         await reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
         {
-            FileName = Path.GetFileName(file.Key),
-            FileKey = file.Key,
+            FileName = Path.GetFileName(file.StorageObject.Key),
+            FileKey = file.StorageObject.Key,
             DatasetName = fileSet.Definition.Name,
-            Md5Hash = acquisitionResult.Md5Hash,
+            ETag = acquisitionResult.ETag,
             FileSize = acquisitionResult.FileSize,
-            SourceKey = file.Key,
+            SourceKey = file.StorageObject.Key,
             DecryptionDurationMs = durationMs,
             AcquiredAtUtc = DateTime.UtcNow,
             Status = FileProcessingStatus.Acquired
@@ -372,7 +351,7 @@ public class AcquisitionPipeline(
     private async Task RecordFailedAcquisitionAsync(
         Guid importId,
         FileSet fileSet,
-        StorageObjectInfo file,
+        EtlFile file,
         long durationMs,
         Exception ex,
         CancellationToken ct)
@@ -381,12 +360,12 @@ public class AcquisitionPipeline(
         {
             await reportingService.RecordFileAcquisitionAsync(importId, new FileAcquisitionRecord
             {
-                FileName = Path.GetFileName(file.Key),
-                FileKey = file.Key,
+                FileName = Path.GetFileName(file.StorageObject.Key),
+                FileKey = file.StorageObject.Key,
                 DatasetName = fileSet.Definition.Name,
-                Md5Hash = string.Empty,
+                ETag = string.Empty,
                 FileSize = 0,
-                SourceKey = file.Key,
+                SourceKey = file.StorageObject.Key,
                 DecryptionDurationMs = durationMs,
                 AcquiredAtUtc = DateTime.UtcNow,
                 Status = FileProcessingStatus.Failed,
@@ -395,25 +374,8 @@ public class AcquisitionPipeline(
         }
         catch (Exception reportEx)
         {
-            logger.LogError(reportEx, "Failed to record acquisition failure for file: {FileKey}", file.Key);
+            logger.LogError(reportEx, "Failed to record acquisition failure for file: {FileKey}", file.StorageObject.Key);
         }
-    }
-
-    private async Task UpdateAcquisitionPhaseCompletedAsync(
-        Guid importId,
-        int totalFiles,
-        int processedCount,
-        int failedCount,
-        CancellationToken ct)
-    {
-        await reportingService.UpdateAcquisitionPhaseAsync(importId, new AcquisitionPhaseUpdate
-        {
-            Status = failedCount > 0 ? PhaseStatus.Failed : PhaseStatus.Completed,
-            FilesDiscovered = totalFiles,
-            FilesProcessed = processedCount - failedCount,
-            FilesFailed = failedCount,
-            CompletedAtUtc = DateTime.UtcNow
-        }, ct);
     }
 
     private void LogPipelineCompletion(Guid importId, Stopwatch stopwatch)
@@ -435,11 +397,11 @@ public class AcquisitionPipeline(
     }
 
     /// <summary>
-    /// Decrypts a stream and uploads it while calculating MD5 hash in a single pass.
+    /// Decrypts a stream and uploads it while tracking file size.
     /// This streaming approach avoids loading the entire file into memory.
     /// </summary>
-    /// <returns>A tuple containing the MD5 hash and the file size in bytes</returns>
-    private async Task<(string md5Hash, long fileSize)> DecryptAndUploadWithMd5Async(
+    /// <returns>The file size in bytes</returns>
+    private async Task<long> DecryptAndUploadAsync(
         Stream encryptedStream,
         IBlobStorageService targetStorage,
         string fileKey,
@@ -454,31 +416,22 @@ public class AcquisitionPipeline(
         // Wrap with byte counter to track file size
         await using var byteCounter = new ByteCountingStream(uploadStream);
 
-        // Wrap with MD5 calculation
-        using var md5 = MD5.Create();
-        await using var cryptoStream = new CryptoStream(byteCounter, md5, CryptoStreamMode.Write, leaveOpen: true);
-
-        // Decrypt directly into the MD5+counting+upload stream pipeline
-        // Pipeline: Decrypted data → CryptoStream (MD5) → ByteCountingStream (size) → Upload Stream (S3)
+        // Decrypt directly into the counting+upload stream pipeline
+        // Pipeline: Decrypted data → ByteCountingStream (size) → Upload Stream (S3)
         await aesCryptoTransform.DecryptStreamAsync(
             encryptedStream,
-            cryptoStream,
+            byteCounter,
             password,
             salt,
             encryptedContentLength,
             null,
             ct);
 
-        // Ensure all data is written and MD5 is finalized
-        await cryptoStream.FlushFinalBlockAsync(ct);
+        // Ensure all data is written
         await byteCounter.FlushAsync(ct);
 
-        // Get the computed hash and file size
-        var hashBytes = md5.Hash ?? throw new InvalidOperationException("MD5 hash computation failed");
-        var md5Hash = Convert.ToHexString(hashBytes).ToLowerInvariant();
-        var fileSize = byteCounter.BytesWritten;
-
-        return (md5Hash, fileSize);
+        // Return the file size
+        return byteCounter.BytesWritten;
     }
 
     // Helper records for internal state management
@@ -487,7 +440,8 @@ public class AcquisitionPipeline(
         Stream EncryptedStream,
         StorageObjectMetadata EncryptedMetadata,
         string Password,
-        string Salt) : IAsyncDisposable
+        string Salt,
+        string SourceETag) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync()
         {
@@ -499,17 +453,17 @@ public class AcquisitionPipeline(
     {
         public bool ShouldSkip { get; init; }
         public long ExistingFileSize { get; init; }
-        public string ExistingMd5Hash { get; init; } = string.Empty;
+        public string ExistingETag { get; init; } = string.Empty;
 
         public static FileTransferDecision TransferRequired() => new() { ShouldSkip = false };
 
-        public static FileTransferDecision SkipTransfer(long fileSize, string md5Hash) => new()
+        public static FileTransferDecision SkipTransfer(long fileSize, string etag) => new()
         {
             ShouldSkip = true,
             ExistingFileSize = fileSize,
-            ExistingMd5Hash = md5Hash
+            ExistingETag = etag
         };
     }
 
-    private record FileAcquisitionResult(string Md5Hash, long FileSize);
+    private record FileAcquisitionResult(string ETag, long FileSize);
 }

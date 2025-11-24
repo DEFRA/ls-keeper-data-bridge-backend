@@ -8,6 +8,7 @@ using KeeperData.Infrastructure.Config;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Database.Setup;
 using KeeperData.Infrastructure.Extensions;
+using KeeperData.Infrastructure.Json;
 using KeeperData.Infrastructure.Messaging.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
 using KeeperData.Infrastructure.Telemetry;
@@ -47,7 +48,7 @@ namespace KeeperData.Bridge.Setup
 
             services.AddStorageDependencies(configuration);
 
-            services.AddEtlDependencies();
+            services.AddEtlDependencies(configuration);
 
             services.AddCrypto(configuration);
 
@@ -185,6 +186,7 @@ namespace KeeperData.Bridge.Setup
                     {
                         var enumConverter = new JsonStringEnumConverter();
                         opts.JsonSerializerOptions.Converters.Add(enumConverter);
+                        opts.JsonSerializerOptions.Converters.Add(new BsonDocumentJsonConverter());
                     });
 
                 return;
@@ -219,6 +221,7 @@ namespace KeeperData.Bridge.Setup
             {
                 var enumConverter = new JsonStringEnumConverter();
                 opts.JsonSerializerOptions.Converters.Add(enumConverter);
+                opts.JsonSerializerOptions.Converters.Add(new BsonDocumentJsonConverter());
             });
         }
     }

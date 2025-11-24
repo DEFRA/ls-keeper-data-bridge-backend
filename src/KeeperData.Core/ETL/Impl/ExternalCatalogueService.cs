@@ -6,7 +6,9 @@ using System.Collections.Immutable;
 
 namespace KeeperData.Core.ETL.Impl;
 
-public record FileSet(DataSetDefinition Definition, StorageObjectInfo[] Files);
+public record EtlFile(StorageObjectInfo StorageObject, DateTimeOffset Timestamp);
+
+public record FileSet(DataSetDefinition Definition, EtlFile[] Files);
 
 public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     TimeProvider timeProvider,
@@ -56,7 +58,7 @@ public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
 
         // project into new list ordering the files rev-chrono
         var files = groupedByDefinition.Select(x => new FileSet(x.Key,
-            [.. x.SelectMany(y => y.Files).OrderByDescending(x => x.LastModified)]))
+            [.. x.SelectMany(y => y.Files).OrderBy(x => x.Timestamp)]))
             .ToImmutableList();
 
         return files;
@@ -110,7 +112,47 @@ public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     {
         var prefix = GetBlobKeyPrefix(definition, date);
         var blobs = await sourceBlobs.ListAsync(prefix, ct);
-        return new FileSet(definition, [.. blobs]);
+        var etlFiles = blobs.Select(blob => new EtlFile(blob, ExtractTimestampFromFileName(definition, blob.Key))).ToArray();
+
+        return new FileSet(definition, [.. etlFiles]);
+    }
+
+    private DateTimeOffset ExtractTimestampFromFileName(DataSetDefinition definition, string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
+        ArgumentNullException.ThrowIfNull(definition, nameof(definition));
+
+        var parts = key.Split(".").First().Split('_');
+
+        if (parts.Length == 0)
+        {
+            throw new InvalidOperationException($"Cannot extract timestamp from blob key '{key}' for dataset '{definition.Name}'");
+        }
+
+        var timestampPart = parts.Last();
+
+        if (timestampPart.Length >= definition.DateTimePattern.Length && long.TryParse(timestampPart.AsSpan(0, 14), out _))
+        {
+            var dateTimeString = timestampPart.Substring(0, 14);
+
+            if (DateTime.TryParseExact(dateTimeString, definition.DateTimePattern,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out var parsedDateTime))
+            {
+                // Create DateTimeOffset from the parsed DateTime, explicitly specifying UTC offset
+                var utcDateTime = DateTime.SpecifyKind(parsedDateTime, DateTimeKind.Utc);
+                return new DateTimeOffset(utcDateTime, TimeSpan.Zero);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Cannot parse timestamp '{dateTimeString}' from blob key '{key}' for dataset '{definition.Name}'");
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException($"Cannot extract timestamp from blob key '{key}' for dataset '{definition.Name}'");
+        }
     }
 
     private static string GetBlobKeyPrefix(DataSetDefinition definition, DateOnly date)

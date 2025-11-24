@@ -10,7 +10,7 @@ namespace KeeperData.Core.Tests.Unit.ETL.Utils;
 /// </summary>
 public class IngestionProgressTrackerTests
 {
-    private const string TestFileName = "C:\\data\\test_file_12345.csv";
+    private static readonly string TestFileName = Path.Combine("data", "test_file_12345.csv");
     private const string ExpectedFileName = "test_file_12345.csv";
 
     [Fact]
@@ -505,7 +505,8 @@ public class IngestionProgressTrackerTests
     public void Constructor_WithFilePathWithMultipleDirs_ShouldExtractJustFileName()
     {
         // Arrange & Act
-        var tracker = new IngestionProgressTracker(@"C:\very\deep\folder\structure\myfile.csv", 100);
+        var testPath = Path.Combine("very", "deep", "folder", "structure", "myfile.csv");
+        var tracker = new IngestionProgressTracker(testPath, 100);
         var status = tracker.GetCurrentStatus();
 
         // Assert
@@ -516,7 +517,8 @@ public class IngestionProgressTrackerTests
     public void Constructor_WithRelativeFilePath_ShouldExtractFileName()
     {
         // Arrange & Act
-        var tracker = new IngestionProgressTracker(@"data\csv\file.csv", 100);
+        var testPath = Path.Combine("data", "csv", "file.csv");
+        var tracker = new IngestionProgressTracker(testPath, 100);
         var status = tracker.GetCurrentStatus();
 
         // Assert

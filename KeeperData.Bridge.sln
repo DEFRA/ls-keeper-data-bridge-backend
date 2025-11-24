@@ -10,8 +10,12 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "solutionitems", "solutionitems", "{90214DF2-657C-49A2-BAB7-5FDBE17E956C}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
+		.github\workflows\check-pull-request.yml = .github\workflows\check-pull-request.yml
 		Dockerfile = Dockerfile
+		.github\workflows\publish-hotfix.yml = .github\workflows\publish-hotfix.yml
+		.github\workflows\publish.yml = .github\workflows\publish.yml
 		README.md = README.md
+		.github\workflows\sonarcloud.yml = .github\workflows\sonarcloud.yml
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeeperData.Core", "src\KeeperData.Core\KeeperData.Core.csproj", "{4E96024E-0BCB-4C41-8EB2-876499B07311}"

@@ -1,3 +1,4 @@
+using CsvHelper;
 using KeeperData.Bridge.Worker.Tasks;
 using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Abstract;
@@ -592,18 +593,22 @@ public class ImportController(
     /// Deletes all objects from the internal target storage under the configured top-level folder prefix.
     /// This will clear down all files that were ingested into the target internal storage.
     /// </summary>
+    /// <param name="sourceType">The source type for the storage (default is "internal")</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Summary of deleted objects</returns>
     [HttpDelete("internal-storage")]
     [ProducesResponseType(typeof(ClearDownStorageResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
-    public async Task<IActionResult> ClearDownInternalStorage(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> ClearDownInternalStorage([FromQuery] string sourceType = BlobStorageSources.Internal, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Received request to clear down internal target storage");
 
         try
         {
-            var blobStorageService = blobStorageServiceFactory.Get();
+            var blobStorageService = sourceType == BlobStorageSources.External 
+                ? blobStorageServiceFactory.GetSourceInternal() // the _fake_ external data store  (used for QA)
+                : blobStorageServiceFactory.Get(); // the real internal data store
+
             var result = await blobStorageService.ClearDownAsync(cancellationToken);
 
             logger.LogInformation("Successfully cleared down internal storage. Total objects deleted: {TotalDeleted}",

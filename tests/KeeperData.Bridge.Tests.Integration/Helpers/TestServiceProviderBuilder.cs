@@ -124,7 +124,8 @@ public static class TestServiceProviderBuilder
 
         services.AddScoped<IImportOrchestrator, ImportOrchestrator>();
 
-        services.AddScoped<IMongoQueryService, MongoQueryService>();
+        services.AddScoped<IQueryService, QueryService>();
+        services.AddScoped<IODataQueryService, ODataQueryService>();
 
         return services.BuildServiceProvider();
     }

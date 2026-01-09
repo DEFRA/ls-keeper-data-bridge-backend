@@ -54,4 +54,33 @@ public class QueryResult
     /// Timestamp when the query was executed
     /// </summary>
     public DateTime ExecutedAtUtc { get; init; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Combines multiple QueryResult instances into a single QueryResult
+    /// </summary>
+    /// <param name="results">Array of QueryResult instances to combine</param>
+    /// <returns>A single QueryResult containing all data from the input results</returns>
+    public static QueryResult Combine(params QueryResult[] results)
+    {
+        if (results is null || results.Length == 0)
+        {
+            return new QueryResult { CollectionName = string.Empty, Count = 0, Data = [], ExecutedAtUtc = DateTime.UtcNow };
+        }
+
+        var f = results.First();
+
+        var combinedData = results
+            .Where(r => r?.Data is not null)
+            .SelectMany(r => r.Data)
+            .ToList();
+
+        return new QueryResult
+        {
+            Data = combinedData,
+            CollectionName = f.CollectionName,
+            Count = combinedData.Count,
+            TotalCount = results.Sum(x => x.TotalCount),
+            ExecutedAtUtc = DateTime.UtcNow
+        };
+    }
 }

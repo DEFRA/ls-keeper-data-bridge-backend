@@ -10,11 +10,11 @@ namespace KeeperData.Bridge.Controllers;
 [Route("api/query")]
 public class QueryController : ControllerBase
 {
-    private readonly IMongoQueryService _queryService;
+    private readonly IODataQueryService _queryService;
     private readonly ILogger<QueryController> _logger;
 
     public QueryController(
-        IMongoQueryService queryService,
+        IODataQueryService queryService,
         ILogger<QueryController> logger)
     {
         _queryService = queryService ?? throw new ArgumentNullException(nameof(queryService));

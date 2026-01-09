@@ -964,7 +964,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
 
     private async Task<List<Dictionary<string, object?>>> QueryIngestedDataAsync()
     {
-        var queryService = _serviceProvider!.GetRequiredService<IMongoQueryService>();
+        var queryService = _serviceProvider!.GetRequiredService<IODataQueryService>();
 
         _output.WriteLine($"Querying collection '{CollectionName}'...");
 

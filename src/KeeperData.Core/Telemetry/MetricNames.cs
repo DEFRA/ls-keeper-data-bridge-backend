@@ -1,4 +1,4 @@
-namespace KeeperData.Infrastructure.Telemetry;
+namespace KeeperData.Core.Telemetry;
 
 public static class MetricNames
 {

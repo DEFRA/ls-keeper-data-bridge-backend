@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using KeeperData.Core.Telemetry;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 

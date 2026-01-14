@@ -4,6 +4,7 @@ using Amazon.CloudWatch.EMF.Logger;
 using Amazon.CloudWatch.EMF.Model;
 using Humanizer;
 using KeeperData.Infrastructure.Config;
+using KeeperData.Core.Telemetry;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

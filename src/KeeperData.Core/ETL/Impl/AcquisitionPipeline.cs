@@ -4,6 +4,7 @@ using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
+using KeeperData.Core.Telemetry;
 using Microsoft.Extensions.Logging;
 using System.Collections.Immutable;
 using System.Diagnostics;
@@ -16,6 +17,7 @@ public class AcquisitionPipeline(
     IAesCryptoTransform aesCryptoTransform,
     IPasswordSaltService passwordSalt,
     IImportReportingService reportingService,
+    IApplicationMetrics metrics,
     ILogger<AcquisitionPipeline> logger) : IAcquisitionPipeline
 {
     private const string MimeTypeTextCsv = "text/csv";
@@ -24,6 +26,9 @@ public class AcquisitionPipeline(
     {
         var stopwatch = Stopwatch.StartNew();
         logger.LogInformation("Starting import pipeline for ImportId: {ImportId}, SourceType: {SourceType}", report.ImportId, report.SourceType);
+
+        metrics.RecordRequest("acquisition_pipeline", "started");
+        metrics.RecordCount("acquisition_started", 1, ("source_type", report.SourceType));
 
         try
         {
@@ -47,6 +52,29 @@ public class AcquisitionPipeline(
             await reportingService.UpsertImportReportAsync(report, ct);
 
             LogPipelineCompletion(report.ImportId, stopwatch);
+
+            stopwatch.Stop();
+
+            metrics.RecordRequest("acquisition_pipeline", "completed");
+            metrics.RecordDuration("acquisition_pipeline", stopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("acquisition_completions", 1,
+                ("source_type", report.SourceType),
+                ("status", "success"));
+
+            metrics.RecordCount("files_discovered", totalFiles,
+                ("source_type", report.SourceType),
+                ("file_sets", fileSets.Count.ToString()));
+            metrics.RecordCount("files_processed_acquisition", processedCount,
+                ("source_type", report.SourceType));
+            metrics.RecordCount("files_skipped_acquisition", skippedCount,
+                ("source_type", report.SourceType));
+
+            if (totalFiles > 0)
+            {
+                var processingRatio = (double)processedCount / totalFiles;
+                metrics.RecordValue("acquisition_processing_ratio", processingRatio,
+                    ("source_type", report.SourceType));
+            }
         }
         catch (Exception ex)
         {
@@ -55,6 +83,18 @@ public class AcquisitionPipeline(
             await reportingService.UpsertImportReportAsync(report, ct);
 
             LogPipelineFailure(report.ImportId, stopwatch, ex);
+
+            stopwatch.Stop();
+
+            metrics.RecordRequest("acquisition_pipeline", "failed");
+            metrics.RecordDuration("acquisition_pipeline", stopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("acquisition_completions", 1,
+                ("source_type", report.SourceType),
+                ("status", "failed"));
+            metrics.RecordCount("acquisition_errors", 1,
+                ("source_type", report.SourceType),
+                ("error_type", ex.GetType().Name));
+
             throw;
         }
     }
@@ -73,6 +113,7 @@ public class AcquisitionPipeline(
 
     private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(Guid importId, IExternalCatalogueService catalogueService, CancellationToken ct)
     {
+        var discoveryStopwatch = Stopwatch.StartNew();
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
 
         var fileSets = await catalogueService.GetFileSetsAsync(EtlConstants.DefaultLookbackDays, ct);
@@ -82,6 +123,12 @@ public class AcquisitionPipeline(
             fileSets.Count,
             totalFiles,
             importId);
+
+        discoveryStopwatch.Stop();
+
+        metrics.RecordDuration("file_discovery", discoveryStopwatch.ElapsedMilliseconds);
+        metrics.RecordCount("file_sets_discovered", fileSets.Count);
+        metrics.RecordValue("avg_files_per_set", fileSets.Count > 0 ? (double)totalFiles / fileSets.Count : 0);
 
         return (fileSets, totalFiles);
     }

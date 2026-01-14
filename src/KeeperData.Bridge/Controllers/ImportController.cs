@@ -6,8 +6,10 @@ using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Telemetry;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
 
 namespace KeeperData.Bridge.Controllers;
 
@@ -19,7 +21,8 @@ public class ImportController(
     ILogger<ImportController> logger,
     ICollectionManagementService collectionManagementService,
     IReportingCollectionManagementService reportingCollectionManagementService,
-    IBlobStorageServiceFactory blobStorageServiceFactory) : ControllerBase
+    IBlobStorageServiceFactory blobStorageServiceFactory,
+    IApplicationMetrics metrics) : ControllerBase
 {
     private readonly RecordIdGenerator _recordIdGenerator = new();
 
@@ -38,12 +41,27 @@ public class ImportController(
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
     public async Task<IActionResult> StartBulkImport([FromQuery] string sourceType = BlobStorageSources.External, CancellationToken cancellationToken = default)
     {
+        var requestStopwatch = System.Diagnostics.Stopwatch.StartNew();
+
         logger.LogInformation("Received request to start bulk import with sourceType={sourceType} at {requestTime}", sourceType, DateTime.UtcNow);
+
+        metrics.RecordRequest("import_api", "bulk_import_requested");
+        metrics.RecordCount("import_api_requests", 1,
+            ("endpoint", "start"),
+            ("source_type", sourceType));
 
         // Validate sourceType
         if (sourceType != BlobStorageSources.Internal && sourceType != BlobStorageSources.External)
         {
             logger.LogWarning("Invalid sourceType provided: {sourceType}", sourceType);
+
+            requestStopwatch.Stop();
+            metrics.RecordRequest("import_api", "validation_error");
+            metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("import_api_errors", 1,
+                ("endpoint", "start"),
+                ("error_type", "validation"));
+
             return BadRequest(new ErrorResponse
             {
                 Message = $"Invalid sourceType. Must be '{BlobStorageSources.Internal}' or '{BlobStorageSources.External}'.",
@@ -58,6 +76,14 @@ public class ImportController(
             if (importId == null)
             {
                 logger.LogWarning("Failed to start bulk import - could not acquire lock");
+
+                requestStopwatch.Stop();
+                metrics.RecordRequest("import_api", "lock_conflict");
+                metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+                metrics.RecordCount("import_api_conflicts", 1,
+                    ("endpoint", "start"),
+                    ("conflict_type", "lock"));
+
                 return Conflict(new ErrorResponse
                 {
                     Message = "Import is already running. Please wait for the current import to complete.",
@@ -66,6 +92,14 @@ public class ImportController(
             }
 
             logger.LogInformation("Bulk import started successfully with importId={importId}, sourceType={sourceType}", importId.Value, sourceType);
+
+            requestStopwatch.Stop();
+
+            metrics.RecordRequest("import_api", "bulk_import_started");
+            metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("import_api_successes", 1,
+                ("endpoint", "start"),
+                ("source_type", sourceType));
 
             return Accepted(new StartBulkImportResponse
             {
@@ -78,11 +112,32 @@ public class ImportController(
         catch (OperationCanceledException)
         {
             logger.LogWarning("Bulk import start request was cancelled");
+
+            requestStopwatch.Stop();
+            metrics.RecordRequest("import_api", "cancelled");
+            metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("import_api_errors", 1,
+                ("endpoint", "start"),
+                ("error_type", "cancellation"));
+
             return StatusCode(499, new ErrorResponse
             {
                 Message = "Request was cancelled.",
                 Timestamp = DateTime.UtcNow
             });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error in StartBulkImport");
+
+            requestStopwatch.Stop();
+            metrics.RecordRequest("import_api", "error");
+            metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("import_api_errors", 1,
+                ("endpoint", "start"),
+                ("error_type", ex.GetType().Name));
+
+            throw;
         }
     }
 
@@ -99,12 +154,22 @@ public class ImportController(
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetImportSummaries([FromQuery] int skip = 0, [FromQuery] int top = 10, CancellationToken cancellationToken = default)
     {
+        var requestStopwatch = Stopwatch.StartNew();
         logger.LogInformation("Received request to get import summaries with skip={skip}, top={top}", skip, top);
 
         // Validate parameters
         if (skip < 0)
         {
             logger.LogWarning("Invalid skip parameter: {skip}", skip);
+
+            requestStopwatch.Stop();
+            metrics.RecordRequest("import_api", "error");
+            metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("import_api_errors", 1,
+                ("endpoint", "list"),
+                ("error_type", "validation"),
+                ("validation_field", "skip"));
+
             return BadRequest(new
             {
                 Message = "Skip parameter must be greater than or equal to 0.",
@@ -115,6 +180,15 @@ public class ImportController(
         if (top <= 0 || top > 100)
         {
             logger.LogWarning("Invalid top parameter: {top}", top);
+
+            requestStopwatch.Stop();
+            metrics.RecordRequest("import_api", "error");
+            metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("import_api_errors", 1,
+                ("endpoint", "list"),
+                ("error_type", "validation"),
+                ("validation_field", "top"));
+
             return BadRequest(new
             {
                 Message = "Top parameter must be between 1 and 100.",
@@ -128,6 +202,11 @@ public class ImportController(
 
             logger.LogInformation("Successfully retrieved {count} import summaries", summaries.Count);
 
+            requestStopwatch.Stop();
+            metrics.RecordRequest("import_api", "success");
+            metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("import_summaries_retrieved", summaries.Count);
+
             return Ok(new ImportSummariesResponse
             {
                 Skip = skip,
@@ -140,11 +219,32 @@ public class ImportController(
         catch (OperationCanceledException)
         {
             logger.LogWarning("Get import summaries request was cancelled");
+
+            requestStopwatch.Stop();
+            metrics.RecordRequest("import_api", "cancelled");
+            metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("import_api_errors", 1,
+                ("endpoint", "list"),
+                ("error_type", "cancellation"));
+
             return StatusCode(499, new
             {
                 Message = "Request was cancelled.",
                 Timestamp = DateTime.UtcNow
             });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error in GetImportSummaries");
+
+            requestStopwatch.Stop();
+            metrics.RecordRequest("import_api", "error");
+            metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("import_api_errors", 1,
+                ("endpoint", "list"),
+                ("error_type", ex.GetType().Name));
+
+            throw;
         }
     }
 
@@ -605,7 +705,7 @@ public class ImportController(
 
         try
         {
-            var blobStorageService = sourceType == BlobStorageSources.External 
+            var blobStorageService = sourceType == BlobStorageSources.External
                 ? blobStorageServiceFactory.GetSourceInternal() // the _fake_ external data store  (used for QA)
                 : blobStorageServiceFactory.Get(); // the real internal data store
 

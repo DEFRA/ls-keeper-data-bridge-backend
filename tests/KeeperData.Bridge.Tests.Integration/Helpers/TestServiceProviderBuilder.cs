@@ -8,6 +8,7 @@ using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Querying.Abstract;
 using KeeperData.Core.Querying.Impl;
+using Moq;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Impl;
 using KeeperData.Core.Reporting.Services;
@@ -118,6 +119,10 @@ public static class TestServiceProviderBuilder
 
         services.AddTransient<CsvRowCounter>();
         services.AddTransient<IExternalCatalogueServiceFactory, ExternalCatalogueServiceFactory>();
+
+        // Register Core telemetry interface for ETL pipelines
+        services.AddSingleton<KeeperData.Core.Telemetry.IApplicationMetrics>(provider =>
+            Mock.Of<KeeperData.Core.Telemetry.IApplicationMetrics>());
 
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddScoped<IIngestionPipeline, IngestionPipeline>();

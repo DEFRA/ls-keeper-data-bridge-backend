@@ -1,6 +1,6 @@
 using KeeperData.Core.Exceptions;
 using KeeperData.Infrastructure;
-using KeeperData.Infrastructure.Telemetry;
+using KeeperData.Core.Telemetry;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 using System.Text.Json;

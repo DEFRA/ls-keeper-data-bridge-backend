@@ -10,6 +10,7 @@ using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Telemetry;
 using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Storage;
 using KeeperData.Infrastructure.Storage.Configuration;
@@ -79,6 +80,8 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             Options.Create(new MongoResilienceConfig()),
             new Mock<ILogger<ResilientMongoOperations>>().Object);
 
+        var coreApplicationMetricsMock = new Mock<KeeperData.Core.Telemetry.IApplicationMetrics>();
+
         _ingestionPipeline = new IngestionPipeline(
             blobStorageFactory,
             externalCatalogueServiceFactory,
@@ -87,6 +90,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             reportingServiceMock.Object,
             csvRowCounterMock.Object,
             resilientMongoOpsMock.Object,
+            coreApplicationMetricsMock.Object,
             _loggerMock.Object);
     }
 

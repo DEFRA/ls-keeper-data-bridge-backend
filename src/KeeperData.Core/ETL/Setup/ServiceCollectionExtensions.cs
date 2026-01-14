@@ -4,6 +4,7 @@ using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting.Setup;
+using KeeperData.Core.Telemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics.CodeAnalysis;

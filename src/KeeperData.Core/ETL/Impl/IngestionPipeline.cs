@@ -4,6 +4,7 @@ using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Telemetry;
 using CsvHelper;
 using CsvHelper.Configuration;
 using Microsoft.Extensions.Logging;
@@ -28,6 +29,7 @@ public class IngestionPipeline(
     IImportReportingService reportingService,
     CsvRowCounter csvRowCounter,
     ResilientMongoOperations resilientMongoOps,
+    IApplicationMetrics metrics,
     ILogger<IngestionPipeline> logger) : IIngestionPipeline
 {
     private const int BatchSize = 200;
@@ -49,15 +51,20 @@ public class IngestionPipeline(
 
     public async Task StartAsync(ImportReport report, CancellationToken ct)
     {
-        var stopwatch = Stopwatch.StartNew();
-        Debug.WriteLine($"[keepetl] Starting ingest pipeline for ImportId: {report.ImportId}");
-        logger.LogInformation("Starting ingest pipeline for ImportId: {ImportId}", report.ImportId);
+        var ingestionStopwatch = Stopwatch.StartNew();
+        var importId = report.ImportId;
+
+        Debug.WriteLine($"[keepetl] Starting ingest pipeline for ImportId: {importId}");
+        logger.LogInformation("Starting ingest pipeline for ImportId: {ImportId}", importId);
+
+        metrics.RecordRequest("ingestion_pipeline", "started");
+        metrics.RecordCount("ingestion_started", 1, ("source_type", report.SourceType));
 
         try
         {
-            var (blobStorage, catalogueService) = InitializeStorageServices(report.ImportId);
+            var (blobStorage, catalogueService) = InitializeStorageServices(importId);
 
-            var (fileSets, totalFiles) = await DiscoverFilesAsync(report.ImportId, catalogueService, ct);
+            var (fileSets, totalFiles) = await DiscoverFilesAsync(importId, catalogueService, ct);
 
             // Update ingestion phase to Started
             report.IngestionPhase!.Status = PhaseStatus.Started;
@@ -76,7 +83,32 @@ public class IngestionPipeline(
             report.IngestionPhase!.CurrentFileStatus = null;
             await reportingService.UpsertImportReportAsync(report, ct);
 
-            LogPipelineCompletion(report.ImportId, stopwatch);
+            LogPipelineCompletion(importId, ingestionStopwatch);
+
+            ingestionStopwatch.Stop();
+
+            metrics.RecordRequest("ingestion_pipeline", "completed");
+            metrics.RecordDuration("ingestion_pipeline", ingestionStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("ingestion_completions", 1,
+                ("source_type", report.SourceType),
+                ("status", "success"));
+
+            var totalRecords = ingestionResults.RecordsCreated + ingestionResults.RecordsUpdated + ingestionResults.RecordsDeleted;
+            if (totalRecords > 0 && ingestionStopwatch.ElapsedMilliseconds > 0)
+            {
+                var recordsPerMinute = (totalRecords * 60000.0) / ingestionStopwatch.ElapsedMilliseconds;
+                metrics.RecordValue("ingestion_records_per_minute", recordsPerMinute,
+                    ("source_type", report.SourceType));
+            }
+
+            metrics.RecordCount("ingestion_files_processed", ingestionResults.FilesProcessed,
+                ("source_type", report.SourceType));
+            metrics.RecordCount("ingestion_records_created", ingestionResults.RecordsCreated,
+                ("source_type", report.SourceType));
+            metrics.RecordCount("ingestion_records_updated", ingestionResults.RecordsUpdated,
+                ("source_type", report.SourceType));
+            metrics.RecordCount("ingestion_records_deleted", ingestionResults.RecordsDeleted,
+                ("source_type", report.SourceType));
         }
         catch (Exception ex)
         {
@@ -85,7 +117,19 @@ public class IngestionPipeline(
             report.IngestionPhase!.CompletedAtUtc = DateTime.UtcNow;
             await reportingService.UpsertImportReportAsync(report, ct);
 
-            LogPipelineFailure(report.ImportId, stopwatch, ex);
+            LogPipelineFailure(importId, ingestionStopwatch, ex);
+
+            ingestionStopwatch.Stop();
+
+            metrics.RecordRequest("ingestion_pipeline", "failed");
+            metrics.RecordDuration("ingestion_pipeline", ingestionStopwatch.ElapsedMilliseconds);
+            metrics.RecordCount("ingestion_completions", 1,
+                ("source_type", report.SourceType),
+                ("status", "failed"));
+            metrics.RecordCount("ingestion_errors", 1,
+                ("source_type", report.SourceType),
+                ("error_type", ex.GetType().Name));
+
             throw;
         }
     }
@@ -259,6 +303,9 @@ public class IngestionPipeline(
         logger.LogInformation("Starting ingestion of file {FileKey} into collection {CollectionName}",
             file.StorageObject.Key, collectionName);
 
+        metrics.RecordCount("file_ingestion_started", 1,
+            ("collection", collectionName));
+
         var collection = await EnsureCollectionExistsAsync(collectionName, ct);
         await EnsureWildcardIndexExistsAsync(collection, ct);
 
@@ -295,7 +342,7 @@ public class IngestionPipeline(
                 fileSet.Definition.PrimaryKeyHeaderNames,
                 fileSet.Definition.ChangeTypeHeaderName);
 
-            var metrics = await ProcessCsvRecordsAsync(importId, collection, csvContext.Csv, headers, file.StorageObject.Key,
+            var fileMetrics = await ProcessCsvRecordsAsync(importId, collection, csvContext.Csv, headers, file.StorageObject.Key,
                 collectionName, fileSet.Definition, progressTracker, report, ct);
 
             await csvContext.DisposeAsync();
@@ -303,23 +350,48 @@ public class IngestionPipeline(
             mongoIngestionStopwatch.Stop();
             overallStopwatch.Stop();
 
-            Debug.WriteLine($"[keepetl] Completed ingestion of file {file.StorageObject.Key}. Total records: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}, S3 Download: {downloadStopwatch.ElapsedMilliseconds}ms, MongoDB Ingestion: {mongoIngestionStopwatch.ElapsedMilliseconds}ms, Total Duration: {overallStopwatch.ElapsedMilliseconds}ms, Avg Record Processing: {metrics.AverageMongoIngestionMs:F2}ms/record");
+            Debug.WriteLine($"[keepetl] Completed ingestion of file {file.StorageObject.Key}. Total records: {fileMetrics.RecordsProcessed}, Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}, S3 Download: {downloadStopwatch.ElapsedMilliseconds}ms, MongoDB Ingestion: {mongoIngestionStopwatch.ElapsedMilliseconds}ms, Total Duration: {overallStopwatch.ElapsedMilliseconds}ms, Avg Record Processing: {fileMetrics.AverageMongoIngestionMs:F2}ms/record");
             logger.LogInformation("Completed ingestion of file {FileKey}. Total records: {TotalRecords}, Created: {Created}, Updated: {Updated}, Deleted: {Deleted}, S3 Download: {DownloadDuration}ms, MongoDB Ingestion: {MongoIngestionDuration}ms, Total Duration: {TotalDuration}ms, Avg Record Processing: {AvgMs:F2}ms/record",
                 file.StorageObject.Key,
-                metrics.RecordsProcessed,
-                metrics.RecordsCreated,
-                metrics.RecordsUpdated,
-                metrics.RecordsDeleted,
+                fileMetrics.RecordsProcessed,
+                fileMetrics.RecordsCreated,
+                fileMetrics.RecordsUpdated,
+                fileMetrics.RecordsDeleted,
                 downloadStopwatch.ElapsedMilliseconds,
                 mongoIngestionStopwatch.ElapsedMilliseconds,
                 overallStopwatch.ElapsedMilliseconds,
-                metrics.AverageMongoIngestionMs);
+                fileMetrics.AverageMongoIngestionMs);
 
-            return metrics with
+            var result = fileMetrics with
             {
                 S3DownloadDurationMs = downloadStopwatch.ElapsedMilliseconds,
                 MongoIngestionDurationMs = mongoIngestionStopwatch.ElapsedMilliseconds
             };
+
+            metrics.RecordRequest("file_ingestion", "completed");
+            metrics.RecordCount("files_ingested", 1,
+                ("collection", collectionName),
+                ("status", "success"));
+
+            metrics.RecordCount("file_records_processed", fileMetrics.RecordsProcessed,
+                ("collection", collectionName));
+            metrics.RecordValue("file_s3_download_duration", downloadStopwatch.ElapsedMilliseconds,
+                ("collection", collectionName));
+            metrics.RecordValue("file_mongo_ingestion_duration", mongoIngestionStopwatch.ElapsedMilliseconds,
+                ("collection", collectionName));
+            metrics.RecordValue("file_average_record_processing", fileMetrics.AverageMongoIngestionMs,
+                ("collection", collectionName));
+
+            if (overallStopwatch.ElapsedMilliseconds > 0)
+            {
+                var s3Ratio = (double)downloadStopwatch.ElapsedMilliseconds / overallStopwatch.ElapsedMilliseconds;
+                var mongoRatio = (double)mongoIngestionStopwatch.ElapsedMilliseconds / overallStopwatch.ElapsedMilliseconds;
+
+                metrics.RecordValue("s3_vs_total_ratio", s3Ratio, ("collection", collectionName));
+                metrics.RecordValue("mongo_vs_total_ratio", mongoRatio, ("collection", collectionName));
+            }
+
+            return result;
         }
         finally
         {
@@ -388,7 +460,7 @@ public class IngestionPipeline(
             Delimiter = "|" // Use pipe delimiter for CSV files
         });
 
-        return new CsvContext(stream, reader, csv);
+        return await Task.FromResult(new CsvContext(stream, reader, csv));
     }
 
     private async Task<CsvHeaders> ReadAndValidateHeadersAsync(
@@ -452,7 +524,7 @@ public class IngestionPipeline(
         ImportReport report, CancellationToken ct)
     {
         Debug.WriteLine($"[keepetl] Starting to process CSV records for file: {fileKey}");
-        var metrics = new RecordMetricsAccumulator();
+        var fileMetrics = new FileMetricsTracker();
         var batch = new List<(BsonDocument Document, string ChangeType)>();
         var lineageEvents = new List<RecordLineageEvent>();
         var totalMongoProcessingMs = 0L;
@@ -469,7 +541,7 @@ public class IngestionPipeline(
                 Debug.WriteLine($"[keepetl] Invalid change type '{changeType}' for record with primary key '{primaryKeyValue}' in file {fileKey}, skipping record");
                 logger.LogWarning("Invalid change type '{ChangeType}' for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
                     changeType, primaryKeyValue, fileKey);
-                metrics.RecordsSkipped++;
+                fileMetrics.RecordsSkipped++;
                 continue;
             }
 
@@ -486,7 +558,14 @@ public class IngestionPipeline(
 
                 await FlushLineageEventsAsync(lineageEvents, ct);
 
-                metrics.AddBatch(batchMetrics);
+                var batchDto = new KeeperData.Core.Reporting.Dtos.BatchProcessingMetrics
+                {
+                    RecordsProcessed = batchMetrics.RecordsProcessed,
+                    RecordsCreated = batchMetrics.RecordsCreated,
+                    RecordsUpdated = batchMetrics.RecordsUpdated,
+                    RecordsDeleted = batchMetrics.RecordsDeleted
+                };
+                fileMetrics.AddBatch(batchDto);
                 totals = totals.Add(new IngestionTotals
                 {
                     RecordsCreated = batchMetrics.RecordsCreated,
@@ -497,7 +576,7 @@ public class IngestionPipeline(
                 batchStopwatch.Stop();
                 totalMongoProcessingMs += batchStopwatch.ElapsedMilliseconds;
 
-                Debug.WriteLine($"[keepetl] Processed batch of {BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}");
+                Debug.WriteLine($"[keepetl] Processed batch of {BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {fileMetrics.RecordsProcessed}, Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}");
                 Debug.WriteLine($"[keepetl] -- END BATCH ({batchStopwatch.Elapsed.TotalSeconds}s, {batchStopwatch.ElapsedMilliseconds}ms) --");
 
                 if (BatchDelayMs > 0)
@@ -511,17 +590,17 @@ public class IngestionPipeline(
                 batch.Clear();
             }
 
-            if (metrics.RecordsProcessed > lastReportedRecordCount &&
-                metrics.RecordsProcessed - lastReportedRecordCount >= ProgressUpdateInterval)
+            if (fileMetrics.RecordsProcessed > lastReportedRecordCount &&
+                fileMetrics.RecordsProcessed - lastReportedRecordCount >= ProgressUpdateInterval)
             {
-                LogProgressIfNeeded(metrics.RecordsProcessed, fileKey);
-                progressTracker.UpdateProgress(metrics.RecordsProcessed);
+                LogProgressIfNeeded(fileMetrics.RecordsProcessed, fileKey);
+                progressTracker.UpdateProgress(fileMetrics.RecordsProcessed);
 
                 var currentStatus = progressTracker.GetCurrentStatus();
                 // Update report with current file status
-                report.IngestionPhase!.RecordsCreated = totals.RecordsCreated + metrics.RecordsCreated;
-                report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated + metrics.RecordsUpdated;
-                report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted + metrics.RecordsDeleted;
+                report.IngestionPhase!.RecordsCreated = totals.RecordsCreated + fileMetrics.RecordsCreated;
+                report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated + fileMetrics.RecordsUpdated;
+                report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted + fileMetrics.RecordsDeleted;
                 report.IngestionPhase!.CurrentFileStatus = new IngestionCurrentFileStatus
                 {
                     FileName = currentStatus.FileName,
@@ -536,7 +615,7 @@ public class IngestionPipeline(
 
                 Debug.WriteLine($"[keepetl] STATS: rpm:{currentStatus.RowsPerMinute}, {currentStatus.PercentageCompleted}% done, tot:{currentStatus.TotalRows}, num:{currentStatus.RowNumber}");
 
-                lastReportedRecordCount = metrics.RecordsProcessed;
+                lastReportedRecordCount = fileMetrics.RecordsProcessed;
             }
 
         } // [end while]
@@ -556,16 +635,23 @@ public class IngestionPipeline(
                 lineageEvents,
                 ct);
 
-            metrics.AddBatch(batchMetrics);
+            var batchDto = new KeeperData.Core.Reporting.Dtos.BatchProcessingMetrics
+            {
+                RecordsProcessed = batchMetrics.RecordsProcessed,
+                RecordsCreated = batchMetrics.RecordsCreated,
+                RecordsUpdated = batchMetrics.RecordsUpdated,
+                RecordsDeleted = batchMetrics.RecordsDeleted
+            };
+            fileMetrics.AddBatch(batchDto);
         }
 
         // Final progress update
-        progressTracker.UpdateProgress(metrics.RecordsProcessed);
+        progressTracker.UpdateProgress(fileMetrics.RecordsProcessed);
         var finalStatus = progressTracker.Complete();
 
-        report.IngestionPhase!.RecordsCreated = totals.RecordsCreated + metrics.RecordsCreated;
-        report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated + metrics.RecordsUpdated;
-        report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted + metrics.RecordsDeleted;
+        report.IngestionPhase!.RecordsCreated = totals.RecordsCreated + fileMetrics.RecordsCreated;
+        report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated + fileMetrics.RecordsUpdated;
+        report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted + fileMetrics.RecordsDeleted;
         report.IngestionPhase!.CurrentFileStatus = new IngestionCurrentFileStatus
         {
             FileName = finalStatus.FileName,
@@ -582,11 +668,20 @@ public class IngestionPipeline(
         await FlushLineageEventsAsync(lineageEvents, ct);
 
         // Calculate average MongoDB ingestion time per record
-        var avgMongoMs = metrics.RecordsProcessed > 0 ? (double)totalMongoProcessingMs / metrics.RecordsProcessed : 0;
+        var avgMongoMs = fileMetrics.RecordsProcessed > 0 ? (double)totalMongoProcessingMs / fileMetrics.RecordsProcessed : 0;
 
-        Debug.WriteLine($"[keepetl] Finished processing CSV records for file: {fileKey}. Total: {metrics.RecordsProcessed}, Created: {metrics.RecordsCreated}, Updated: {metrics.RecordsUpdated}, Deleted: {metrics.RecordsDeleted}, Avg: {avgMongoMs:F2}ms/record");
+        Debug.WriteLine($"[keepetl] Finished processing CSV records for file: {fileKey}. Total: {fileMetrics.RecordsProcessed}, Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}, Avg: {avgMongoMs:F2}ms/record");
 
-        return metrics.ToFileMetrics(avgMongoMs);
+        return new FileIngestionMetrics
+        {
+            RecordsProcessed = fileMetrics.RecordsProcessed,
+            RecordsCreated = fileMetrics.RecordsCreated,
+            RecordsUpdated = fileMetrics.RecordsUpdated,
+            RecordsDeleted = fileMetrics.RecordsDeleted,
+            AverageMongoIngestionMs = avgMongoMs,
+            S3DownloadDurationMs = 0,
+            MongoIngestionDurationMs = totalMongoProcessingMs
+        };
     }
 
     private static bool IsValidChangeType(string changeType)
@@ -760,12 +855,20 @@ public class IngestionPipeline(
 
         var batchStopwatch = Stopwatch.StartNew();
 
+        metrics.RecordCount("batch_processing_started", 1,
+            ("collection", collectionName),
+            ("batch_size", batch.Count.ToString()));
+
         var documentIds = batch.Select(b => b.Document[FieldId]).ToList();
         var existingDocsDict = await FetchExistingDocumentsAsync(collection, documentIds, ct);
         var softDeletedIds = GetSoftDeletedIds(existingDocsDict);
 
         var bulkOps = new List<WriteModel<BsonDocument>>();
-        var metrics = new BatchMetricsAccumulator();
+        var batchMetrics = new BatchMetricsTracker();
+
+        var insertOps = batch.Count(b => b.ChangeType == ChangeType.Insert);
+        var updateOps = batch.Count(b => b.ChangeType == ChangeType.Update);
+        var deleteOps = batch.Count(b => b.ChangeType == ChangeType.Delete);
 
         foreach (var (document, changeType) in batch)
         {
@@ -778,8 +881,8 @@ public class IngestionPipeline(
                 ProcessDeleteOperation(bulkOps, lineageEvents, docId, recordId,
                     existingDoc, importId, fileKey, collectionName, changeType);
 
-                metrics.Deleted++;
-                metrics.Processed++;
+                batchMetrics.Deleted++;
+                batchMetrics.Processed++;
             }
             else if (changeType == ChangeType.Insert || changeType == ChangeType.Update)
             {
@@ -791,13 +894,13 @@ public class IngestionPipeline(
 
                 if (isCreate)
                 {
-                    metrics.Created++;
+                    batchMetrics.Created++;
                 }
                 else
                 {
-                    metrics.Updated++;
+                    batchMetrics.Updated++;
                 }
-                metrics.Processed++;
+                batchMetrics.Processed++;
             }
         }
 
@@ -810,9 +913,32 @@ public class IngestionPipeline(
         batchStopwatch.Stop();
         var elapsedSeconds = batchStopwatch.Elapsed.TotalSeconds;
 
-        Debug.WriteLine($"[keepetl] Batch processing complete. Processed: {metrics.Processed}, Created: {metrics.Created}, Updated: {metrics.Updated}, Deleted: {metrics.Deleted}, Elapsed: {elapsedSeconds:F3}s");
+        Debug.WriteLine($"[keepetl] Batch processing complete. Processed: {batchMetrics.Processed}, Created: {batchMetrics.Created}, Updated: {batchMetrics.Updated}, Deleted: {batchMetrics.Deleted}, Elapsed: {elapsedSeconds:F3}s");
 
-        return metrics.ToMetrics();
+        metrics.RecordValue("batch_processing_duration", batchStopwatch.ElapsedMilliseconds,
+            ("batch_size", batch.Count.ToString()),
+            ("collection", collectionName));
+
+        if (batchStopwatch.ElapsedMilliseconds > 0)
+        {
+            var recordsPerSecond = (batch.Count * 1000.0) / batchStopwatch.ElapsedMilliseconds;
+            metrics.RecordValue("batch_records_per_second", recordsPerSecond,
+                ("collection", collectionName));
+        }
+
+        metrics.RecordCount("batch_inserts", insertOps, ("collection", collectionName));
+        metrics.RecordCount("batch_updates", updateOps, ("collection", collectionName));
+        metrics.RecordCount("batch_deletes", deleteOps, ("collection", collectionName));
+
+        metrics.RecordRequest("batch_processing", "completed");
+
+        return new BatchProcessingMetrics
+        {
+            RecordsProcessed = batchMetrics.Processed,
+            RecordsCreated = batchMetrics.Created,
+            RecordsUpdated = batchMetrics.Updated,
+            RecordsDeleted = batchMetrics.Deleted
+        };
     }
 
     private async Task<Dictionary<BsonValue, BsonDocument>> FetchExistingDocumentsAsync(

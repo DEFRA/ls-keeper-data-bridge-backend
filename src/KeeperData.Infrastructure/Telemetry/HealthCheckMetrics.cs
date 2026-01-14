@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using KeeperData.Core.Telemetry;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace KeeperData.Infrastructure.Telemetry;

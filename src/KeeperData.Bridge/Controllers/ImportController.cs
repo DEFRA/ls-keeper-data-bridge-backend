@@ -45,10 +45,11 @@ public class ImportController(
 
         logger.LogInformation("Received request to start bulk import with sourceType={sourceType} at {requestTime}", sourceType, DateTime.UtcNow);
 
-        metrics.RecordRequest("import_api", "bulk_import_requested");
-        metrics.RecordCount("import_api_requests", 1,
-            ("endpoint", "start"),
-            ("source_type", sourceType));
+        metrics.RecordRequest(MetricNames.Api, MetricNames.Operations.ApiRequests);
+        metrics.RecordCount(MetricNames.Api, 1,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiRequests),
+            (MetricNames.CommonTags.Endpoint, "start"),
+            (MetricNames.CommonTags.SourceType, sourceType));
 
         // Validate sourceType
         if (sourceType != BlobStorageSources.Internal && sourceType != BlobStorageSources.External)
@@ -56,11 +57,14 @@ public class ImportController(
             logger.LogWarning("Invalid sourceType provided: {sourceType}", sourceType);
 
             requestStopwatch.Stop();
-            metrics.RecordRequest("import_api", "validation_error");
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.ErrorType, "validation"));
             metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_api_errors", 1,
-                ("endpoint", "start"),
-                ("error_type", "validation"));
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "start"),
+                (MetricNames.CommonTags.ErrorType, "validation"));
 
             return BadRequest(new ErrorResponse
             {
@@ -78,10 +82,13 @@ public class ImportController(
                 logger.LogWarning("Failed to start bulk import - could not acquire lock");
 
                 requestStopwatch.Stop();
-                metrics.RecordRequest("import_api", "lock_conflict");
+                metrics.RecordCount(MetricNames.Api, 1,
+                    (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiConflicts),
+                    ("conflict_type", "lock"));
                 metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-                metrics.RecordCount("import_api_conflicts", 1,
-                    ("endpoint", "start"),
+                metrics.RecordCount(MetricNames.Api, 1,
+                    (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiConflicts),
+                    (MetricNames.CommonTags.Endpoint, "start"),
                     ("conflict_type", "lock"));
 
                 return Conflict(new ErrorResponse
@@ -95,11 +102,14 @@ public class ImportController(
 
             requestStopwatch.Stop();
 
-            metrics.RecordRequest("import_api", "bulk_import_started");
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiSuccesses),
+                (MetricNames.CommonTags.SourceType, sourceType));
             metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_api_successes", 1,
-                ("endpoint", "start"),
-                ("source_type", sourceType));
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiSuccesses),
+                (MetricNames.CommonTags.Endpoint, "start"),
+                (MetricNames.CommonTags.SourceType, sourceType));
 
             return Accepted(new StartBulkImportResponse
             {
@@ -114,11 +124,14 @@ public class ImportController(
             logger.LogWarning("Bulk import start request was cancelled");
 
             requestStopwatch.Stop();
-            metrics.RecordRequest("import_api", "cancelled");
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.ErrorType, "cancellation"));
             metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_api_errors", 1,
-                ("endpoint", "start"),
-                ("error_type", "cancellation"));
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "start"),
+                (MetricNames.CommonTags.ErrorType, "cancellation"));
 
             return StatusCode(499, new ErrorResponse
             {
@@ -131,11 +144,14 @@ public class ImportController(
             logger.LogError(ex, "Unexpected error in StartBulkImport");
 
             requestStopwatch.Stop();
-            metrics.RecordRequest("import_api", "error");
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.ErrorType, ex.GetType().Name));
             metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_api_errors", 1,
-                ("endpoint", "start"),
-                ("error_type", ex.GetType().Name));
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "start"),
+                (MetricNames.CommonTags.ErrorType, ex.GetType().Name));
 
             throw;
         }
@@ -163,11 +179,15 @@ public class ImportController(
             logger.LogWarning("Invalid skip parameter: {skip}", skip);
 
             requestStopwatch.Stop();
-            metrics.RecordRequest("import_api", "error");
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "list"),
+                (MetricNames.CommonTags.ErrorType, "general"));
             metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_api_errors", 1,
-                ("endpoint", "list"),
-                ("error_type", "validation"),
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "list"),
+                (MetricNames.CommonTags.ErrorType, "validation"),
                 ("validation_field", "skip"));
 
             return BadRequest(new
@@ -182,11 +202,15 @@ public class ImportController(
             logger.LogWarning("Invalid top parameter: {top}", top);
 
             requestStopwatch.Stop();
-            metrics.RecordRequest("import_api", "error");
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "list"),
+                (MetricNames.CommonTags.ErrorType, "general"));
             metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_api_errors", 1,
-                ("endpoint", "list"),
-                ("error_type", "validation"),
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "list"),
+                (MetricNames.CommonTags.ErrorType, "validation"),
                 ("validation_field", "top"));
 
             return BadRequest(new
@@ -203,9 +227,12 @@ public class ImportController(
             logger.LogInformation("Successfully retrieved {count} import summaries", summaries.Count);
 
             requestStopwatch.Stop();
-            metrics.RecordRequest("import_api", "success");
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiSuccesses),
+                (MetricNames.CommonTags.Endpoint, "list"));
             metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_summaries_retrieved", summaries.Count);
+            metrics.RecordCount(MetricNames.Api, summaries.Count,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiSummaries));
 
             return Ok(new ImportSummariesResponse
             {
@@ -221,11 +248,15 @@ public class ImportController(
             logger.LogWarning("Get import summaries request was cancelled");
 
             requestStopwatch.Stop();
-            metrics.RecordRequest("import_api", "cancelled");
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "list"),
+                (MetricNames.CommonTags.ErrorType, "cancellation"));
             metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_api_errors", 1,
-                ("endpoint", "list"),
-                ("error_type", "cancellation"));
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "list"),
+                (MetricNames.CommonTags.ErrorType, "cancellation"));
 
             return StatusCode(499, new
             {
@@ -238,10 +269,14 @@ public class ImportController(
             logger.LogError(ex, "Unexpected error in GetImportSummaries");
 
             requestStopwatch.Stop();
-            metrics.RecordRequest("import_api", "error");
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "list"),
+                (MetricNames.CommonTags.ErrorType, ex.GetType().Name));
             metrics.RecordDuration("import_api_request", requestStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_api_errors", 1,
-                ("endpoint", "list"),
+            metrics.RecordCount(MetricNames.Api, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ApiErrors),
+                (MetricNames.CommonTags.Endpoint, "list"),
                 ("error_type", ex.GetType().Name));
 
             throw;

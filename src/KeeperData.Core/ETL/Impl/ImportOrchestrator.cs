@@ -16,9 +16,10 @@ public class ImportOrchestrator(
     {
         var overallStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-        metrics.RecordRequest("import_orchestrator", "started");
-        metrics.RecordCount("import_requests", 1,
-            ("source_type", sourceType),
+        metrics.RecordRequest(MetricNames.Import, MetricNames.Operations.ImportRequests);
+        metrics.RecordCount(MetricNames.Import, 1,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.ImportRequests),
+            (MetricNames.CommonTags.SourceType, sourceType),
             ("import_id", importId.ToString()));
 
         var report = await reportingService.StartImportAsync(importId, sourceType, ct);
@@ -34,11 +35,14 @@ public class ImportOrchestrator(
 
             overallStopwatch.Stop();
 
-            metrics.RecordRequest("import_orchestrator", "completed");
-            metrics.RecordDuration("import_orchestrator", overallStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_completions", 1,
-                ("source_type", sourceType),
-                ("status", "success"));
+            metrics.RecordRequest(MetricNames.Import, MetricNames.Operations.ImportCompletions);
+            metrics.RecordValue(MetricNames.Import, overallStopwatch.ElapsedMilliseconds,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ImportDuration),
+                (MetricNames.CommonTags.SourceType, sourceType));
+            metrics.RecordCount(MetricNames.Import, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ImportCompletions),
+                (MetricNames.CommonTags.SourceType, sourceType),
+                (MetricNames.CommonTags.Status, "success"));
 
             var totalRecords = (report.IngestionPhase?.RecordsCreated ?? 0) +
                               (report.IngestionPhase?.RecordsUpdated ?? 0) +
@@ -46,14 +50,17 @@ public class ImportOrchestrator(
             if (totalRecords > 0 && overallStopwatch.ElapsedMilliseconds > 0)
             {
                 var recordsPerMinute = (totalRecords * 60000.0) / overallStopwatch.ElapsedMilliseconds;
-                metrics.RecordValue("import_records_per_minute", recordsPerMinute,
-                    ("source_type", sourceType));
+                metrics.RecordValue(MetricNames.Import, recordsPerMinute,
+                    (MetricNames.CommonTags.Operation, MetricNames.Operations.ImportRecordsPerMinute),
+                    (MetricNames.CommonTags.SourceType, sourceType));
             }
 
-            metrics.RecordCount("import_total_records", totalRecords,
-                ("source_type", sourceType));
-            metrics.RecordCount("import_total_files", report.IngestionPhase?.FilesProcessed ?? 0,
-                ("source_type", sourceType));
+            metrics.RecordCount(MetricNames.Import, totalRecords,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ImportTotalRecords),
+                (MetricNames.CommonTags.SourceType, sourceType));
+            metrics.RecordCount(MetricNames.Import, report.IngestionPhase?.FilesProcessed ?? 0,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ImportTotalFiles),
+                (MetricNames.CommonTags.SourceType, sourceType));
         }
         catch (Exception ex)
         {
@@ -66,14 +73,18 @@ public class ImportOrchestrator(
 
             overallStopwatch.Stop();
 
-            metrics.RecordRequest("import_orchestrator", "failed");
-            metrics.RecordDuration("import_orchestrator", overallStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("import_completions", 1,
-                ("source_type", sourceType),
-                ("status", "failed"));
-            metrics.RecordCount("import_errors", 1,
-                ("source_type", sourceType),
-                ("error_type", ex.GetType().Name));
+            metrics.RecordRequest(MetricNames.Import, MetricNames.Operations.ImportErrors);
+            metrics.RecordValue(MetricNames.Import, overallStopwatch.ElapsedMilliseconds,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ImportDuration),
+                (MetricNames.CommonTags.SourceType, sourceType));
+            metrics.RecordCount(MetricNames.Import, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ImportCompletions),
+                (MetricNames.CommonTags.SourceType, sourceType),
+                (MetricNames.CommonTags.Status, "failed"));
+            metrics.RecordCount(MetricNames.Import, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.ImportErrors),
+                (MetricNames.CommonTags.SourceType, sourceType),
+                (MetricNames.CommonTags.ErrorType, ex.GetType().Name));
 
             throw;
         }

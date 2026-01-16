@@ -57,8 +57,10 @@ public class IngestionPipeline(
         Debug.WriteLine($"[keepetl] Starting ingest pipeline for ImportId: {importId}");
         logger.LogInformation("Starting ingest pipeline for ImportId: {ImportId}", importId);
 
-        metrics.RecordRequest("ingestion_pipeline", "started");
-        metrics.RecordCount("ingestion_started", 1, ("source_type", report.SourceType));
+        metrics.RecordRequest(MetricNames.Ingestion, MetricNames.Operations.IngestionStarted);
+        metrics.RecordCount(MetricNames.Ingestion, 1,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionStarted),
+            (MetricNames.CommonTags.SourceType, report.SourceType));
 
         try
         {
@@ -87,28 +89,36 @@ public class IngestionPipeline(
 
             ingestionStopwatch.Stop();
 
-            metrics.RecordRequest("ingestion_pipeline", "completed");
-            metrics.RecordDuration("ingestion_pipeline", ingestionStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("ingestion_completions", 1,
-                ("source_type", report.SourceType),
-                ("status", "success"));
+            metrics.RecordRequest(MetricNames.Ingestion, MetricNames.Operations.IngestionCompletions);
+            metrics.RecordValue(MetricNames.Ingestion, ingestionStopwatch.ElapsedMilliseconds,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionDuration),
+                (MetricNames.CommonTags.SourceType, report.SourceType));
+            metrics.RecordCount(MetricNames.Ingestion, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionCompletions),
+                (MetricNames.CommonTags.SourceType, report.SourceType),
+                (MetricNames.CommonTags.Status, "success"));
 
             var totalRecords = ingestionResults.RecordsCreated + ingestionResults.RecordsUpdated + ingestionResults.RecordsDeleted;
             if (totalRecords > 0 && ingestionStopwatch.ElapsedMilliseconds > 0)
             {
                 var recordsPerMinute = (totalRecords * 60000.0) / ingestionStopwatch.ElapsedMilliseconds;
-                metrics.RecordValue("ingestion_records_per_minute", recordsPerMinute,
-                    ("source_type", report.SourceType));
+                metrics.RecordValue(MetricNames.Ingestion, recordsPerMinute,
+                    (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsPerMinute),
+                    (MetricNames.CommonTags.SourceType, report.SourceType));
             }
 
-            metrics.RecordCount("ingestion_files_processed", ingestionResults.FilesProcessed,
-                ("source_type", report.SourceType));
-            metrics.RecordCount("ingestion_records_created", ingestionResults.RecordsCreated,
-                ("source_type", report.SourceType));
-            metrics.RecordCount("ingestion_records_updated", ingestionResults.RecordsUpdated,
-                ("source_type", report.SourceType));
-            metrics.RecordCount("ingestion_records_deleted", ingestionResults.RecordsDeleted,
-                ("source_type", report.SourceType));
+            metrics.RecordCount(MetricNames.Ingestion, ingestionResults.FilesProcessed,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionFilesProcessed),
+                (MetricNames.CommonTags.SourceType, report.SourceType));
+            metrics.RecordCount(MetricNames.Ingestion, ingestionResults.RecordsCreated,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsCreated),
+                (MetricNames.CommonTags.SourceType, report.SourceType));
+            metrics.RecordCount(MetricNames.Ingestion, ingestionResults.RecordsUpdated,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsUpdated),
+                (MetricNames.CommonTags.SourceType, report.SourceType));
+            metrics.RecordCount(MetricNames.Ingestion, ingestionResults.RecordsDeleted,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsDeleted),
+                (MetricNames.CommonTags.SourceType, report.SourceType));
         }
         catch (Exception ex)
         {
@@ -121,14 +131,18 @@ public class IngestionPipeline(
 
             ingestionStopwatch.Stop();
 
-            metrics.RecordRequest("ingestion_pipeline", "failed");
-            metrics.RecordDuration("ingestion_pipeline", ingestionStopwatch.ElapsedMilliseconds);
-            metrics.RecordCount("ingestion_completions", 1,
-                ("source_type", report.SourceType),
-                ("status", "failed"));
-            metrics.RecordCount("ingestion_errors", 1,
-                ("source_type", report.SourceType),
-                ("error_type", ex.GetType().Name));
+            metrics.RecordRequest(MetricNames.Ingestion, MetricNames.Operations.IngestionErrors);
+            metrics.RecordValue(MetricNames.Ingestion, ingestionStopwatch.ElapsedMilliseconds,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionDuration),
+                (MetricNames.CommonTags.SourceType, report.SourceType));
+            metrics.RecordCount(MetricNames.Ingestion, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionCompletions),
+                (MetricNames.CommonTags.SourceType, report.SourceType),
+                (MetricNames.CommonTags.Status, "failed"));
+            metrics.RecordCount(MetricNames.Ingestion, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionErrors),
+                (MetricNames.CommonTags.SourceType, report.SourceType),
+                (MetricNames.CommonTags.ErrorType, ex.GetType().Name));
 
             throw;
         }
@@ -303,8 +317,9 @@ public class IngestionPipeline(
         logger.LogInformation("Starting ingestion of file {FileKey} into collection {CollectionName}",
             file.StorageObject.Key, collectionName);
 
-        metrics.RecordCount("file_ingestion_started", 1,
-            ("collection", collectionName));
+        metrics.RecordCount(MetricNames.File, 1,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.FileIngestionStarted),
+            (MetricNames.CommonTags.Collection, collectionName));
 
         var collection = await EnsureCollectionExistsAsync(collectionName, ct);
         await EnsureWildcardIndexExistsAsync(collection, ct);
@@ -368,27 +383,36 @@ public class IngestionPipeline(
                 MongoIngestionDurationMs = mongoIngestionStopwatch.ElapsedMilliseconds
             };
 
-            metrics.RecordRequest("file_ingestion", "completed");
-            metrics.RecordCount("files_ingested", 1,
-                ("collection", collectionName),
-                ("status", "success"));
+            metrics.RecordRequest(MetricNames.File, MetricNames.Operations.FileIngested);
+            metrics.RecordCount(MetricNames.File, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileIngested),
+                (MetricNames.CommonTags.Collection, collectionName),
+                (MetricNames.CommonTags.Status, "success"));
 
-            metrics.RecordCount("file_records_processed", fileMetrics.RecordsProcessed,
-                ("collection", collectionName));
-            metrics.RecordValue("file_s3_download_duration", downloadStopwatch.ElapsedMilliseconds,
-                ("collection", collectionName));
-            metrics.RecordValue("file_mongo_ingestion_duration", mongoIngestionStopwatch.ElapsedMilliseconds,
-                ("collection", collectionName));
-            metrics.RecordValue("file_average_record_processing", fileMetrics.AverageMongoIngestionMs,
-                ("collection", collectionName));
+            metrics.RecordCount(MetricNames.File, fileMetrics.RecordsProcessed,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileRecordsProcessed),
+                (MetricNames.CommonTags.Collection, collectionName));
+            metrics.RecordValue(MetricNames.File, downloadStopwatch.ElapsedMilliseconds,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileS3Download),
+                (MetricNames.CommonTags.Collection, collectionName));
+            metrics.RecordValue(MetricNames.File, mongoIngestionStopwatch.ElapsedMilliseconds,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileMongoIngestion),
+                (MetricNames.CommonTags.Collection, collectionName));
+            metrics.RecordValue(MetricNames.File, fileMetrics.AverageMongoIngestionMs,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileAvgRecordProcessing),
+                (MetricNames.CommonTags.Collection, collectionName));
 
             if (overallStopwatch.ElapsedMilliseconds > 0)
             {
                 var s3Ratio = (double)downloadStopwatch.ElapsedMilliseconds / overallStopwatch.ElapsedMilliseconds;
                 var mongoRatio = (double)mongoIngestionStopwatch.ElapsedMilliseconds / overallStopwatch.ElapsedMilliseconds;
 
-                metrics.RecordValue("s3_vs_total_ratio", s3Ratio, ("collection", collectionName));
-                metrics.RecordValue("mongo_vs_total_ratio", mongoRatio, ("collection", collectionName));
+                metrics.RecordValue(MetricNames.File, s3Ratio,
+                    (MetricNames.CommonTags.Operation, MetricNames.Operations.FileS3Ratio),
+                    (MetricNames.CommonTags.Collection, collectionName));
+                metrics.RecordValue(MetricNames.File, mongoRatio,
+                    (MetricNames.CommonTags.Operation, MetricNames.Operations.FileMongoRatio),
+                    (MetricNames.CommonTags.Collection, collectionName));
             }
 
             return result;
@@ -855,8 +879,9 @@ public class IngestionPipeline(
 
         var batchStopwatch = Stopwatch.StartNew();
 
-        metrics.RecordCount("batch_processing_started", 1,
-            ("collection", collectionName),
+        metrics.RecordCount(MetricNames.Batch, 1,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchStarted),
+            (MetricNames.CommonTags.Collection, collectionName),
             ("batch_size", batch.Count.ToString()));
 
         var documentIds = batch.Select(b => b.Document[FieldId]).ToList();
@@ -915,22 +940,30 @@ public class IngestionPipeline(
 
         Debug.WriteLine($"[keepetl] Batch processing complete. Processed: {batchMetrics.Processed}, Created: {batchMetrics.Created}, Updated: {batchMetrics.Updated}, Deleted: {batchMetrics.Deleted}, Elapsed: {elapsedSeconds:F3}s");
 
-        metrics.RecordValue("batch_processing_duration", batchStopwatch.ElapsedMilliseconds,
+        metrics.RecordValue(MetricNames.Batch, batchStopwatch.ElapsedMilliseconds,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchDuration),
             ("batch_size", batch.Count.ToString()),
-            ("collection", collectionName));
+            (MetricNames.CommonTags.Collection, collectionName));
 
         if (batchStopwatch.ElapsedMilliseconds > 0)
         {
             var recordsPerSecond = (batch.Count * 1000.0) / batchStopwatch.ElapsedMilliseconds;
-            metrics.RecordValue("batch_records_per_second", recordsPerSecond,
-                ("collection", collectionName));
+            metrics.RecordValue(MetricNames.Batch, recordsPerSecond,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchRecordsPerSecond),
+                (MetricNames.CommonTags.Collection, collectionName));
         }
 
-        metrics.RecordCount("batch_inserts", insertOps, ("collection", collectionName));
-        metrics.RecordCount("batch_updates", updateOps, ("collection", collectionName));
-        metrics.RecordCount("batch_deletes", deleteOps, ("collection", collectionName));
+        metrics.RecordCount(MetricNames.Batch, insertOps,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchInserts),
+            (MetricNames.CommonTags.Collection, collectionName));
+        metrics.RecordCount(MetricNames.Batch, updateOps,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchUpdates),
+            (MetricNames.CommonTags.Collection, collectionName));
+        metrics.RecordCount(MetricNames.Batch, deleteOps,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchDeletes),
+            (MetricNames.CommonTags.Collection, collectionName));
 
-        metrics.RecordRequest("batch_processing", "completed");
+        metrics.RecordRequest(MetricNames.Batch, "completed");
 
         return new BatchProcessingMetrics
         {

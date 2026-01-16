@@ -424,14 +424,6 @@ public class ExceptionHandlingMiddlewareTests
         // Assert
         mockMetrics.Verify(m => m.RecordRequest(MetricNames.Http, MetricNames.Operations.HttpRequests), Times.Once);
         mockMetrics.Verify(m => m.RecordCount(MetricNames.Http, 1, It.Is<(string, string)[]>(x => x.Contains(new(MetricNames.CommonTags.Status, "success")))), Times.Once);
-
-        //_metrics.RecordRequest(MetricNames.Http, MetricNames.Operations.HttpRequests);
-        // 
-        // _metrics.RecordCount(MetricNames.Http, 1,
-        //     ("method", context.Request.Method),
-        //     ("endpoint", context.Request.Path.Value ?? "unknown"),
-        //     (MetricNames.CommonTags.StatusCode, context.Response.StatusCode.ToString()),
-        //     (MetricNames.CommonTags.Status, "success"));
     }
 
     [Theory]
@@ -507,9 +499,5 @@ public class ExceptionHandlingMiddlewareTests
             x.Contains(new(MetricNames.CommonTags.StatusCode, 422.ToString()))
             && x.Contains(new("error_category", "validation_error"))
         )), Times.Once);
-        // mockMetrics.Verify(m => m.RecordRequest("http_request", "error"), Times.Once);
-        // mockMetrics.Verify(m => m.RecordCount("http_errors", 1,
-        //     It.Is<(string Key, string Value)[]>(tags =>
-        //         tags.Any(t => t.Key == "status_code" && t.Value == "422"))), Times.Once);
     }
 }

@@ -32,9 +32,9 @@ public class EmfMetricsServiceTests
         };
 
         // Act & Assert - Should not throw
-        var exception = Record.Exception(() => 
+        var exception = Record.Exception(() =>
             service.PutMetric("TestMetric", 42.0, "Count", dimensions));
-        
+
         Assert.Null(exception);
     }
 
@@ -48,7 +48,7 @@ public class EmfMetricsServiceTests
         {
             EMF = new EmfConfig
             {
-                Namespace = "TestNamespace", 
+                Namespace = "TestNamespace",
                 ServiceName = "TestService"
             }
         });
@@ -56,9 +56,9 @@ public class EmfMetricsServiceTests
         var service = new EmfMetricsService(logger.Object, awsConfig, loggerFactory.Object);
 
         // Act & Assert - Should not throw
-        var exception = Record.Exception(() => 
+        var exception = Record.Exception(() =>
             service.PutMetric("TestMetric", 1.0, (Dictionary<string, string>?)null));
-        
+
         Assert.Null(exception);
     }
 }

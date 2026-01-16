@@ -28,9 +28,9 @@ public class ApplicationMetrics : IApplicationMetrics, IDisposable
     {
         var meterName = awsConfig.Value.Metrics.MeterName;
         var version = configuration.GetValue<string>("SERVICE_VERSION") ?? "1.0.0";
-        
+
         _meter = meterFactory.Create(meterName, version);
-        
+
         _requestCounter = _meter.CreateCounter<long>("requests_total", nameof(Unit.COUNT), "Total number of requests");
         _requestDuration = _meter.CreateHistogram<double>("request_duration_ms", nameof(Unit.MILLISECONDS), "Request duration in milliseconds");
         _genericCounter = _meter.CreateCounter<long>("counter", nameof(Unit.COUNT), "Generic counter");
@@ -39,7 +39,7 @@ public class ApplicationMetrics : IApplicationMetrics, IDisposable
 
     public void RecordRequest(string operation, string status)
     {
-        _requestCounter.Add(1, 
+        _requestCounter.Add(1,
             new KeyValuePair<string, object?>("operation", operation),
             new KeyValuePair<string, object?>("status", status));
     }

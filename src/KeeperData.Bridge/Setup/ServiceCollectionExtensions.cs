@@ -19,7 +19,7 @@ namespace KeeperData.Bridge.Setup
         {
             services.AddDefaultAWSOptions(configuration.GetAWSOptions());
             services.Configure<AwsConfig>(configuration.GetSection(AwsConfig.SectionName));
-            
+
             services.ConfigureHealthChecks();
 
             services.AddSingleton<IMetricsService, EmfMetricsService>();
@@ -43,12 +43,12 @@ namespace KeeperData.Bridge.Setup
         private static void ConfigureHealthChecks(this IServiceCollection services)
         {
             services.AddHealthChecks();
-            
+
             // Register the health check publisher first  
             services.AddSingleton<HealthCheckMetricsPublisher>();
-            services.AddSingleton<IHealthCheckPublisher>(serviceProvider => 
+            services.AddSingleton<IHealthCheckPublisher>(serviceProvider =>
                 serviceProvider.GetRequiredService<HealthCheckMetricsPublisher>());
-            
+
             // Configure background health check publishing
             services.Configure<HealthCheckPublisherOptions>(options =>
             {

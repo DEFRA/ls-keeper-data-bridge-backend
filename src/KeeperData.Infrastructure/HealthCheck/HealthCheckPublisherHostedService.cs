@@ -48,8 +48,8 @@ public class HealthCheckPublisherHostedService : BackgroundService
                 {
                     var healthReport = await _healthCheckService.CheckHealthAsync(stoppingToken);
                     await _publisher.PublishAsync(healthReport, stoppingToken);
-                    
-                    _logger.LogDebug("Published health check report: Status={Status}, Duration={Duration}ms", 
+
+                    _logger.LogDebug("Published health check report: Status={Status}, Duration={Duration}ms",
                         healthReport.Status, healthReport.TotalDuration.TotalMilliseconds);
                 }
                 catch (Exception ex)

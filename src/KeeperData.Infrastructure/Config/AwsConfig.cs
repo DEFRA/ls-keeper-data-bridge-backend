@@ -3,7 +3,7 @@ namespace KeeperData.Infrastructure.Config;
 public class AwsConfig
 {
     public const string SectionName = "AWS";
-    
+
     public EmfConfig EMF { get; set; } = new();
     public MetricsConfig Metrics { get; set; } = new();
 }

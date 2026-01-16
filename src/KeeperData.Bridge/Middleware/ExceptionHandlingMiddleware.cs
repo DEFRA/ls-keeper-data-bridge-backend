@@ -52,8 +52,8 @@ public sealed class ExceptionHandlingMiddleware(
     {
         var exceptionType = exception.GetType().Name;
         var severity = statusCode >= 500 ? "error" : "warning";
-        
-        _metrics.RecordCount("http_exceptions_total", 1, 
+
+        _metrics.RecordCount("http_exceptions_total", 1,
             ("exception_type", exceptionType),
             ("status_code", statusCode.ToString()),
             ("method", method),

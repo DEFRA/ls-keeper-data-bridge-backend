@@ -447,11 +447,11 @@ public class ExceptionHandlingMiddlewareTests
 
         testMetrics.Should().NotBeNull();
         testMetrics!.RecordedCounts.Should().HaveCount(1);
-        
+
         var metricRecord = testMetrics.RecordedCounts[0];
         metricRecord.MetricName.Should().Be("http_exceptions_total");
         metricRecord.Count.Should().Be(1);
-        
+
         var tags = metricRecord.Tags;
         tags.Should().Contain(("exception_type", "NotFoundException"));
         tags.Should().Contain(("status_code", "404"));
@@ -475,7 +475,7 @@ public class ExceptionHandlingMiddlewareTests
 
         testMetrics.Should().NotBeNull();
         testMetrics!.RecordedCounts.Should().HaveCount(1);
-        
+
         var metricRecord = testMetrics.RecordedCounts[0];
         var tags = metricRecord.Tags;
         tags.Should().Contain(("exception_type", "InvalidOperationException"));

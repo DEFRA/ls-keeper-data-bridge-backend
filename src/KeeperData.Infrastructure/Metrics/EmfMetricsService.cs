@@ -21,12 +21,12 @@ public class EmfMetricsService(ILogger<EmfMetricsService> logger, IOptions<AwsCo
         try
         {
             using var metricsLogger = new MetricsLogger(_loggerFactory);
-            
+
             metricsLogger.SetNamespace(_namespace);
-            
+
             var dimensionSet = new DimensionSet();
             dimensionSet.AddDimension("ServiceName", _serviceName);
-            
+
             if (dimensions != null)
             {
                 foreach (var dimension in dimensions)
@@ -37,15 +37,15 @@ public class EmfMetricsService(ILogger<EmfMetricsService> logger, IOptions<AwsCo
                     }
                 }
             }
-            
+
             metricsLogger.SetDimensions(dimensionSet);
-            
+
             var emfUnit = ParseUnit(unit);
             metricsLogger.PutMetric(metricName, value, emfUnit);
             metricsLogger.Flush();
-            
+
             var dimensionCount = dimensions?.Count ?? 0;
-            logger.LogDebug("EMF metric recorded: {MetricName}={Value} {Unit} with {DimensionCount} dimensions", 
+            logger.LogDebug("EMF metric recorded: {MetricName}={Value} {Unit} with {DimensionCount} dimensions",
                 metricName, value, unit, dimensionCount + 1); // +1 for ServiceName
         }
         catch (Exception ex)

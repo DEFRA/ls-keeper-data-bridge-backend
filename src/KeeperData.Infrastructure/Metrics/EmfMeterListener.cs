@@ -20,7 +20,7 @@ public class EmfMeterListener : IDisposable
     private readonly string _serviceName;
 
     public EmfMeterListener(
-        MeterListener meterListener, 
+        MeterListener meterListener,
         ILogger<EmfMeterListener> logger,
         ILoggerFactory loggerFactory,
         IOptions<AwsConfig> awsConfig)
@@ -31,13 +31,13 @@ public class EmfMeterListener : IDisposable
         _meterName = awsConfig.Value.Metrics.MeterName;
         _namespace = awsConfig.Value.EMF.Namespace;
         _serviceName = awsConfig.Value.EMF.ServiceName;
-        
+
         _meterListener.InstrumentPublished = OnInstrumentPublished;
         _meterListener.SetMeasurementEventCallback<double>(OnMeasurementRecorded);
         _meterListener.SetMeasurementEventCallback<int>(OnMeasurementRecorded);
         _meterListener.SetMeasurementEventCallback<long>(OnMeasurementRecorded);
         _meterListener.Start();
-        
+
         _logger.LogDebug("EMF MeterListener started for meter: {MeterName}", _meterName);
     }
 
@@ -56,7 +56,7 @@ public class EmfMeterListener : IDisposable
         try
         {
             using var metricsLogger = new MetricsLogger(_loggerFactory);
-            
+
             metricsLogger.SetNamespace(_namespace);
             var dimensionSet = new DimensionSet();
             dimensionSet.AddDimension("ServiceName", _serviceName);
@@ -72,17 +72,17 @@ public class EmfMeterListener : IDisposable
             metricsLogger.SetDimensions(dimensionSet);
             var name = instrument.Name;
             var value = Convert.ToDouble(measurement);
-            
+
             // Use the instrument's unit directly, parsing it as EMF Unit enum
-            var unit = !string.IsNullOrEmpty(instrument.Unit) && Enum.TryParse<Unit>(instrument.Unit, true, out var parsedUnit) 
-                ? parsedUnit 
+            var unit = !string.IsNullOrEmpty(instrument.Unit) && Enum.TryParse<Unit>(instrument.Unit, true, out var parsedUnit)
+                ? parsedUnit
                 : Unit.COUNT;
 
             metricsLogger.PutMetric(name, value, unit);
             metricsLogger.Flush();
-            
+
             var tagCount = tags.Length;
-            _logger.LogDebug("Recorded metric {InstrumentName}={Value} with {DimensionCount} dimensions", 
+            _logger.LogDebug("Recorded metric {InstrumentName}={Value} with {DimensionCount} dimensions",
                 instrument.Name, value, tagCount + 1); // +1 for ServiceName
         }
         catch (Exception ex)

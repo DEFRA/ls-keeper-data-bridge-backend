@@ -1,6 +1,6 @@
 using KeeperData.Core.Exceptions;
 using KeeperData.Infrastructure;
-using KeeperData.Infrastructure.Telemetry;
+using KeeperData.Core.Telemetry;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 using System.Text.Json;
@@ -31,13 +31,13 @@ public sealed class ExceptionHandlingMiddleware(
 
             // Record successful request metrics
             stopwatch.Stop();
-            _metrics.RecordRequest("http_request", "success");
+            _metrics.RecordRequest(MetricNames.Http, MetricNames.Operations.HttpRequests);
             _metrics.RecordDuration("http_request", stopwatch.ElapsedMilliseconds);
-            _metrics.RecordCount("http_requests", 1,
+            _metrics.RecordCount(MetricNames.Http, 1,
                 ("method", context.Request.Method),
                 ("endpoint", context.Request.Path.Value ?? "unknown"),
-                ("status_code", context.Response.StatusCode.ToString()),
-                ("status", "success"));
+                (MetricNames.CommonTags.StatusCode, context.Response.StatusCode.ToString()),
+                (MetricNames.CommonTags.Status, "success"));
         }
         catch (FluentValidation.ValidationException ex)
         {
@@ -128,23 +128,27 @@ public sealed class ExceptionHandlingMiddleware(
         try
         {
             // Record general error metrics
-            _metrics.RecordRequest("http_request", "error");
+            _metrics.RecordRequest(MetricNames.Http, MetricNames.Operations.HttpErrors);
             _metrics.RecordDuration("http_request", durationMs);
 
             // Record detailed error metrics
-            _metrics.RecordCount("http_errors", 1,
-                ("status_code", statusCode.ToString()),
-                ("error_type", exception.GetType().Name),
+            _metrics.RecordCount(MetricNames.Http, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.HttpErrors),
+                (MetricNames.CommonTags.StatusCode, statusCode.ToString()),
+                (MetricNames.CommonTags.ErrorType, exception.GetType().Name),
                 ("error_category", errorCategory),
-                ("endpoint", endpoint));
-            _metrics.RecordValue("error_response_time", durationMs,
-                ("status_code", statusCode.ToString()),
+                (MetricNames.CommonTags.Endpoint, endpoint));
+            _metrics.RecordValue(MetricNames.Http, durationMs,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.HttpErrorResponse),
+                (MetricNames.CommonTags.StatusCode, statusCode.ToString()),
                 ("error_category", errorCategory));
-            _metrics.RecordCount("exception_types", 1,
+            _metrics.RecordCount(MetricNames.Http, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.HttpExceptions),
                 ("exception_type", exception.GetType().Name),
                 ("error_category", errorCategory));
-            _metrics.RecordCount("http_status_codes", 1,
-                ("status_code", statusCode.ToString()),
+            _metrics.RecordCount(MetricNames.Http, 1,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.HttpStatusCodes),
+                (MetricNames.CommonTags.StatusCode, statusCode.ToString()),
                 ("status_class", GetStatusClass(statusCode)));
         }
         catch (Exception ex)

@@ -1,4 +1,4 @@
-namespace KeeperData.Infrastructure.Telemetry;
+namespace KeeperData.Core.Telemetry;
 
 /// <summary>
 /// Provides a clean, reusable interface for recording application metrics

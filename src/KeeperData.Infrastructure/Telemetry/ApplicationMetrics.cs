@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using KeeperData.Infrastructure.Config;
+using KeeperData.Core.Telemetry;
 using Microsoft.Extensions.Options;
 
 namespace KeeperData.Infrastructure.Telemetry;

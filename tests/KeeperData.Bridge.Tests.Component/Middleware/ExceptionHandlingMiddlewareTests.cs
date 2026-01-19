@@ -2,8 +2,8 @@ using FluentAssertions;
 using FluentValidation.Results;
 using KeeperData.Bridge.Middleware;
 using KeeperData.Core.Exceptions;
+using KeeperData.Core.Telemetry;
 using KeeperData.Infrastructure;
-using KeeperData.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -422,18 +422,20 @@ public class ExceptionHandlingMiddlewareTests
         await sut.InvokeAsync(context);
 
         // Assert
-        mockMetrics.Verify(m => m.RecordRequest("http_request", "success"), Times.Once);
+        mockMetrics.Verify(m => m.RecordRequest(MetricNames.Http, MetricNames.Operations.HttpRequests), Times.Once);
+        mockMetrics.Verify(m => m.RecordCount(MetricNames.Http, 1, It.Is<(string, string)[]>(x => x.Contains(new(MetricNames.CommonTags.Status, "success")))), Times.Once);
     }
 
     [Theory]
-    [InlineData(typeof(NotFoundException), "Test not found", 404)]
-    [InlineData(typeof(DomainException), "Domain rule violated", 400)]
-    [InlineData(typeof(InvalidOperationException), "Something went wrong", 500)]
-    [InlineData(typeof(ArgumentNullException), "Value cannot be null. (Parameter 'parameter')", 500)]
+    [InlineData(typeof(NotFoundException), "Test not found", 404, "not_found")]
+    [InlineData(typeof(DomainException), "Domain rule violated", 400, "domain_error")]
+    [InlineData(typeof(InvalidOperationException), "Something went wrong", 500, "internal_error")]
+    [InlineData(typeof(ArgumentNullException), "Value cannot be null. (Parameter 'parameter')", 500, "internal_error")]
     public async Task InvokeAsync_WhenExceptionThrown_ShouldRecordErrorMetrics(
         Type exceptionType,
         string exceptionMessage,
-        int expectedStatusCode)
+        int expectedStatusCode,
+        string expectedErrorCategory)
     {
         // Arrange
         var context = CreateHttpContext("/api/test");
@@ -460,10 +462,11 @@ public class ExceptionHandlingMiddlewareTests
         await sut.InvokeAsync(context);
 
         // Assert
-        mockMetrics.Verify(m => m.RecordRequest("http_request", "error"), Times.Once);
-        mockMetrics.Verify(m => m.RecordCount("http_errors", 1,
-            It.Is<(string Key, string Value)[]>(tags =>
-                tags.Any(t => t.Key == "status_code" && t.Value == expectedStatusCode.ToString()))), Times.Once);
+        mockMetrics.Verify(m => m.RecordRequest(MetricNames.Http, MetricNames.Operations.HttpErrors), Times.Once);
+        mockMetrics.Verify(m => m.RecordCount(MetricNames.Http, 1, It.Is<(string, string)[]>(x =>
+            x.Contains(new(MetricNames.CommonTags.StatusCode, expectedStatusCode.ToString()))
+            && x.Contains(new("error_category", expectedErrorCategory))
+            )), Times.Once);
     }
 
     [Fact]
@@ -491,9 +494,10 @@ public class ExceptionHandlingMiddlewareTests
         await sut.InvokeAsync(context);
 
         // Assert
-        mockMetrics.Verify(m => m.RecordRequest("http_request", "error"), Times.Once);
-        mockMetrics.Verify(m => m.RecordCount("http_errors", 1,
-            It.Is<(string Key, string Value)[]>(tags =>
-                tags.Any(t => t.Key == "status_code" && t.Value == "422"))), Times.Once);
+        mockMetrics.Verify(m => m.RecordRequest(MetricNames.Http, MetricNames.Operations.HttpErrors), Times.Once);
+        mockMetrics.Verify(m => m.RecordCount(MetricNames.Http, 1, It.Is<(string, string)[]>(x =>
+            x.Contains(new(MetricNames.CommonTags.StatusCode, 422.ToString()))
+            && x.Contains(new("error_category", "validation_error"))
+        )), Times.Once);
     }
 }

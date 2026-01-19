@@ -380,6 +380,9 @@ public class PerformanceTests : IAsyncLifetime
         services.AddScoped<IImportOrchestrator, ImportOrchestrator>();
         services.AddScoped<IMongoQueryService, MongoQueryService>();
 
+        // Add telemetry services
+        services.AddTransient<KeeperData.Core.Telemetry.IApplicationMetrics, KeeperData.Infrastructure.Telemetry.ApplicationMetrics>();
+
         return services.BuildServiceProvider();
     }
 

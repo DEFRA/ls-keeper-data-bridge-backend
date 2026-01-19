@@ -1111,7 +1111,7 @@ public class EndToEndImportScenarioTests : IAsyncLifetime
     private async Task<IMongoCollection<BsonDocument>> GetCollectionAsync(string collectionName)
     {
         var database = _mongoDbFixture.MongoClient.GetDatabase(TestDatabaseName);
-        return database.GetCollection<BsonDocument>(collectionName);
+        return await Task.FromResult(database.GetCollection<BsonDocument>(collectionName));
     }
 
     #endregion

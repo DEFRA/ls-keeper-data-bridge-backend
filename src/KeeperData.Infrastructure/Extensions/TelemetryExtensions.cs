@@ -1,3 +1,4 @@
+using KeeperData.Core.Telemetry;
 using KeeperData.Infrastructure.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

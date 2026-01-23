@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using KeeperData.Core.Telemetry;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
@@ -34,7 +35,7 @@ public class HealthCheckMetricsPublisher : IHealthCheckPublisher
                 _healthMetrics.RecordHealthCheck(healthCheckName, result.Status, durationMs);
 
                 // Use generic application metrics for broader monitoring
-                _applicationMetrics.RecordRequest("health_check", result.Status.ToString().ToLowerInvariant());
+                _applicationMetrics.RecordRequest(MetricNames.HealthCheck, result.Status.ToString().ToLowerInvariant());
                 _applicationMetrics.RecordDuration("health_check", durationMs);
 
                 _logger.LogDebug("Published health check metric for {HealthCheck} with status {Status} in {Duration}ms",
@@ -45,9 +46,10 @@ public class HealthCheckMetricsPublisher : IHealthCheckPublisher
             _healthMetrics.RecordHealthCheck("overall", report.Status, report.TotalDuration.TotalMilliseconds);
 
             // Record summary metrics using IApplicationMetrics
-            _applicationMetrics.RecordRequest("health_check_overall", report.Status.ToString().ToLowerInvariant());
+            _applicationMetrics.RecordRequest(MetricNames.HealthCheck, report.Status.ToString().ToLowerInvariant());
             _applicationMetrics.RecordDuration("health_check_overall", report.TotalDuration.TotalMilliseconds);
-            _applicationMetrics.RecordCount("health_checks_executed", report.Entries.Count);
+            _applicationMetrics.RecordCount(MetricNames.HealthCheck, report.Entries.Count,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.HealthCheckExecuted));
         }
         catch (Exception ex)
         {
@@ -55,7 +57,7 @@ public class HealthCheckMetricsPublisher : IHealthCheckPublisher
             _logger.LogError(ex, "Failed to publish health check metrics");
 
             // Record error metric
-            _applicationMetrics.RecordRequest("health_check_publisher", "error");
+            _applicationMetrics.RecordRequest(MetricNames.HealthCheck, "error");
         }
 
         return Task.CompletedTask;

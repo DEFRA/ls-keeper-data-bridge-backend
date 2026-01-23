@@ -10,6 +10,7 @@ using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Telemetry;
 using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Storage;
 using KeeperData.Infrastructure.Storage.Configuration;
@@ -79,6 +80,8 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
             Options.Create(new MongoResilienceConfig()),
             new Mock<ILogger<ResilientMongoOperations>>().Object);
 
+        var coreApplicationMetricsMock = new Mock<KeeperData.Core.Telemetry.IApplicationMetrics>();
+
         _ingestionPipeline = new IngestionPipeline(blobStorageFactory,
                                                    externalCatalogueServiceFactory,
                                                    _mongoClient,
@@ -86,6 +89,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                                    reportingServiceMock.Object,
                                                    csvRowCounterMock.Object,
                                                    resilientMongoOpsMock.Object,
+                                                   coreApplicationMetricsMock.Object,
                                                    _loggerMock.Object);
     }
 
@@ -565,6 +569,8 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
             Options.Create(new MongoResilienceConfig()),
             new Mock<ILogger<ResilientMongoOperations>>().Object);
 
+        var coreApplicationMetricsMock = new Mock<KeeperData.Core.Telemetry.IApplicationMetrics>();
+
         var pipeline = new IngestionPipeline(blobStorageFactory,
                                              catalogueFactory.Object,
                                              _mongoClient,
@@ -572,6 +578,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                              reportingServiceMock.Object,
                                              new Mock<CsvRowCounter>(new Mock<ILogger<CsvRowCounter>>().Object).Object,
                                              resilientMongoOpsMock.Object,
+                                             coreApplicationMetricsMock.Object,
                                              _loggerMock.Object);
 
         var report = new ImportReport

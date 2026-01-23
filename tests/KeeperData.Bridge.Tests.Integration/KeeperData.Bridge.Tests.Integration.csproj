@@ -29,6 +29,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\KeeperData.Bridge\KeeperData.Bridge.csproj" />
     <ProjectReference Include="..\..\src\KeeperData.Core\KeeperData.Core.csproj" />
+    <ProjectReference Include="..\..\src\KeeperData.Core.Reports\KeeperData.Core.Reports.csproj" />
     <ProjectReference Include="..\..\src\KeeperData.Infrastructure\KeeperData.Infrastructure.csproj" />
   </ItemGroup>
 

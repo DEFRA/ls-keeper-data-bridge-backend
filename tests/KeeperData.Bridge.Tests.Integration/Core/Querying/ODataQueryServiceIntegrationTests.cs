@@ -2,6 +2,7 @@ using FluentAssertions;
 using KeeperData.Bridge.Tests.Integration.Helpers;
 using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.Querying.Abstract;
 using KeeperData.Core.Querying.Impl;
 using KeeperData.Infrastructure.Database.Configuration;
 using Microsoft.Extensions.Logging;
@@ -14,22 +15,22 @@ using Xunit.Abstractions;
 namespace KeeperData.Bridge.Tests.Integration.Core.Querying;
 
 /// <summary>
-/// Integration tests for MongoQueryService against real MongoDB using Testcontainers.
+/// Integration tests for ODataQueryService against real MongoDB using Testcontainers.
 /// Tests flexible querying across various operators, data types, and pagination scenarios.
 /// </summary>
 [Collection("MongoDB"), Trait("Dependence", "docker")]
-public class MongoQueryServiceIntegrationTests : IAsyncLifetime
+public class ODataQueryServiceIntegrationTests : IAsyncLifetime
 {
     private readonly ITestOutputHelper _testOutputHelper;
     private readonly MongoDbFixture _mongoDbFixture;
     private readonly IMongoClient _mongoClient;
-    private readonly MongoQueryService _queryService;
+    private readonly IODataQueryService _queryService;
     private readonly string _testDatabaseName = "test-query-service";
     private readonly string _testCollectionName = "test_products";
 
     private const int TotalTestRecords = 150; // Enough for pagination tests
 
-    public MongoQueryServiceIntegrationTests(
+    public ODataQueryServiceIntegrationTests(
         ITestOutputHelper testOutputHelper,
         MongoDbFixture mongoDbFixture)
     {
@@ -62,14 +63,20 @@ public class MongoQueryServiceIntegrationTests : IAsyncLifetime
             ]
         };
 
-        var loggerMock = new Mock<ILogger<MongoQueryService>>();
+        var queryServiceLogger = new Mock<ILogger<QueryService>>();
+        var odataServiceLogger = new Mock<ILogger<ODataQueryService>>();
 
-        // Create the service under test
-        _queryService = new MongoQueryService(
+        // Create the underlying query service
+        var queryService = new QueryService(
             _mongoClient,
             mongoConfig,
             dataSetDefinitions,
-            loggerMock.Object);
+            queryServiceLogger.Object);
+
+        // Create the OData service under test
+        _queryService = new ODataQueryService(
+            queryService,
+            odataServiceLogger.Object);
     }
 
     public async Task InitializeAsync()

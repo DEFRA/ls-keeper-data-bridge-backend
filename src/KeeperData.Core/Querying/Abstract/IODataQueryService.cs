@@ -3,12 +3,13 @@ using KeeperData.Core.Querying.Models;
 namespace KeeperData.Core.Querying.Abstract;
 
 /// <summary>
-/// Service for querying MongoDB collections dynamically with OData support.
+/// Service for querying collections using OData-style parameters.
+/// This is a facade over IQueryService that handles OData-to-.NET conversion.
 /// </summary>
-public interface IMongoQueryService
+public interface IODataQueryService
 {
     /// <summary>
-    /// Queries a MongoDB collection using OData query parameters.
+    /// Queries a collection using OData query parameters.
     /// </summary>
     /// <param name="collectionName">Name of the collection to query (must be defined in DataSetDefinitions)</param>
     /// <param name="filter">OData $filter expression (e.g., "CPH eq 'ABC123' and IsDeleted eq false")</param>

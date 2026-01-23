@@ -378,7 +378,8 @@ public class PerformanceTests : IAsyncLifetime
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddScoped<IIngestionPipeline, IngestionPipeline>();
         services.AddScoped<IImportOrchestrator, ImportOrchestrator>();
-        services.AddScoped<IMongoQueryService, MongoQueryService>();
+        services.AddScoped<IQueryService, QueryService>();
+        services.AddScoped<IODataQueryService, ODataQueryService>();
 
         // Add telemetry services
         services.AddTransient<KeeperData.Core.Telemetry.IApplicationMetrics, KeeperData.Infrastructure.Telemetry.ApplicationMetrics>();
@@ -544,7 +545,7 @@ public class PerformanceTests : IAsyncLifetime
 
     private async Task<List<Dictionary<string, object?>>> QueryIngestedDataAsync(string collectionName)
     {
-        var queryService = _serviceProvider!.GetRequiredService<IMongoQueryService>();
+        var queryService = _serviceProvider!.GetRequiredService<IODataQueryService>();
 
         _output.WriteLine($"Querying collection '{collectionName}'...");
 

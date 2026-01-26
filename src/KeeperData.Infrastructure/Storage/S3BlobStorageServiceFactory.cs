@@ -60,4 +60,11 @@ public class S3BlobStorageServiceFactory(IS3ClientFactory s3ClientFactory, ILogg
         var logger = loggerFactory.CreateLogger<S3BlobStorageService>();
         return new S3BlobStorageService(info.Client, logger, info.BucketName, storageConfiguration.TargetInternalPrefix);
     }
+
+    public IBlobStorageService GetCleanseReportsBlobService()
+    {
+        var info = s3ClientFactory.GetClientInfo<InternalStorageClient>();
+        var logger = loggerFactory.CreateLogger<S3BlobStorageService>();
+        return new S3BlobStorageService(info.Client, logger, info.BucketName, "cleanse-reports");
+    }
 }

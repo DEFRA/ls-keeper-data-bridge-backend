@@ -98,11 +98,36 @@ public class CleanseAnalysisRepository : ICleanseAnalysisRepository
         return documents.Select(MapToSummary).ToList();
     }
 
+
+
+
     public async Task<CleanseAnalysisOperation?> GetCurrentOperationAsync(CancellationToken ct = default)
     {
         var filter = Builders<BsonDocument>.Filter.Eq("status", CleanseAnalysisStatus.Running.ToString());
         var document = await _collection.Find(filter).FirstOrDefaultAsync(ct);
         return document is null ? null : MapToEntity(document);
+    }
+
+    public async Task SetReportDetailsAsync(string operationId, string objectKey, string reportUrl, CancellationToken ct = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.Eq("_id", operationId);
+        var update = Builders<BsonDocument>.Update
+            .Set("report_object_key", objectKey)
+            .Set("report_url", reportUrl);
+        await _collection.UpdateOneAsync(filter, update, cancellationToken: ct);
+    }
+
+    public async Task UpdateReportUrlAsync(string operationId, string reportUrl, CancellationToken ct = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.Eq("_id", operationId);
+        var update = Builders<BsonDocument>.Update.Set("report_url", reportUrl);
+        await _collection.UpdateOneAsync(filter, update, cancellationToken: ct);
+    }
+
+    public async Task<long> DeleteAllAsync(CancellationToken ct = default)
+    {
+        var result = await _collection.DeleteManyAsync(Builders<BsonDocument>.Filter.Empty, ct);
+        return result.DeletedCount;
     }
 
     private static BsonDocument MapToDocument(CleanseAnalysisOperation operation) => new()
@@ -118,7 +143,9 @@ public class CleanseAnalysisRepository : ICleanseAnalysisRepository
         { "issues_found", operation.IssuesFound },
         { "issues_resolved", operation.IssuesResolved },
         { "error", operation.Error ?? (BsonValue)BsonNull.Value },
-        { "duration_ms", operation.DurationMs.HasValue ? operation.DurationMs.Value : BsonNull.Value }
+        { "duration_ms", operation.DurationMs.HasValue ? operation.DurationMs.Value : BsonNull.Value },
+        { "report_object_key", operation.ReportObjectKey ?? (BsonValue)BsonNull.Value },
+        { "report_url", operation.ReportUrl ?? (BsonValue)BsonNull.Value }
     };
 
     private static CleanseAnalysisOperation MapToEntity(BsonDocument document) => new()
@@ -134,7 +161,9 @@ public class CleanseAnalysisRepository : ICleanseAnalysisRepository
         IssuesFound = document["issues_found"].AsInt32,
         IssuesResolved = document["issues_resolved"].AsInt32,
         Error = document["error"].IsBsonNull ? null : document["error"].AsString,
-        DurationMs = document["duration_ms"].IsBsonNull ? null : document["duration_ms"].AsInt64
+        DurationMs = document["duration_ms"].IsBsonNull ? null : document["duration_ms"].AsInt64,
+        ReportObjectKey = document.Contains("report_object_key") && !document["report_object_key"].IsBsonNull ? document["report_object_key"].AsString : null,
+        ReportUrl = document.Contains("report_url") && !document["report_url"].IsBsonNull ? document["report_url"].AsString : null
     };
 
     private static CleanseAnalysisOperationSummary MapToSummary(BsonDocument document) => new()
@@ -147,6 +176,8 @@ public class CleanseAnalysisRepository : ICleanseAnalysisRepository
         RecordsAnalyzed = document["records_analyzed"].AsInt32,
         IssuesFound = document["issues_found"].AsInt32,
         IssuesResolved = document["issues_resolved"].AsInt32,
-        DurationMs = document["duration_ms"].IsBsonNull ? null : document["duration_ms"].AsInt64
+        DurationMs = document["duration_ms"].IsBsonNull ? null : document["duration_ms"].AsInt64,
+        ReportObjectKey = document.Contains("report_object_key") && !document["report_object_key"].IsBsonNull ? document["report_object_key"].AsString : null,
+        ReportUrl = document.Contains("report_url") && !document["report_url"].IsBsonNull ? document["report_url"].AsString : null
     };
 }

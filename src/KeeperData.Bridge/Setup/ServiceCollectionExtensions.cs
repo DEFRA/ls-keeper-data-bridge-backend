@@ -11,6 +11,7 @@ using KeeperData.Infrastructure.Database.Setup;
 using KeeperData.Infrastructure.Extensions;
 using KeeperData.Infrastructure.Json;
 using KeeperData.Infrastructure.Messaging.Setup;
+using KeeperData.Infrastructure.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
 using KeeperData.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Authentication;
@@ -57,6 +58,7 @@ namespace KeeperData.Bridge.Setup
 
             services.AddKeeperDataMetrics();
 
+
             // Configure OpenTelemetry for metrics
             services.AddOpenTelemetry()
                 .WithMetrics(metrics =>
@@ -65,6 +67,8 @@ namespace KeeperData.Bridge.Setup
                 });
 
             services.AddMongoQueryService();
+
+            services.AddCleanseReportServices(configuration);
         }
 
         private static void ConfigureHealthChecks(this IServiceCollection services)

@@ -4,7 +4,6 @@ using KeeperData.Infrastructure.Notifications.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Notify.Client;
 using Notify.Exceptions;
 
 namespace KeeperData.Infrastructure.Notifications;
@@ -15,13 +14,16 @@ namespace KeeperData.Infrastructure.Notifications;
 public class GovukNotifyHealthCheck : IHealthCheck
 {
     private readonly CleanseReportNotificationConfig _config;
+    private readonly INotificationClientFactory _clientFactory;
     private readonly ILogger<GovukNotifyHealthCheck> _logger;
 
     public GovukNotifyHealthCheck(
         IOptions<CleanseReportNotificationConfig> config,
+        INotificationClientFactory clientFactory,
         ILogger<GovukNotifyHealthCheck> logger)
     {
         _config = config.Value;
+        _clientFactory = clientFactory;
         _logger = logger;
     }
 
@@ -53,7 +55,7 @@ public class GovukNotifyHealthCheck : IHealthCheck
         {
             _logger.LogDebug("Checking GOV.UK Notify connectivity by fetching templates");
 
-            var client = new NotificationClient(_config.ApiKey);
+            var client = _clientFactory.Create(_config.ApiKey);
             var templates = await client.GetAllTemplatesAsync()
                 .WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
 

@@ -45,6 +45,7 @@ public static class CleanseReportServiceCollectionExtensions
         // Add notification service and configuration
         services.Configure<CleanseReportNotificationConfig>(
             configuration.GetSection(CleanseReportNotificationConfig.SectionName));
+        services.AddSingleton<INotificationClientFactory, NotificationClientFactory>();
         services.AddScoped<ICleanseReportNotificationService, GovukNotifyCleanseReportNotificationService>();
 
         // Add health check for GOV.UK Notify

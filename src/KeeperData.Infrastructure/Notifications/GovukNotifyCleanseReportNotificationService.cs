@@ -2,7 +2,6 @@ using KeeperData.Core.Reports.Abstract;
 using KeeperData.Infrastructure.Notifications.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Notify.Client;
 using Notify.Exceptions;
 
 namespace KeeperData.Infrastructure.Notifications;
@@ -13,13 +12,16 @@ namespace KeeperData.Infrastructure.Notifications;
 public class GovukNotifyCleanseReportNotificationService : ICleanseReportNotificationService
 {
     private readonly CleanseReportNotificationConfig _config;
+    private readonly INotificationClientFactory _clientFactory;
     private readonly ILogger<GovukNotifyCleanseReportNotificationService> _logger;
 
     public GovukNotifyCleanseReportNotificationService(
         IOptions<CleanseReportNotificationConfig> config,
+        INotificationClientFactory clientFactory,
         ILogger<GovukNotifyCleanseReportNotificationService> logger)
     {
         _config = config.Value;
+        _clientFactory = clientFactory;
         _logger = logger;
     }
 
@@ -68,7 +70,7 @@ public class GovukNotifyCleanseReportNotificationService : ICleanseReportNotific
 
         try
         {
-            var client = new NotificationClient(_config.ApiKey);
+            var client = _clientFactory.Create(_config.ApiKey);
 
             var personalisation = new Dictionary<string, dynamic>
             {
@@ -173,7 +175,7 @@ public class GovukNotifyCleanseReportNotificationService : ICleanseReportNotific
                 "Sending test notification email to {Recipient} using template {TemplateId}",
                 testEmailAddress, _config.TemplateId);
 
-            var client = new NotificationClient(_config.ApiKey);
+            var client = _clientFactory.Create(_config.ApiKey);
 
             var personalisation = new Dictionary<string, dynamic>
             {

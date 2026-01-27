@@ -54,7 +54,8 @@ public class GovukNotifyHealthCheck : IHealthCheck
             _logger.LogDebug("Checking GOV.UK Notify connectivity by fetching templates");
 
             var client = new NotificationClient(_config.ApiKey);
-            var templates = await client.GetAllTemplatesAsync();
+            var templates = await client.GetAllTemplatesAsync()
+                .WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
 
             var templateCount = templates.templates?.Count ?? 0;
             data["TemplateCount"] = templateCount;
@@ -85,15 +86,28 @@ public class GovukNotifyHealthCheck : IHealthCheck
         }
         catch (NotifyClientException ex)
         {
-            _logger.LogError(ex, "GOV.UK Notify client error during health check");
-            data["Error"] = ex.Message;
-            return HealthCheckResult.Unhealthy($"Client error: {ex.Message}", ex, data);
+            var fullMessage = GetFullExceptionMessage(ex);
+            _logger.LogError(ex, "GOV.UK Notify client error during health check: {ErrorMessage}", fullMessage);
+            data["Error"] = fullMessage;
+            return HealthCheckResult.Unhealthy($"Client error: {fullMessage}", ex, data);
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogWarning(ex, "GOV.UK Notify health check timed out");
+            data["Error"] = "Request timed out";
+            return HealthCheckResult.Degraded("Request timed out - service may be slow or unreachable", data: data);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("GOV.UK Notify health check was cancelled");
+            throw; // Let the health check system handle cancellation
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error during GOV.UK Notify health check");
-            data["Error"] = ex.Message;
-            return HealthCheckResult.Unhealthy($"Unexpected error: {ex.Message}", ex, data);
+            var fullMessage = GetFullExceptionMessage(ex);
+            _logger.LogError(ex, "Unexpected error during GOV.UK Notify health check: {ErrorMessage}", fullMessage);
+            data["Error"] = fullMessage;
+            return HealthCheckResult.Unhealthy($"Unexpected error: {fullMessage}", ex, data);
         }
     }
 
@@ -104,5 +118,19 @@ public class GovukNotifyHealthCheck : IHealthCheck
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(apiKey));
         return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
+    }
+
+    private static string GetFullExceptionMessage(Exception ex)
+    {
+        var messages = new List<string>();
+        var current = ex;
+        
+        while (current != null)
+        {
+            messages.Add(current.Message);
+            current = current.InnerException;
+        }
+        
+        return string.Join(" --> ", messages);
     }
 }

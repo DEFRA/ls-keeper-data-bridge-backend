@@ -22,12 +22,14 @@ COPY ["src/KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj", "KeeperDat
 COPY ["src/KeeperData.Infrastructure/KeeperData.Infrastructure.csproj", "KeeperData.Infrastructure/"]
 COPY ["src/KeeperData.Application/KeeperData.Application.csproj", "KeeperData.Application/"]
 COPY ["src/KeeperData.Core/KeeperData.Core.csproj", "KeeperData.Core/"]
+COPY ["src/KeeperData.Core.Reports/KeeperData.Core.Reports.csproj", "KeeperData.Core.Reports/"]
 
 RUN dotnet restore "KeeperData.Bridge/KeeperData.Bridge.csproj" -r linux-x64 -v n
 RUN dotnet restore "KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj" -r linux-x64 -v n
 RUN dotnet restore "KeeperData.Infrastructure/KeeperData.Infrastructure.csproj" -r linux-x64 -v n
 RUN dotnet restore "KeeperData.Application/KeeperData.Application.csproj" -r linux-x64 -v n
 RUN dotnet restore "KeeperData.Core/KeeperData.Core.csproj" -r linux-x64 -v n
+RUN dotnet restore "KeeperData.Core.Reports/KeeperData.Core.Reports.csproj" -r linux-x64 -v n
 
 COPY ["src/", "."]
 

@@ -31,6 +31,12 @@ public class CleanseReportNotificationConfig
     /// </summary>
     public bool Enabled { get; set; } = true;
 
+
+    public bool HasApiKey => !string.IsNullOrWhiteSpace(ApiKey);
+
+
+    public bool IsEnabled => Enabled && HasApiKey;
+
     /// <summary>
     /// Gets the list of recipient email addresses parsed from <see cref="RecipientEmails"/>.
     /// </summary>

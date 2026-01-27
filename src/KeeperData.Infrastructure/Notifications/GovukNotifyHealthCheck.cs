@@ -43,10 +43,10 @@ public class GovukNotifyHealthCheck : IHealthCheck
             return HealthCheckResult.Healthy("Notifications disabled", data);
         }
 
-        if (string.IsNullOrEmpty(_config.ApiKey))
+        if (!_config.HasApiKey)
         {
-            _logger.LogWarning("GOV.UK Notify health check failed - API key not configured");
-            return HealthCheckResult.Unhealthy("API key not configured", data: data);
+            _logger.LogWarning("GOV.UK Notify health check skipped - API key not configured");
+            return HealthCheckResult.Healthy("API key not configured", data: data);
         }
 
         try

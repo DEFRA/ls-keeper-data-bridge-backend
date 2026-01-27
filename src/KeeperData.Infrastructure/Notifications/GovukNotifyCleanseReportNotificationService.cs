@@ -39,7 +39,7 @@ public class GovukNotifyCleanseReportNotificationService : ICleanseReportNotific
             };
         }
 
-        if (string.IsNullOrEmpty(_config.ApiKey))
+        if (!_config.HasApiKey)
         {
             _logger.LogWarning("GOV.UK Notify API key is not configured. Cannot send cleanse report notification.");
             return new CleanseReportNotificationResult

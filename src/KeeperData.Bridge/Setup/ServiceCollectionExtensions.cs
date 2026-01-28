@@ -19,12 +19,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 
 namespace KeeperData.Bridge.Setup
 {
+    [ExcludeFromCodeCoverage(Justification = "DI configuration code - tested through integration tests.")]
     public static class ServiceCollectionExtensions
     {
         public static void ConfigureApi(this IServiceCollection services, IConfiguration configuration)

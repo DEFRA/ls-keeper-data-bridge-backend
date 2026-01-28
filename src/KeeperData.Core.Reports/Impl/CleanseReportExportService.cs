@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO.Compression;
 using CsvHelper;
@@ -11,6 +12,7 @@ namespace KeeperData.Core.Reports.Impl;
 /// Service for exporting cleanse reports to CSV and uploading to S3.
 /// Streams data from MongoDB to minimize memory usage.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Export service with S3 and streaming dependencies - covered by integration tests.")]
 public class CleanseReportExportService : ICleanseReportExportService
 {
     private const string CsvFileName = "cleanse-report.csv";

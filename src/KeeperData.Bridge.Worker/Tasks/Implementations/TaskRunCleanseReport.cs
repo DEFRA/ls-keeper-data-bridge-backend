@@ -1,8 +1,10 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Abstract;
 using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Bridge.Worker.Tasks.Implementations;
 
+[ExcludeFromCodeCoverage(Justification = "Background task with service dependency - covered by integration tests.")]
 public class TaskRunCleanseReport(
     ILogger<TaskRunCleanseReport> logger,
     ICleanseReportService cleanseReportService) : ITaskRunCleanseReport

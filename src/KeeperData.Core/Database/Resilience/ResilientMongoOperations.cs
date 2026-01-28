@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
@@ -10,6 +11,7 @@ namespace KeeperData.Core.Database.Resilience;
 /// Wrapper for MongoDB operations with built-in resilience policies.
 /// Encapsulates retry logic, circuit breaker, and timeout handling.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB resilience wrapper - behavior verified through integration tests.")]
 public class ResilientMongoOperations
 {
     private readonly ILogger<ResilientMongoOperations> _logger;

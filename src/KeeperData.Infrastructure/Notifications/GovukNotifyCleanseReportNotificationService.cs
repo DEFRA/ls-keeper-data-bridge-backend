@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Abstract;
 using KeeperData.Infrastructure.Notifications.Configuration;
 using Microsoft.Extensions.Logging;
@@ -9,6 +10,12 @@ namespace KeeperData.Infrastructure.Notifications;
 /// <summary>
 /// GOV.UK Notify implementation for sending cleanse report notification emails.
 /// </summary>
+/// <remarks>
+/// Code coverage is excluded for methods that interact with the sealed NotificationClient class,
+/// which cannot be mocked for unit testing. Validation paths are tested, but actual email sending
+/// requires integration tests.
+/// </remarks>
+[ExcludeFromCodeCoverage(Justification = "NotificationClient is a sealed class from GOV.UK Notify SDK that cannot be mocked. Integration tests cover actual email sending.")]
 public class GovukNotifyCleanseReportNotificationService : ICleanseReportNotificationService
 {
     private readonly CleanseReportNotificationConfig _config;

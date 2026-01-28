@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using KeeperData.Infrastructure.Notifications.Configuration;
@@ -11,6 +12,7 @@ namespace KeeperData.Infrastructure.Notifications;
 /// <summary>
 /// Health check for GOV.UK Notify service connectivity.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Uses NotificationClient which is a sealed class from GOV.UK Notify SDK that cannot be mocked. Integration tests verify connectivity.")]
 public class GovukNotifyHealthCheck : IHealthCheck
 {
     private readonly CleanseReportNotificationConfig _config;

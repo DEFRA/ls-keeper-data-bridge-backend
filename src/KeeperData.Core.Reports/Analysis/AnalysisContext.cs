@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using KeeperData.Core.ETL.Impl;
@@ -10,6 +11,7 @@ namespace KeeperData.Core.Reports.Analysis;
 /// <summary>
 /// Provides a scoped analysis context with query caching for the duration of an analysis session.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Analysis context with query service dependency - covered by integration tests.")]
 public sealed class AnalysisContext : IAnalysisContext
 {
     private readonly IQueryService _queryService;

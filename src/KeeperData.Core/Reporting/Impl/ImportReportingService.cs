@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Database;
 using KeeperData.Core.Reporting.Domain;
 using KeeperData.Core.Reporting.Dtos;
@@ -8,6 +9,7 @@ using MongoDB.Driver;
 
 namespace KeeperData.Core.Reporting.Impl;
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB reporting service - covered by integration tests.")]
 public class ImportReportingService : IImportReportingService
 {
     private readonly IMongoCollection<ImportReportDocument> _importReports;

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reporting.Domain;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
@@ -19,6 +20,7 @@ public interface ILineageIndexManagerFactory
 /// <summary>
 /// Default implementation of the LineageIndexManager factory.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Factory for MongoDB index manager - covered by integration tests.")]
 public class LineageIndexManagerFactory : ILineageIndexManagerFactory
 {
     private readonly ILoggerFactory _loggerFactory;

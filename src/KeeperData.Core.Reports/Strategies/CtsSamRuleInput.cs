@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Strategies;
 
 /// <summary>
 /// Input data for rules in the CTS-SAM analysis strategy.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Simple data transfer object used only by analysis rules.")]
 public sealed class CtsSamRuleInput
 {
     /// <summary>

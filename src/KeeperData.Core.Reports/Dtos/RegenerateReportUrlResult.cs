@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Dtos;
 
 /// <summary>
 /// Result of regenerating a presigned URL for a cleanse report.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record RegenerateReportUrlResult
 {
     /// <summary>

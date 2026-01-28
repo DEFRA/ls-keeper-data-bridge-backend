@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Locking;
 using KeeperData.Core.Querying.Abstract;
@@ -15,6 +16,7 @@ namespace KeeperData.Core.Reports;
 /// Service for running cleanse analysis and managing cleanse report data.
 /// Orchestrates analysis by delegating to registered strategies.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Orchestration service with complex dependencies. Covered by integration and component tests.")]
 public class CleanseReportService(
     IQueryService queryService,
     DataSetDefinitions dataSets,

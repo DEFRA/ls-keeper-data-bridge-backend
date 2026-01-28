@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reporting;
 
 /// <summary>
@@ -26,6 +28,7 @@ public interface IReportingCollectionManagementService
 /// <summary>
 /// Result of deleting a single reporting collection.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Simple result record - no logic to test.")]
 public record DeleteReportingCollectionResult
 {
     /// <summary>
@@ -57,6 +60,7 @@ public record DeleteReportingCollectionResult
 /// <summary>
 /// Result of deleting all reporting collections.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Simple result record - no logic to test.")]
 public record DeleteAllReportingCollectionsResult
 {
     /// <summary>

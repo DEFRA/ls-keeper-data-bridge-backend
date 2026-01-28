@@ -42,6 +42,49 @@ public class MongoDistributedLockTests
             .Returns(mongoDatabaseMock.Object);
     }
 
+    #region Validation Tests
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task TryAcquireAsync_WithInvalidLockName_ThrowsArgumentException(string? lockName)
+    {
+        // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
+        var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+
+        // Act
+        var act = () => sut.TryAcquireAsync(lockName!, TimeSpan.FromMinutes(1));
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task TryAcquireAsync_WithInvalidDuration_ThrowsArgumentOutOfRangeException(int seconds)
+    {
+        // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
+        var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+
+        // Act
+        var act = () => sut.TryAcquireAsync("test-lock", TimeSpan.FromSeconds(seconds));
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    #endregion
+
+    #region InitializeAsync Tests
+
     [Fact]
     public async Task InitializeAsync_WhenCalled_CreatesTtlIndex()
     {
@@ -80,6 +123,10 @@ public class MongoDistributedLockTests
         // Assert
         _indexManagerMock.Verify(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    #endregion
+
+    #region TryAcquireAsync Tests
 
     [Fact]
     public async Task TryAcquireAsync_WhenNoLockExists_AcquiresLockSuccessfully()
@@ -168,6 +215,162 @@ public class MongoDistributedLockTests
         lockHandle.Should().BeNull();
     }
 
+    #endregion
+
+    #region TryRenewAsync Tests
+
+    [Fact]
+    public async Task TryRenewAsync_WhenLockIsOwned_RenewsSuccessfully()
+    {
+        // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
+        _collectionMock.Setup(c => c.FindOneAndReplaceAsync(
+                It.IsAny<FilterDefinition<DistributedLock>>(),
+                It.IsAny<DistributedLock>(),
+                It.IsAny<FindOneAndReplaceOptions<DistributedLock, DistributedLock>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DistributedLock)null!);
+
+        _collectionMock.Setup(c => c.InsertOneAsync(
+                It.IsAny<DistributedLock>(),
+                It.IsAny<InsertOneOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _collectionMock.Setup(c => c.UpdateOneAsync(
+                It.IsAny<FilterDefinition<DistributedLock>>(),
+                It.IsAny<UpdateDefinition<DistributedLock>>(),
+                It.IsAny<UpdateOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UpdateResult.Acknowledged(1, 1, null));
+
+        var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+        var lockHandle = await sut.TryAcquireAsync("test-lock", TimeSpan.FromMinutes(1));
+
+        // Act
+        var renewed = await lockHandle!.TryRenewAsync(TimeSpan.FromMinutes(5));
+
+        // Assert
+        renewed.Should().BeTrue();
+        _collectionMock.Verify(c => c.UpdateOneAsync(
+            It.IsAny<FilterDefinition<DistributedLock>>(),
+            It.IsAny<UpdateDefinition<DistributedLock>>(),
+            It.IsAny<UpdateOptions>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task TryRenewAsync_WhenLockIsNotOwned_ReturnsFalse()
+    {
+        // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
+        _collectionMock.Setup(c => c.FindOneAndReplaceAsync(
+                It.IsAny<FilterDefinition<DistributedLock>>(),
+                It.IsAny<DistributedLock>(),
+                It.IsAny<FindOneAndReplaceOptions<DistributedLock, DistributedLock>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DistributedLock)null!);
+
+        _collectionMock.Setup(c => c.InsertOneAsync(
+                It.IsAny<DistributedLock>(),
+                It.IsAny<InsertOneOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _collectionMock.Setup(c => c.UpdateOneAsync(
+                It.IsAny<FilterDefinition<DistributedLock>>(),
+                It.IsAny<UpdateDefinition<DistributedLock>>(),
+                It.IsAny<UpdateOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UpdateResult.Acknowledged(0, 0, null)); // No documents modified
+
+        var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+        var lockHandle = await sut.TryAcquireAsync("test-lock", TimeSpan.FromMinutes(1));
+
+        // Act
+        var renewed = await lockHandle!.TryRenewAsync(TimeSpan.FromMinutes(5));
+
+        // Assert
+        renewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TryRenewAsync_AfterDispose_ReturnsFalse()
+    {
+        // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
+        _collectionMock.Setup(c => c.FindOneAndReplaceAsync(
+                It.IsAny<FilterDefinition<DistributedLock>>(),
+                It.IsAny<DistributedLock>(),
+                It.IsAny<FindOneAndReplaceOptions<DistributedLock, DistributedLock>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DistributedLock)null!);
+
+        _collectionMock.Setup(c => c.InsertOneAsync(
+                It.IsAny<DistributedLock>(),
+                It.IsAny<InsertOneOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _collectionMock.Setup(c => c.DeleteOneAsync(
+            It.IsAny<FilterDefinition<DistributedLock>>(),
+            It.IsAny<DeleteOptions>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteResult.Acknowledged(1));
+
+        var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+        var lockHandle = await sut.TryAcquireAsync("test-lock", TimeSpan.FromMinutes(1));
+        await lockHandle!.DisposeAsync();
+
+        // Act
+        var renewed = await lockHandle.TryRenewAsync(TimeSpan.FromMinutes(5));
+
+        // Assert
+        renewed.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task TryRenewAsync_WithInvalidExtension_ThrowsArgumentOutOfRangeException(int seconds)
+    {
+        // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
+        _collectionMock.Setup(c => c.FindOneAndReplaceAsync(
+                It.IsAny<FilterDefinition<DistributedLock>>(),
+                It.IsAny<DistributedLock>(),
+                It.IsAny<FindOneAndReplaceOptions<DistributedLock, DistributedLock>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DistributedLock)null!);
+
+        _collectionMock.Setup(c => c.InsertOneAsync(
+                It.IsAny<DistributedLock>(),
+                It.IsAny<InsertOneOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+        var lockHandle = await sut.TryAcquireAsync("test-lock", TimeSpan.FromMinutes(1));
+
+        // Act
+        var act = () => lockHandle!.TryRenewAsync(TimeSpan.FromSeconds(seconds));
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    #endregion
+
+    #region DisposeAsync Tests
+
     [Fact]
     public async Task DisposeAsync_WhenCalledOnAcquiredLock_DeletesTheLock()
     {
@@ -204,6 +407,65 @@ public class MongoDistributedLockTests
         // Assert
         _collectionMock.Verify(c => c.DeleteOneAsync(It.IsAny<FilterDefinition<DistributedLock>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task DisposeAsync_WhenCalledMultipleTimes_DeletesOnlyOnce()
+    {
+        // Arrange
+        _indexManagerMock.Setup(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-index");
+
+        _collectionMock.Setup(c => c.FindOneAndReplaceAsync(
+                It.IsAny<FilterDefinition<DistributedLock>>(),
+                It.IsAny<DistributedLock>(),
+                It.IsAny<FindOneAndReplaceOptions<DistributedLock, DistributedLock>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DistributedLock)null!);
+
+        _collectionMock.Setup(c => c.InsertOneAsync(
+                It.IsAny<DistributedLock>(),
+                It.IsAny<InsertOneOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _collectionMock.Setup(c => c.DeleteOneAsync(
+            It.IsAny<FilterDefinition<DistributedLock>>(),
+            It.IsAny<DeleteOptions>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteResult.Acknowledged(1));
+
+        var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+        var lockHandle = await sut.TryAcquireAsync("test-lock", TimeSpan.FromMinutes(1));
+
+        // Act
+        await lockHandle!.DisposeAsync();
+        await lockHandle.DisposeAsync();
+
+        // Assert
+        _collectionMock.Verify(c => c.DeleteOneAsync(It.IsAny<FilterDefinition<DistributedLock>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
+
+    #region Dispose Tests
+
+    [Fact]
+    public void Dispose_WhenCalledMultipleTimes_DoesNotThrow()
+    {
+        // Arrange
+        var sut = new MongoDistributedLock(_mongoConfig, _mongoClientMock.Object);
+
+        // Act & Assert
+        var act = () =>
+        {
+            sut.Dispose();
+            sut.Dispose();
+        };
+
+        act.Should().NotThrow();
+    }
+
+    #endregion
 
     private static MongoWriteException CreateMongoWriteExceptionForDuplicateKey()
     {

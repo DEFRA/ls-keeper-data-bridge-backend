@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Dtos;
 
 /// <summary>
 /// Represents the result of a cleanse data deletion operation.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record CleanseDeleteResult
 {
     /// <summary>

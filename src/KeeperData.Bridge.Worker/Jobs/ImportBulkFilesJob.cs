@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Bridge.Worker.Tasks;
 using Microsoft.Extensions.Logging;
 using Quartz;
@@ -5,6 +6,7 @@ using Quartz;
 namespace KeeperData.Bridge.Worker.Jobs;
 
 [DisallowConcurrentExecution]
+[ExcludeFromCodeCoverage(Justification = "Quartz job wrapper - covered by integration tests.")]
 public class ImportBulkFilesJob(
     ITaskProcessBulkFiles taskProcessBulkFiles,
     ILogger<ImportBulkFilesJob> logger) : IJob

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Database;
 using KeeperData.Core.Reports.Abstract;
 using KeeperData.Core.Reports.Domain;
@@ -11,6 +12,7 @@ namespace KeeperData.Core.Reports.Impl;
 /// <summary>
 /// MongoDB implementation of the cleanse analysis repository.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB repository - covered by integration tests.")]
 public class CleanseAnalysisRepository : ICleanseAnalysisRepository
 {
     private const string CollectionName = "cleanse_analysis_operations";

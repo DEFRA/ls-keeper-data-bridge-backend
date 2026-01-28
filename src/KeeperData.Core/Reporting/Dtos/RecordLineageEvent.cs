@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using MongoDB.Bson;
 
 namespace KeeperData.Core.Reporting.Dtos;
@@ -5,6 +6,7 @@ namespace KeeperData.Core.Reporting.Dtos;
 /// <summary>
 /// Represents a lineage event for a record, tracking changes and their origin.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record RecordLineageEvent
 {
     /// <summary>

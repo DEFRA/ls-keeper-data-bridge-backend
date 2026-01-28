@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reporting.Dtos;
 
 /// <summary>
 /// Represents the processing report for a single file in an import operation.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record FileProcessingReport
 {
     /// <summary>
@@ -80,6 +83,7 @@ public record AcquisitionDetails
 /// <summary>
 /// Represents ingestion details for a file, including record statistics and performance metrics.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record IngestionDetails
 {
     /// <summary>

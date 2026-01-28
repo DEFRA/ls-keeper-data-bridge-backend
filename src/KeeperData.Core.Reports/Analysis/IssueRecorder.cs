@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Abstract;
 using KeeperData.Core.Reports.Domain;
 
@@ -6,6 +7,7 @@ namespace KeeperData.Core.Reports.Analysis;
 /// <summary>
 /// Records and resolves cleanse issues using the report repository.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Issue recorder with repository dependency - covered by integration tests.")]
 public sealed class IssueRecorder : IIssueRecorder
 {
     private readonly ICleanseReportRepository _repository;

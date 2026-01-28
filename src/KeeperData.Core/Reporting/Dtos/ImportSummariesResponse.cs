@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reporting.Dtos;
 
 /// <summary>
 /// Represents the response for a paginated list of import summaries.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record ImportSummariesResponse
 {
     /// <summary>

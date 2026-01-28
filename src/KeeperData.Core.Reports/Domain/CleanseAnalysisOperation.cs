@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Domain;
 
 /// <summary>
@@ -34,6 +36,7 @@ public enum CleanseAnalysisStatus
 /// <summary>
 /// Represents a cleanse analysis operation with its metadata and progress.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Domain entity class - no logic to test.")]
 public class CleanseAnalysisOperation
 {
     /// <summary>

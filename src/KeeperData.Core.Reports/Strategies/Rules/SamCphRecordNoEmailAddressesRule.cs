@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Analysis;
 using KeeperData.Core.Reports.Rules;
 
@@ -6,6 +7,7 @@ namespace KeeperData.Core.Reports.Strategies.Rules;
 /// <summary>
 /// Rule that compares CTS CPH Holding records with SAM CPH Holding records
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Rule with database query dependency - covered by integration tests.")]
 public sealed class SamCphRecordNoEmailAddressesRule : BaseSamCphPartyComparisonRule, ICleanseRule<CtsSamRuleInput>
 {
     /// <inheritdoc />

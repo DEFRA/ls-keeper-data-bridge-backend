@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reporting.Dtos;
 
 /// <summary>
 /// Represents a paginated list of lineage events for a record.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record PaginatedLineageEvents
 {
     /// <summary>

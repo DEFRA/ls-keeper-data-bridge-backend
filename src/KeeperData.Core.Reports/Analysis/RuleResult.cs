@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Analysis;
 
 /// <summary>
 /// Represents the outcome of a rule execution.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Simple result record with factory methods - tested through rule tests.")]
 public sealed record RuleResult
 {
     /// <summary>

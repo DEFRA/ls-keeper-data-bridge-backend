@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reporting.Dtos;
 
 /// <summary>
 /// Represents the complete lifecycle of a record, including all changes and events.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record RecordLifecycle
 {
     /// <summary>

@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reporting.Dtos;
 
 /// <summary>
 /// Represents an error response from an API operation.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record ErrorResponse
 {
     /// <summary>

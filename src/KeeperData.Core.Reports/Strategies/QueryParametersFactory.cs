@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.ETL.Impl;
 
 namespace KeeperData.Core.Reports.Strategies;
@@ -5,6 +6,7 @@ namespace KeeperData.Core.Reports.Strategies;
 /// <summary>
 /// Factory class for creating query parameters.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Query parameter factory with dataset dependencies - covered by integration tests.")]
 internal static class QueryParametersFactory
 {
     public static QueryParameters GetSamHerdQuery(DataSetDefinitions dataSetDefinitions, Cph cph) => new()

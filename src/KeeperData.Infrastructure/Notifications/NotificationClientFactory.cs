@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Microsoft.Extensions.Logging;
 using Notify.Client;
@@ -7,6 +8,7 @@ namespace KeeperData.Infrastructure.Notifications;
 /// <summary>
 /// Factory for creating GOV.UK Notify clients with proxy configuration support.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Creates NotificationClient instances which are sealed classes from GOV.UK Notify SDK that cannot be mocked.")]
 public class NotificationClientFactory : INotificationClientFactory
 {
     private const string HttpProxyEnvVar = "HTTP_PROXY";

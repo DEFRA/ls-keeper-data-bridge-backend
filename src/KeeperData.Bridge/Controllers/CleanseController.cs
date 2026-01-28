@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Dtos;
@@ -7,6 +8,7 @@ namespace KeeperData.Bridge.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
 public class CleanseController(
     ICleanseReportService cleanseReportService,
     ICleanseReportNotificationService notificationService,
@@ -460,6 +462,7 @@ public class CleanseController(
 /// <summary>
 /// Response when a cleanse analysis is successfully started.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record StartAnalysisResponse
 {
     /// <summary>
@@ -486,6 +489,7 @@ public record StartAnalysisResponse
 /// <summary>
 /// Response when a report URL is regenerated.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record RegenerateUrlResponse
 {
     /// <summary>
@@ -512,6 +516,7 @@ public record RegenerateUrlResponse
 /// <summary>
 /// Response when cleanse data is deleted.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record DeleteDataResponse
 {
     /// <summary>
@@ -543,6 +548,7 @@ public record DeleteDataResponse
 /// <summary>
 /// Response for paginated analysis runs.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record AnalysisRunsResponse
 {
     /// <summary>
@@ -574,6 +580,7 @@ public record AnalysisRunsResponse
 /// <summary>
 /// Response for paginated cleanse issues.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record IssuesResponse
 {
     /// <summary>
@@ -610,6 +617,7 @@ public record IssuesResponse
 /// <summary>
 /// Standard error response.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record ErrorResponse
 {
     /// <summary>
@@ -626,6 +634,7 @@ public record ErrorResponse
 /// <summary>
 /// Response for test notification request.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record TestNotificationResponse
 {
     /// <summary>

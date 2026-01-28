@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Attributes;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
@@ -9,6 +10,7 @@ namespace KeeperData.Core.Reporting.Domain;
 /// Stored in separate collection for unbounded growth.
 /// ID format ensures chronological ordering: {CollectionName}__{RecordId}__{yyyyMMddHHmmssffffff}__{NNNNNN}
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
 [CollectionName("record_lineage_events")]
 public class LineageEventDocument
 {

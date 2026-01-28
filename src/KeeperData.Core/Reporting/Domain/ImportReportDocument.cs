@@ -1,9 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Attributes;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace KeeperData.Core.Reporting.Domain;
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
 [CollectionName("import_reports")]
 public class ImportReportDocument
 {
@@ -22,6 +24,7 @@ public class ImportReportDocument
     public string? Error { get; set; }
 }
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
 public class AcquisitionPhaseDocument
 {
     public required string Status { get; set; }
@@ -33,6 +36,7 @@ public class AcquisitionPhaseDocument
     public DateTime? CompletedAtUtc { get; set; }
 }
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
 public class IngestionPhaseDocument
 {
     public required string Status { get; set; }
@@ -46,6 +50,7 @@ public class IngestionPhaseDocument
     public IngestionCurrentFileStatusDocument? CurrentFileStatus { get; set; }
 }
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
 public class IngestionCurrentFileStatusDocument
 {
     public string? FileName { get; set; }

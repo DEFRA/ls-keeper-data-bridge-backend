@@ -1,17 +1,19 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using KeeperData.Core;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
-using System.Globalization;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace KeeperData.Bridge.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
 public class ExternalCatalogueController(
     IExternalCatalogueServiceFactory ExternalCatalogueServiceFactory,
     IBlobStorageServiceFactory blobStorageServiceFactory,

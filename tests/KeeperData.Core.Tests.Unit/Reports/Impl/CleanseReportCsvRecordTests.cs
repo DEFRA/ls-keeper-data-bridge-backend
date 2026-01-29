@@ -111,7 +111,7 @@ public class CleanseReportCsvMapTests
 
         // Act
         csv.WriteRecords(records);
-        var lines = writer.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        var lines = writer.ToString().Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries);
 
         // Assert - CPH should be first column (index 0), ErrorCode second (index 1)
         var headers = lines[0].Split(',');

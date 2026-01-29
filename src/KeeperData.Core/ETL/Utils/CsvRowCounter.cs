@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.ETL.Utils;
@@ -5,6 +6,7 @@ namespace KeeperData.Core.ETL.Utils;
 /// <summary>
 /// Utility class for counting rows in CSV files efficiently.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "File I/O utility - covered by integration tests.")]
 public class CsvRowCounter
 {
     private readonly ILogger<CsvRowCounter> _logger;

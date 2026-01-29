@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reports.Analysis;
 using KeeperData.Core.Reports.Strategies.Rules;
@@ -7,6 +8,7 @@ namespace KeeperData.Core.Reports.Strategies;
 /// <summary>
 /// Analysis strategy that compares CTS CPH Holdings against SAM data.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Analysis strategy with complex database query dependencies - covered by integration tests.")]
 public sealed class CtsSamAnalysisStrategy : ICleanseAnalysisStrategy
 {
     private const int BatchSize = 100;

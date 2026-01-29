@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Database;
 using KeeperData.Core.Reports.Abstract;
 using KeeperData.Core.Reports.Domain;
@@ -10,6 +11,7 @@ namespace KeeperData.Core.Reports.Impl;
 /// <summary>
 /// MongoDB implementation of the cleanse report repository.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB repository - covered by integration tests.")]
 public class CleanseReportRepository : ICleanseReportRepository
 {
     private const string CollectionName = "cleanse_report";
@@ -63,6 +65,40 @@ public class CleanseReportRepository : ICleanseReportRepository
             .Limit(top)
             .ToListAsync(ct);
         return documents.Select(MapToEntity).ToList();
+    }
+
+    public async IAsyncEnumerable<CleanseReportItem> StreamActiveIssuesAsync(
+        int batchSize = 1000,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.Eq("is_active", true);
+        var options = new FindOptions<BsonDocument>
+        {
+            BatchSize = batchSize
+        };
+
+        using var cursor = await _collection.FindAsync(filter, options, ct);
+
+        while (await cursor.MoveNextAsync(ct))
+        {
+            foreach (var document in cursor.Current)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return MapToEntity(document);
+            }
+        }
+    }
+
+    public async Task<long> GetActiveIssuesCountAsync(CancellationToken ct = default)
+    {
+        var filter = Builders<BsonDocument>.Filter.Eq("is_active", true);
+        return await _collection.CountDocumentsAsync(filter, cancellationToken: ct);
+    }
+
+    public async Task<long> DeleteAllAsync(CancellationToken ct = default)
+    {
+        var result = await _collection.DeleteManyAsync(Builders<BsonDocument>.Filter.Empty, ct);
+        return result.DeletedCount;
     }
 
     private static BsonDocument MapToDocument(CleanseReportItem item) => new()

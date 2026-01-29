@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Querying.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -7,6 +8,7 @@ namespace KeeperData.Core.Querying.Impl;
 /// <summary>
 /// Converts custom FilterExpression to MongoDB FilterDefinition
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB filter converter - covered by integration tests.")]
 internal static class FilterExpressionConverter
 {
     public static FilterDefinition<BsonDocument> ToMongoFilter(FilterExpression? filter)

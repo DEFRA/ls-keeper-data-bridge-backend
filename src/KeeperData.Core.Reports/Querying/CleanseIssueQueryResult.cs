@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Domain;
 
 namespace KeeperData.Core.Reports.Querying;
@@ -5,6 +6,7 @@ namespace KeeperData.Core.Reports.Querying;
 /// <summary>
 /// Result of a cleanse issue query with pagination metadata.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public sealed record CleanseIssueQueryResult
 {
     /// <summary>The issues matching the query.</summary>

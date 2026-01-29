@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.ETL.Abstract;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,6 +9,7 @@ namespace KeeperData.Core.Database.Impl;
 /// <summary>
 /// Implementation of collection management service for MongoDB operations.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB collection management - covered by integration tests.")]
 public class CollectionManagementService : ICollectionManagementService
 {
     private readonly IMongoClient _mongoClient;

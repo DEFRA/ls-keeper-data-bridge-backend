@@ -77,7 +77,8 @@ jobs:
         with:
           compose-file: |
             ./working-dir/docker-compose.yml
-            ./working-dir/docker-compose.override.yml
+            ./working-dir/docker-compose.ci.yml
+          up-flags: "--build"
       - name: Make script executable
         run: chmod +x ./working-dir/wait-for-docker-logs.sh
       - name: Wait for localstack

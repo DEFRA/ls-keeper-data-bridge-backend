@@ -11,6 +11,7 @@ using KeeperData.Infrastructure.Database.Setup;
 using KeeperData.Infrastructure.Extensions;
 using KeeperData.Infrastructure.Json;
 using KeeperData.Infrastructure.Messaging.Setup;
+using KeeperData.Infrastructure.Setup;
 using KeeperData.Infrastructure.Storage.Setup;
 using KeeperData.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Authentication;
@@ -18,12 +19,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 
 namespace KeeperData.Bridge.Setup
 {
+    [ExcludeFromCodeCoverage(Justification = "DI configuration code - tested through integration tests.")]
     public static class ServiceCollectionExtensions
     {
         public static void ConfigureApi(this IServiceCollection services, IConfiguration configuration)
@@ -57,6 +60,7 @@ namespace KeeperData.Bridge.Setup
 
             services.AddKeeperDataMetrics();
 
+
             // Configure OpenTelemetry for metrics
             services.AddOpenTelemetry()
                 .WithMetrics(metrics =>
@@ -65,6 +69,8 @@ namespace KeeperData.Bridge.Setup
                 });
 
             services.AddMongoQueryService();
+
+            services.AddCleanseReportServices(configuration);
         }
 
         private static void ConfigureHealthChecks(this IServiceCollection services)

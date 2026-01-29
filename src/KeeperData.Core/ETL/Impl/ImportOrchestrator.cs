@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Telemetry;
@@ -5,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.ETL.Impl;
 
+[ExcludeFromCodeCoverage(Justification = "Import orchestrator with complex pipeline dependencies - covered by integration tests.")]
 public class ImportOrchestrator(
     IAcquisitionPipeline acquisitionPipeline,
     IIngestionPipeline ingestionPipeline,

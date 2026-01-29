@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using CsvHelper;
 using KeeperData.Bridge.Worker.Tasks;
 using KeeperData.Core.Database;
@@ -9,12 +11,12 @@ using KeeperData.Core.Storage;
 using KeeperData.Core.Telemetry;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
-using System.Diagnostics;
 
 namespace KeeperData.Bridge.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
 public class ImportController(
     ITaskProcessBulkFiles taskProcessBulkFiles,
     IImportReportingService importReportingService,
@@ -778,6 +780,7 @@ public class ImportController(
 /// <summary>
 /// Response from clearing down internal storage.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record ClearDownStorageResponse
 {
     /// <summary>
@@ -809,6 +812,7 @@ public record ClearDownStorageResponse
 /// <summary>
 /// Request to generate a record ID from composite key parts.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record GenerateRecordIdRequest
 {
     /// <summary>
@@ -822,6 +826,7 @@ public record GenerateRecordIdRequest
 /// <summary>
 /// Response containing the generated record ID.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record GenerateRecordIdResponse
 {
     /// <summary>

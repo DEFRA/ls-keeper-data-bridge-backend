@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Database;
 using KeeperData.Core.Reports.Domain;
 using Microsoft.Extensions.Options;
@@ -9,6 +10,7 @@ namespace KeeperData.Core.Reports.Querying;
 /// <summary>
 /// MongoDB implementation of the cleanse issue query service.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB query service - covered by integration tests.")]
 public sealed class CleanseIssueQueryService : ICleanseIssueQueryService
 {
     private const string CollectionName = "cleanse_report";

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Querying.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -7,6 +8,7 @@ namespace KeeperData.Core.Querying.Impl;
 /// <summary>
 /// Converts custom SortExpression to MongoDB SortDefinition
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB sort converter - covered by integration tests.")]
 internal static class SortExpressionConverter
 {
     public static SortDefinition<BsonDocument>? ToMongoSort(SortExpression? sort)

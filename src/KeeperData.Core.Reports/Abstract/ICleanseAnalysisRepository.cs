@@ -55,4 +55,20 @@ public interface ICleanseAnalysisRepository
     /// Gets the currently running operation, if any.
     /// </summary>
     Task<CleanseAnalysisOperation?> GetCurrentOperationAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Sets the report details for a completed operation.
+    /// </summary>
+    Task SetReportDetailsAsync(string operationId, string objectKey, string reportUrl, CancellationToken ct = default);
+
+    /// <summary>
+    /// Updates just the report URL for an operation (used when regenerating presigned URLs).
+    /// </summary>
+    Task UpdateReportUrlAsync(string operationId, string reportUrl, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes all analysis operations.
+    /// </summary>
+    /// <returns>The number of documents deleted.</returns>
+    Task<long> DeleteAllAsync(CancellationToken ct = default);
 }

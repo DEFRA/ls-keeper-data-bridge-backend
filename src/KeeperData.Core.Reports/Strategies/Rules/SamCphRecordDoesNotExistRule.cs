@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Analysis;
 using KeeperData.Core.Reports.Rules;
 
@@ -7,6 +8,7 @@ namespace KeeperData.Core.Reports.Strategies.Rules;
 /// Rule that checks if a SAM CPH Holding record exists for the CTS CPH.
 /// If no SAM record is found, an issue is recorded.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Rule with database query dependency - covered by integration tests.")]
 public sealed class SamCphRecordDoesNotExistRule : ICleanseRule<CtsSamRuleInput>
 {
     /// <inheritdoc />

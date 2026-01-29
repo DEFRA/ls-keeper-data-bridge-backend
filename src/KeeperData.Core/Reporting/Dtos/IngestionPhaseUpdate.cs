@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reporting.Dtos;
 
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record IngestionPhaseUpdate
 {
     public PhaseStatus Status { get; init; }

@@ -1,8 +1,5 @@
 services:
   keeperdata_bridge:
-    build:
-      args:
-        TARGETARCH: x64
     labels:
       com.microsoft.visual-studio.project-name: "KeeperData.Bridge"
     environment:
@@ -18,11 +15,3 @@ services:
       - AesSalt=LD8BB2NNze7qKbVyLutAfGBxhkAApR 
     ports:
       - "5560"
-    volumes:
-      # Mac-specific paths for user secrets and HTTPS certificates
-      - ~/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
-      - ~/.microsoft/usersecrets:/root/.microsoft/usersecrets:ro
-      - ~/.aspnet/https:/home/app/.aspnet/https:ro
-      - ~/.aspnet/https:/root/.aspnet/https:ro
-    networks:
-      - cdp-tenant

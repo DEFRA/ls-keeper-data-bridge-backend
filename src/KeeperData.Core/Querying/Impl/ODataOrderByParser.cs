@@ -1,9 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MongoDB.Driver;
-using System.Text.RegularExpressions;
 
 namespace KeeperData.Core.Querying.Impl;
 
+[ExcludeFromCodeCoverage(Justification = "OData parser with MongoDB dependencies - covered by integration tests.")]
 internal class ODataOrderByParser
 {
     public SortDefinition<BsonDocument> Parse(string orderByExpression)

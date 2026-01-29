@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Querying.Abstract;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,6 +9,7 @@ namespace KeeperData.Bridge.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/query")]
+[ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
 public class QueryController : ControllerBase
 {
     private readonly IODataQueryService _queryService;

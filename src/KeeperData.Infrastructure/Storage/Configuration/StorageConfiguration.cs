@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Infrastructure.Storage.Configuration;
 
+[ExcludeFromCodeCoverage(Justification = "Configuration record - no logic to test.")]
 public record StorageConfiguration
 {
     public StorageWithCredentialsConfiguration ExternalStorage { get; init; } = new();

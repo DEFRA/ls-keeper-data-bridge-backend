@@ -47,6 +47,17 @@ public static class ServiceCollectionExtensions
                     .WithIdentity($"{importDeltaFilesConfig.JobType}-trigger")
                     .WithCronSchedule(importDeltaFilesConfig.CronSchedule));
             }
+
+            var cleanseReportConfig = scheduledJobConfiguration.FirstOrDefault(x => x.JobType == nameof(CleanseReportJob));
+            if (cleanseReportConfig?.CronSchedule != null)
+            {
+                q.AddJob<CleanseReportJob>(opts => opts.WithIdentity(cleanseReportConfig.JobType));
+
+                q.AddTrigger(opts => opts
+                    .ForJob(cleanseReportConfig.JobType)
+                    .WithIdentity($"{cleanseReportConfig.JobType}-trigger")
+                    .WithCronSchedule(cleanseReportConfig.CronSchedule));
+            }
         });
 
         services.AddQuartzHostedService(q =>
@@ -61,6 +72,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<ImportBulkFilesJob>();
         services.AddScoped<ImportDeltaFilesJob>();
+        services.AddScoped<CleanseReportJob>();
 
         return services;
     }
@@ -69,6 +81,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<ITaskProcessBulkFiles, TaskProcessBulkFiles>();
         services.AddScoped<ITaskProcessDeltaFiles, TaskProcessDeltaFiles>();
+        services.AddScoped<ITaskRunCleanseReport, TaskRunCleanseReport>();
 
         return services;
     }

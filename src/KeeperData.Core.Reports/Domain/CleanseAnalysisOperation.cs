@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Domain;
 
 /// <summary>
@@ -34,6 +36,7 @@ public enum CleanseAnalysisStatus
 /// <summary>
 /// Represents a cleanse analysis operation with its metadata and progress.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Domain entity class - no logic to test.")]
 public class CleanseAnalysisOperation
 {
     /// <summary>
@@ -95,4 +98,14 @@ public class CleanseAnalysisOperation
     /// Gets or sets the total duration in milliseconds when complete.
     /// </summary>
     public long? DurationMs { get; set; }
+
+    /// <summary>
+    /// Gets or sets the S3 object key for the generated report.
+    /// </summary>
+    public string? ReportObjectKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the presigned URL to download the generated report.
+    /// </summary>
+    public string? ReportUrl { get; set; }
 }

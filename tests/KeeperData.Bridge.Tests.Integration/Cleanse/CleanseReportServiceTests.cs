@@ -93,7 +93,25 @@ public class CleanseReportServiceTests : IAsyncLifetime
             Options.Create(new MongoConfig { DatabaseName = _testDatabaseName }),
             _mongoClient);
 
+
         var strategies = new ICleanseAnalysisStrategy[] { new CtsSamAnalysisStrategy() };
+
+        var exportServiceMock = new Mock<ICleanseReportExportService>();
+        exportServiceMock
+            .Setup(x => x.ExportAndUploadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CleanseReportExportResult { Success = true, ReportUrl = "https://example.com/report.zip", ObjectKey = "cleanse-reports/test.zip" });
+
+        var presignedUrlGeneratorMock = new Mock<ICleanseReportPresignedUrlGenerator>();
+        presignedUrlGeneratorMock
+            .Setup(x => x.GeneratePresignedUrl(It.IsAny<string>(), It.IsAny<TimeSpan?>()))
+            .Returns("https://example.com/regenerated-report.zip");
+
+        var notificationServiceMock = new Mock<ICleanseReportNotificationService>();
+        notificationServiceMock
+            .Setup(x => x.SendReportNotificationAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CleanseReportNotificationResult { Success = true, NotificationId = "test-notification-id", Recipient = "test@example.com" });
+
+        var loggerMock = new Mock<ILogger<CleanseReportService>>();
 
         _sut = new CleanseReportService(
             _queryService,
@@ -101,6 +119,10 @@ public class CleanseReportServiceTests : IAsyncLifetime
             _reportRepository,
             _analysisRepository,
             _distributedLock,
+            exportServiceMock.Object,
+            presignedUrlGeneratorMock.Object,
+            notificationServiceMock.Object,
+            loggerMock.Object,
             strategies);
     }
 

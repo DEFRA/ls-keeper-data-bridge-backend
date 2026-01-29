@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Querying.Abstract;
@@ -13,6 +14,7 @@ namespace KeeperData.Core.Querying.Impl;
 /// Service for querying MongoDB collections using abstracted .NET types.
 /// This service has no dependency on OData or MongoDB-specific types in its public API.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB query service - covered by integration tests.")]
 public class QueryService : IQueryService
 {
     private readonly IMongoClient _mongoClient;

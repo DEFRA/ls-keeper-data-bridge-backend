@@ -1,26 +1,28 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using CsvHelper;
+using CsvHelper.Configuration;
 using KeeperData.Core.Database;
+using KeeperData.Core.Database.Resilience;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Telemetry;
-using CsvHelper;
-using CsvHelper.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
-using System.Collections.Immutable;
-using System.Diagnostics;
-using System.Globalization;
-using KeeperData.Core.Database.Resilience;
 
 namespace KeeperData.Core.ETL.Impl;
 
 /// <summary>
 /// This class is responsible for ingesting csv files into mongo.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Ingestion pipeline with MongoDB and S3 dependencies - covered by integration tests.")]
 public class IngestionPipeline(
     IBlobStorageServiceFactory blobStorageServiceFactory,
     IExternalCatalogueServiceFactory ExternalCatalogueServiceFactory,

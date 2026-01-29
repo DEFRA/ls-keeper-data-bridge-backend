@@ -50,4 +50,12 @@ public interface IBlobStorageServiceReadOnly
         string objectKey,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Generates a presigned URL for downloading an object.
+    /// </summary>
+    /// <param name="objectKey">The object key.</param>
+    /// <param name="expiresIn">Optional expiry duration. Defaults to 7 days if not specified.</param>
+    /// <returns>A presigned URL for downloading the object.</returns>
+    string GeneratePresignedUrl(string objectKey, TimeSpan? expiresIn = null);
+
 }

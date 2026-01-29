@@ -18,7 +18,6 @@ using KeeperData.Core.Reports.Strategies;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Locking;
-using KeeperData.Infrastructure.Reports;
 using KeeperData.Infrastructure.Storage;
 using MartinCostello.Logging.XUnit;
 using Microsoft.Extensions.Logging;
@@ -192,17 +191,10 @@ public class CleanseReportEndToEndTests : IAsyncLifetime
         // Create a factory that returns our real S3 service
         var blobStorageServiceFactory = new TestBlobStorageServiceFactory(blobStorageService);
 
-        // Create real presigned URL generator pointing to LocalStack
-        var presignedUrlGenerator = new S3CleanseReportPresignedUrlGenerator(
-            _s3Client,
-            TestBucket,
-            CleanseReportsFolder);
-
         // Create real export service using real S3
         var exportService = new CleanseReportExportService(
             _reportRepository,
             blobStorageServiceFactory,
-            presignedUrlGenerator,
             loggerFactory.CreateLogger<CleanseReportExportService>());
 
         // Create fake notification service to capture calls
@@ -215,7 +207,7 @@ public class CleanseReportEndToEndTests : IAsyncLifetime
             _analysisRepository,
             distributedLock,
             exportService,
-            presignedUrlGenerator,
+            blobStorageServiceFactory,
             _fakeNotificationService,
             loggerFactory.CreateLogger<CleanseReportService>(),
             new ICleanseAnalysisStrategy[] { new CtsSamAnalysisStrategy() });

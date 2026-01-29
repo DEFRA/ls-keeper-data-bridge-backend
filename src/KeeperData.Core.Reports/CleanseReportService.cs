@@ -8,6 +8,7 @@ using KeeperData.Core.Reports.Analysis;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Dtos;
 using KeeperData.Core.Reports.Strategies;
+using KeeperData.Core.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.Reports;
@@ -24,7 +25,7 @@ public class CleanseReportService(
     ICleanseAnalysisRepository analysisRepository,
     IDistributedLock distributedLock,
     ICleanseReportExportService exportService,
-    ICleanseReportPresignedUrlGenerator presignedUrlGenerator,
+    IBlobStorageServiceFactory blobStorageServiceFactory,
     ICleanseReportNotificationService notificationService,
     ILogger<CleanseReportService> logger,
     IEnumerable<ICleanseAnalysisStrategy> strategies) : ICleanseReportService
@@ -364,7 +365,8 @@ public class CleanseReportService(
                 };
             }
 
-            var newUrl = presignedUrlGenerator.GeneratePresignedUrl(operation.ReportObjectKey);
+            var blobService = blobStorageServiceFactory.GetCleanseReportsBlobService();
+            var newUrl = blobService.GeneratePresignedUrl(operation.ReportObjectKey);
 
             await analysisRepository.UpdateReportUrlAsync(operationId, newUrl, ct);
 

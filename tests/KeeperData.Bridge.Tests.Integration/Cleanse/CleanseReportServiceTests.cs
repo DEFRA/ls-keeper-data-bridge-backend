@@ -11,6 +11,7 @@ using KeeperData.Core.Reports.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Impl;
 using KeeperData.Core.Reports.Strategies;
+using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Locking;
 using Microsoft.Extensions.Logging;
@@ -101,10 +102,15 @@ public class CleanseReportServiceTests : IAsyncLifetime
             .Setup(x => x.ExportAndUploadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CleanseReportExportResult { Success = true, ReportUrl = "https://example.com/report.zip", ObjectKey = "cleanse-reports/test.zip" });
 
-        var presignedUrlGeneratorMock = new Mock<ICleanseReportPresignedUrlGenerator>();
-        presignedUrlGeneratorMock
+        var blobStorageServiceMock = new Mock<IBlobStorageService>();
+        blobStorageServiceMock
             .Setup(x => x.GeneratePresignedUrl(It.IsAny<string>(), It.IsAny<TimeSpan?>()))
             .Returns("https://example.com/regenerated-report.zip");
+
+        var blobStorageServiceFactoryMock = new Mock<IBlobStorageServiceFactory>();
+        blobStorageServiceFactoryMock
+            .Setup(x => x.GetCleanseReportsBlobService())
+            .Returns(blobStorageServiceMock.Object);
 
         var notificationServiceMock = new Mock<ICleanseReportNotificationService>();
         notificationServiceMock
@@ -120,7 +126,7 @@ public class CleanseReportServiceTests : IAsyncLifetime
             _analysisRepository,
             _distributedLock,
             exportServiceMock.Object,
-            presignedUrlGeneratorMock.Object,
+            blobStorageServiceFactoryMock.Object,
             notificationServiceMock.Object,
             loggerMock.Object,
             strategies);

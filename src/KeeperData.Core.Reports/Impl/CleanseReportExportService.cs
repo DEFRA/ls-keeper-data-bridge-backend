@@ -20,18 +20,15 @@ public class CleanseReportExportService : ICleanseReportExportService
 
     private readonly ICleanseReportRepository _reportRepository;
     private readonly IBlobStorageServiceFactory _blobStorageServiceFactory;
-    private readonly ICleanseReportPresignedUrlGenerator _presignedUrlGenerator;
     private readonly ILogger<CleanseReportExportService> _logger;
 
     public CleanseReportExportService(
         ICleanseReportRepository reportRepository,
         IBlobStorageServiceFactory blobStorageServiceFactory,
-        ICleanseReportPresignedUrlGenerator presignedUrlGenerator,
         ILogger<CleanseReportExportService> logger)
     {
         _reportRepository = reportRepository;
         _blobStorageServiceFactory = blobStorageServiceFactory;
-        _presignedUrlGenerator = presignedUrlGenerator;
         _logger = logger;
     }
 
@@ -66,8 +63,8 @@ public class CleanseReportExportService : ICleanseReportExportService
             await blobService.UploadAsync(zipFileName, zipContent, "application/zip", cancellationToken: ct);
             _logger.LogInformation("Uploaded report to S3 with key {ObjectKey}", zipFileName);
 
-            // Step 4: Generate presigned URL (using the zip file name as the key - factory adds the prefix)
-            var presignedUrl = _presignedUrlGenerator.GeneratePresignedUrl(zipFileName);
+            // Step 4: Generate presigned URL (using the zip file name as the key - blob service handles the prefix)
+            var presignedUrl = blobService.GeneratePresignedUrl(zipFileName);
             _logger.LogInformation(
                 "Generated presigned URL for cleanse report (operation {OperationId}): {ReportUrl}",
                 operationId, presignedUrl);

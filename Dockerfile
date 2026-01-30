@@ -35,7 +35,7 @@ COPY ["src/", "."]
 
 FROM build AS publish
 WORKDIR "/src/KeeperData.Bridge"
-RUN dotnet publish "KeeperData.Bridge.csproj" -v n -c ${BUILD_CONFIGURATION} -o /app/publish -r linux-x64 --no-restore /p:UseAppHost=false
+RUN dotnet publish "KeeperData.Bridge.csproj" -v n -c "${BUILD_CONFIGURATION}" -o /app/publish -r linux-x64 --no-restore /p:UseAppHost=false
 
 ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 

@@ -8,8 +8,6 @@ namespace KeeperData.Core.Querying.Impl;
 /// </summary>
 internal partial class ODataToSortExpressionParser
 {
-    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
-
     [GeneratedRegex(@"^(\w+)(?:\s+(asc|desc))?$", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex SortClauseRegex();
 

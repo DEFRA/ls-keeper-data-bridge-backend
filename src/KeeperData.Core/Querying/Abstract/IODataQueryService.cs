@@ -20,6 +20,7 @@ public interface IODataQueryService
     /// <param name="count">Whether to include total count in the response</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Query result containing data and pagination metadata</returns>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarQube", "S107", Justification = "OData query parameters are standard and well-understood")]
     Task<QueryResult> QueryAsync(
         string collectionName,
         string? filter = null,

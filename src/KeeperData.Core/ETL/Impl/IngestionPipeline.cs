@@ -1236,48 +1236,6 @@ public class IngestionPipeline(
         };
     }
 
-    private class RecordMetricsAccumulator
-    {
-        public int RecordsProcessed { get; set; }
-        public int RecordsSkipped { get; set; }
-        public int RecordsCreated { get; set; }
-        public int RecordsUpdated { get; set; }
-        public int RecordsDeleted { get; set; }
-
-        public void AddBatch(BatchProcessingMetrics batchMetrics)
-        {
-            RecordsProcessed += batchMetrics.RecordsProcessed;
-            RecordsCreated += batchMetrics.RecordsCreated;
-            RecordsUpdated += batchMetrics.RecordsUpdated;
-            RecordsDeleted += batchMetrics.RecordsDeleted;
-        }
-
-        public FileIngestionMetrics ToFileMetrics(double avgMongoIngestionMs) => new()
-        {
-            RecordsProcessed = RecordsProcessed,
-            RecordsCreated = RecordsCreated,
-            RecordsUpdated = RecordsUpdated,
-            RecordsDeleted = RecordsDeleted,
-            AverageMongoIngestionMs = avgMongoIngestionMs
-        };
-    }
-
-    private class BatchMetricsAccumulator
-    {
-        public int Processed { get; set; }
-        public int Created { get; set; }
-        public int Updated { get; set; }
-        public int Deleted { get; set; }
-
-        public BatchProcessingMetrics ToMetrics() => new()
-        {
-            RecordsProcessed = Processed,
-            RecordsCreated = Created,
-            RecordsUpdated = Updated,
-            RecordsDeleted = Deleted
-        };
-    }
-
     private record FileIngestionMetrics
     {
         public int RecordsProcessed { get; init; }

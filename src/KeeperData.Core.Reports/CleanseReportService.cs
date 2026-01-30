@@ -18,6 +18,7 @@ namespace KeeperData.Core.Reports;
 /// Orchestrates analysis by delegating to registered strategies.
 /// </summary>
 [ExcludeFromCodeCoverage(Justification = "Orchestration service with complex dependencies. Covered by integration and component tests.")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("SonarQube", "S107", Justification = "DI orchestration service requires multiple dependencies")]
 public class CleanseReportService(
     IQueryService queryService,
     DataSetDefinitions dataSets,
@@ -252,7 +253,7 @@ public class CleanseReportService(
         }
         finally
         {
-            renewalCts.Cancel();
+            await renewalCts.CancelAsync();
             try { await renewalTask; } catch { /* Ignore cancellation */ }
             await lockHandle.DisposeAsync();
         }

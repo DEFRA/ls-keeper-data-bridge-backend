@@ -21,9 +21,9 @@ public class CleanseReportJob(
 
             logger.LogInformation("CleanseReportJob completed at {EndTime}", DateTime.UtcNow);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            logger.LogError(ex, "CleanseReportJob failed");
+            // Rethrow without logging - Quartz will handle the exception logging
             throw;
         }
     }

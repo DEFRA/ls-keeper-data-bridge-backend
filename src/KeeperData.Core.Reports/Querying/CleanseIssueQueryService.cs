@@ -89,7 +89,7 @@ public sealed class CleanseIssueQueryService : ICleanseIssueQueryService
             new BsonDocument("$sort", new BsonDocument("totalCount", -1))
         };
 
-        var results = await _collection.Aggregate<BsonDocument>(pipeline, cancellationToken: ct).ToListAsync(ct);
+        var results = await (await _collection.AggregateAsync<BsonDocument>(pipeline, cancellationToken: ct)).ToListAsync(ct);
 
         return results.Select(doc => new CleanseIssueGroupResult
         {

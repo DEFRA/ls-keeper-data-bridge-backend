@@ -9,6 +9,7 @@ namespace KeeperData.Bridge.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("SonarQube", "S6960", Justification = "Controller endpoints are cohesively related to cleanse operations")]
 public class CleanseController(
     ICleanseReportService cleanseReportService,
     ICleanseReportNotificationService notificationService,

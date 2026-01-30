@@ -5,10 +5,6 @@ namespace KeeperData.Core.Reports.Strategies;
 /// </summary>
 public static class DataFields
 {
-    //public const string LOC_EFFECTIVE_TO = "LOC_EFFECTIVE_TO";
-    //public const string LID_FULL_IDENTIFIER = "LID_FULL_IDENTIFIER";
-    //public const string CPH = "CPH";
-    //public const string CPHS = "CPHS";
     public const string IsDeleted = "IsDeleted";
 
     public static class SamHerd

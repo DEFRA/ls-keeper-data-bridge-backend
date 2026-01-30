@@ -1,0 +1,74 @@
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 10
+    
+    # Only update direct dependencies (not transitive)
+    allow:
+      - dependency-type: direct
+
+    # Group related packages to reduce PR noise
+    groups:
+      # AWS SDK packages - update together for compatibility
+      aws-sdk:
+        patterns:
+          - "AWSSDK*"
+          - "Amazon.*"
+      
+      # Microsoft packages (excluding ASP.NET Core which should match runtime)
+      microsoft:
+        patterns:
+          - "Microsoft.Extensions.*"
+        exclude-patterns:
+          - "Microsoft.AspNetCore.*"
+          - "Microsoft.NET.Test.Sdk"
+      
+      # OpenTelemetry packages - update together
+      opentelemetry:
+        patterns:
+          - "OpenTelemetry*"
+      
+      # Serilog logging packages
+      serilog:
+        patterns:
+          - "Serilog*"
+          - "Elastic.CommonSchema.Serilog"
+      
+      # Test framework packages
+      testing:
+        patterns:
+          - "xunit*"
+          - "Moq"
+          - "FluentAssertions"
+          - "Bogus"
+          - "coverlet.*"
+          - "Microsoft.NET.Test.Sdk"
+          - "MartinCostello.Logging.XUnit"
+          - "GitHubActionsTestLogger"
+      
+      # Testcontainers packages
+      testcontainers:
+        patterns:
+          - "Testcontainers*"
+
+    # Ignore packages that should stay pinned to runtime version
+    ignore:
+      # ASP.NET Core packages should match the .NET 8 runtime
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types:
+          - "version-update:semver-major"
+
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+    labels:
+      - "dependencies"
+      - "nuget"

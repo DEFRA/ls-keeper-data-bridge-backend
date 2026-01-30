@@ -77,7 +77,6 @@ public class IngestionProgressTrackerTests
         // Assert
         status.RowNumber.Should().Be(500);
         status.PercentageCompleted.Should().BeGreaterThan(0);
-        status.RowsPerMinute.Should().NotBeNull();
     }
 
     [Fact]

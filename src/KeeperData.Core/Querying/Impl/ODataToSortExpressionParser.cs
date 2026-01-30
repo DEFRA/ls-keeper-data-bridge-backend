@@ -6,8 +6,13 @@ namespace KeeperData.Core.Querying.Impl;
 /// <summary>
 /// Parses OData $orderby expressions into custom SortExpression
 /// </summary>
-internal class ODataToSortExpressionParser
+internal partial class ODataToSortExpressionParser
 {
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
+    [GeneratedRegex(@"^(\w+)(?:\s+(asc|desc))?$", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex SortClauseRegex();
+
     public SortExpression Parse(string orderByExpression)
     {
         if (string.IsNullOrWhiteSpace(orderByExpression))
@@ -37,7 +42,7 @@ internal class ODataToSortExpressionParser
 
     private SortExpression ParseSingleSort(string sortClause)
     {
-        var match = Regex.Match(sortClause, @"^(\w+)(?:\s+(asc|desc))?$", RegexOptions.IgnoreCase);
+        var match = SortClauseRegex().Match(sortClause);
 
         if (!match.Success)
         {

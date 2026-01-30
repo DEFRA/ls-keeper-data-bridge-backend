@@ -12,7 +12,6 @@ namespace KeeperData.Core.Querying.Impl;
 internal class ODataToFilterExpressionTranslator
 {
     private readonly IEdmModel _model;
-    private readonly IEdmEntityType _entityType;
 
     public ODataToFilterExpressionTranslator()
     {
@@ -25,7 +24,6 @@ internal class ODataToFilterExpressionTranslator
         model.AddElement(container);
 
         _model = model;
-        _entityType = entityType;
     }
 
     public FilterExpression Parse(string filterExpression)

@@ -25,7 +25,6 @@ public static class DataFields
         public const string Herdmark = "HERDMARK";
         public const string Intervals = "INTERVALS";
         public const string IntervalUnitOfTime = "INTERVAL_UNIT_OF_TIME";
-        public const string IsDeleted = "IsDeleted";
         public const string KeeperPartyIds = "KEEPER_PARTY_IDS";
         public const string MovementRestrictionReasonCode = "MOVEMENT_RSTRCTN_RSN_CODE";
         public const string OwnerPartyIds = "OWNER_PARTY_IDS";
@@ -43,7 +42,6 @@ public static class DataFields
         public const string BatchId = "BATCH_ID";
         public const string ChangeType = "CHANGE_TYPE";
         public const string CreatedAtUtc = "CreatedAtUtc";
-        public const string IsDeleted = "IsDeleted";
         public const string LidFullIdentifier = "LID_FULL_IDENTIFIER";
         public const string LocEffectiveFrom = "LOC_EFFECTIVE_FROM";
         public const string LocEffectiveTo = "LOC_EFFECTIVE_TO";
@@ -65,7 +63,6 @@ public static class DataFields
         public const string BatchId = "BATCH_ID";
         public const string ChangeType = "CHANGE_TYPE";
         public const string CreatedAtUtc = "CreatedAtUtc";
-        public const string IsDeleted = "IsDeleted";
         public const string LidFullIdentifier = "LID_FULL_IDENTIFIER";
         public const string LprEffectiveFromDate = "LPR_EFFECTIVE_FROM_DATE";
         public const string LprEffectiveToDate = "LPR_EFFECTIVE_TO_DATE";
@@ -86,7 +83,6 @@ public static class DataFields
         public const string CountryCode = "COUNTRY_CODE";
         public const string CreatedAtUtc = "CreatedAtUtc";
         public const string InternetEmailAddress = "INTERNET_EMAIL_ADDRESS";
-        public const string IsDeleted = "IsDeleted";
         public const string Locality = "LOCALITY";
         public const string MobileNumber = "MOBILE_NUMBER";
         public const string OrganisationName = "ORGANISATION_NAME";
@@ -142,7 +138,6 @@ public static class DataFields
         public const string FeatureStatusCode = "FEATURE_STATUS_CODE";
         public const string Interval = "INTERVAL";
         public const string IntervalUnitOfTime = "INTERVAL_UNIT_OF_TIME";
-        public const string IsDeleted = "IsDeleted";
         public const string Locality = "LOCALITY";
         public const string MovementRestrictionReasonCode = "MOVEMENT_RSTRCTN_RSN_CODE";
         public const string Northing = "NORTHING";

@@ -238,7 +238,8 @@ public class ByteCountingStreamTests
         sut.Write(new byte[] { 1, 2, 3 }, 0, 3);
 
         // Act & Assert - should not throw
-        sut.Flush();
+        var act = () => sut.Flush();
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -250,7 +251,8 @@ public class ByteCountingStreamTests
         await sut.WriteAsync(new byte[] { 1, 2, 3 }, 0, 3);
 
         // Act & Assert - should not throw
-        await sut.FlushAsync();
+        var act = () => sut.FlushAsync();
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]

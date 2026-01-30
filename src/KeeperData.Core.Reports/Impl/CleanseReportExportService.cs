@@ -48,12 +48,12 @@ public class CleanseReportExportService : ICleanseReportExportService
                 operationId, timestamp);
 
             // Step 1: Stream issues from MongoDB directly to CSV file
-            tempCsvPath = Path.GetTempFileName();
+            tempCsvPath = Path.GetRandomFileName();
             var recordCount = await StreamIssuesToCsvAsync(tempCsvPath, ct);
             _logger.LogInformation("Streamed {RecordCount} issues to CSV file at {TempPath}", recordCount, tempCsvPath);
 
             // Step 2: Create zip file
-            tempZipPath = Path.GetTempFileName();
+            tempZipPath = Path.GetRandomFileName();
             CreateZipFile(tempCsvPath, tempZipPath, CsvFileName);
             _logger.LogInformation("Created zip file at {ZipPath}", tempZipPath);
 

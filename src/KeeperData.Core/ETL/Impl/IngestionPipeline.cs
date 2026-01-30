@@ -1027,6 +1027,7 @@ public class IngestionPipeline(
         });
     }
 
+    [SuppressMessage("SonarQube", "S3776", Justification = "Method handles a single cohesive upsert operation; splitting would reduce clarity")]
     private void ProcessUpsertOperation(List<WriteModel<BsonDocument>> bulkOps,
                                         List<RecordLineageEvent> lineageEvents,
                                         BsonDocument document,

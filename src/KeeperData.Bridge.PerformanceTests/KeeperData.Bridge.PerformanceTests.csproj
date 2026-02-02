@@ -11,8 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Core" Version="4.0.3.8" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.17.1" />
+    <PackageReference Include="AWSSDK.Core" Version="4.0.3.12" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.18.1" />
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
     <PackageReference Include="GitHubActionsTestLogger" Version="2.4.1">

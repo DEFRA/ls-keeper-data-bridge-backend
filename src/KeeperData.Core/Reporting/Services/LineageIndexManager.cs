@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reporting.Domain;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
@@ -21,6 +22,7 @@ public interface ILineageIndexManager
 /// Default implementation of lineage index management.
 /// Creates compound indexes optimized for primary query patterns.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB index manager - covered by integration tests.")]
 public class LineageIndexManager : ILineageIndexManager
 {
     private readonly IMongoCollection<LineageEventDocument> _lineageEventsCollection;

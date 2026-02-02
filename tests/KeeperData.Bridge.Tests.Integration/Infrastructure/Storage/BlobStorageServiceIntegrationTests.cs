@@ -377,7 +377,8 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
     public async Task DeleteAsync_NonExistentObject_ShouldBeIdempotent()
     {
         // Act & Assert - Should not throw
-        await _blobService.DeleteAsync("non-existent-file.txt");
+        var act = () => _blobService.DeleteAsync("non-existent-file.txt");
+        await act.Should().NotThrowAsync();
     }
 
     #endregion

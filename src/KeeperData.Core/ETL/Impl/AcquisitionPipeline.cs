@@ -1,3 +1,6 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Crypto;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Reporting;
@@ -6,11 +9,10 @@ using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
 using KeeperData.Core.Telemetry;
 using Microsoft.Extensions.Logging;
-using System.Collections.Immutable;
-using System.Diagnostics;
 
 namespace KeeperData.Core.ETL.Impl;
 
+[ExcludeFromCodeCoverage(Justification = "Acquisition pipeline with S3 and database dependencies - covered by integration tests.")]
 public class AcquisitionPipeline(
     IBlobStorageServiceFactory blobStorageServiceFactory,
     IExternalCatalogueServiceFactory ExternalCatalogueServiceFactory,

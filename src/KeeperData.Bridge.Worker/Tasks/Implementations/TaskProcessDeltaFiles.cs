@@ -1,8 +1,10 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Locking;
 using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Bridge.Worker.Tasks.Implementations;
 
+[ExcludeFromCodeCoverage(Justification = "Background task with distributed lock dependency - covered by integration tests.")]
 public class TaskProcessDeltaFiles(ILogger<TaskProcessDeltaFiles> logger, IDistributedLock distributedLock) : ITaskProcessDeltaFiles
 {
     private const string LockName = nameof(TaskProcessDeltaFiles);

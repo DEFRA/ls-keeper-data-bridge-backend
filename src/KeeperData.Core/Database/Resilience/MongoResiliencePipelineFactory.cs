@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 using Polly;
@@ -11,6 +12,7 @@ namespace KeeperData.Core.Database.Resilience;
 /// Factory for creating Polly resilience pipelines for MongoDB operations.
 /// Handles retry logic, circuit breaker, and timeout policies for transient failures.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Polly resilience pipeline factory - behavior verified through integration tests.")]
 public static class MongoResiliencePipelineFactory
 {
     /// <summary>

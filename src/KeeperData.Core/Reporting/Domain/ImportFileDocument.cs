@@ -1,9 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Attributes;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace KeeperData.Core.Reporting.Domain;
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
 [CollectionName("import_files")]
 public class ImportFileDocument
 {
@@ -27,6 +29,7 @@ public class ImportFileDocument
     public string? Error { get; init; }
 }
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
 public class FileAcquisitionDetailsDocument
 {
     public DateTime AcquiredAtUtc { get; init; }
@@ -34,6 +37,7 @@ public class FileAcquisitionDetailsDocument
     public long DecryptionDurationMs { get; init; }
 }
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
 public class FileIngestionDetailsDocument
 {
     public DateTime IngestedAtUtc { get; init; }

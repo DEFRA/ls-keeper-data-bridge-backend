@@ -376,6 +376,25 @@ public class S3BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDispos
         }
     }
 
+    private static readonly TimeSpan DefaultPresignedUrlExpiry = TimeSpan.FromDays(7);
+
+    /// <inheritdoc />
+    public string GeneratePresignedUrl(string objectKey, TimeSpan? expiresIn = null)
+    {
+        var fullKey = GetFullObjectKey(objectKey);
+        var expiry = expiresIn ?? DefaultPresignedUrlExpiry;
+
+        var request = new GetPreSignedUrlRequest
+        {
+            BucketName = _bucketName,
+            Key = fullKey,
+            Verb = HttpVerb.GET,
+            Expires = DateTime.UtcNow.Add(expiry)
+        };
+
+        return _s3Client.GetPreSignedURL(request);
+    }
+
     /// <summary>
     /// Normalizes the top-level folder to ensure consistent format:
     /// - Removes leading and trailing slashes

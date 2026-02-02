@@ -9,11 +9,12 @@ namespace KeeperData.Core.Querying.Setup;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the MongoDB query service for dynamic collection querying
+    /// Registers the query services for dynamic collection querying
     /// </summary>
     public static IServiceCollection AddMongoQueryService(this IServiceCollection services)
     {
-        services.AddScoped<IMongoQueryService, MongoQueryService>();
+        services.AddScoped<IQueryService, QueryService>();
+        services.AddScoped<IODataQueryService, ODataQueryService>();
 
         return services;
     }

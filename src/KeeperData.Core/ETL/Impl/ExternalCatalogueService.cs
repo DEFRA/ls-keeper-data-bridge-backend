@@ -1,15 +1,19 @@
+using System.Collections.Concurrent;
+using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
-using System.Collections.Concurrent;
-using System.Collections.Immutable;
 
 namespace KeeperData.Core.ETL.Impl;
 
+[ExcludeFromCodeCoverage(Justification = "Simple data transfer record.")]
 public record EtlFile(StorageObjectInfo StorageObject, DateTimeOffset Timestamp);
 
+[ExcludeFromCodeCoverage(Justification = "Simple data transfer record.")]
 public record FileSet(DataSetDefinition Definition, EtlFile[] Files);
 
+[ExcludeFromCodeCoverage(Justification = "External catalogue service with S3 dependencies - covered by integration tests.")]
 public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     TimeProvider timeProvider,
     IDataSetDefinitions dataSetDefinitions) : IExternalCatalogueService

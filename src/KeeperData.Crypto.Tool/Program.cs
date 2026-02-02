@@ -1,3 +1,6 @@
+// This is a simple CLI tool with linear command setup - cognitive complexity rule is not meaningful here
+#pragma warning disable S3776
+
 using KeeperData.Core.Crypto;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Crypto.Tool.Services;

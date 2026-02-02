@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Database;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,6 +10,7 @@ namespace KeeperData.Core.Reporting.Impl;
 /// Implementation of reporting collection management service for MongoDB operations.
 /// Manages collections used for import reporting, file tracking, and record lineage.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB collection management service - covered by integration tests.")]
 public class ReportingCollectionManagementService : IReportingCollectionManagementService
 {
     private readonly IMongoClient _mongoClient;

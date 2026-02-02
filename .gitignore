@@ -270,3 +270,6 @@ library.db
 /localstack_data/cache
 /coverage
 /coverage-report
+
+/coverage-report-final
+/coverage-report-full

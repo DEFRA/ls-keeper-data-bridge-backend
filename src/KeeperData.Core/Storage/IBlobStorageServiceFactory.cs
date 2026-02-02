@@ -8,6 +8,7 @@ public interface IBlobStorageServiceFactory
     /// <returns></returns>
     /// <remarks>For the _main_ blob service, i.e., the target or the destination</remarks>
     IBlobStorageService Get();
+    IBlobStorageService GetCleanseReportsBlobService();
     IBlobStorageServiceReadOnly GetSource(string type);
     IBlobStorageServiceReadOnly GetSourceExternal();
     IBlobStorageService GetSourceInternal();

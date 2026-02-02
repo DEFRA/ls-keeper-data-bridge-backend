@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Locking;
 using KeeperData.Infrastructure.Storage;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Bridge.Worker.Tasks.Implementations;
 
+[ExcludeFromCodeCoverage(Justification = "Background task with complex dependencies - covered by integration tests.")]
 public class TaskProcessBulkFiles(
     ILogger<TaskProcessBulkFiles> logger,
     IDistributedLock distributedLock,

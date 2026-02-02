@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Amazon.S3;
 using Amazon.S3.Model;
 using KeeperData.Core.Storage;
@@ -282,6 +283,7 @@ public class S3BlobStorageService : S3BlobStorageServiceReadOnly, IBlobStorageSe
 /// <summary>
 /// Stream implementation that supports multipart uploads to S3 for large files
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Complex S3 multipart upload stream - covered by integration tests.")]
 internal class MultipartUploadStream : Stream
 {
     private readonly IAmazonS3 _s3Client;

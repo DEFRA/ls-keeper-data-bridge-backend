@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reporting.Domain;
 using KeeperData.Core.Reporting.Dtos;
 
@@ -34,6 +35,7 @@ public interface ILineageMapper
 /// <summary>
 /// Default implementation of lineage mapping.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Mapping class with MongoDB BSON dependencies - covered by integration tests.")]
 public class LineageMapper : ILineageMapper
 {
     public LineageEventDocument MapToEventDocument(

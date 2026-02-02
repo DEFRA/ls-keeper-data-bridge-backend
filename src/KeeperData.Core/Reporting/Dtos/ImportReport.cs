@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reporting.Dtos;
 
 /// <summary>
 /// Represents a comprehensive report of an import operation, including acquisition and ingestion phases.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record ImportReport
 {
     /// <summary>
@@ -49,6 +52,7 @@ public record ImportReport
 /// <summary>
 /// Represents details of the acquisition phase, where files are discovered and acquired.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record AcquisitionPhaseReport
 {
     /// <summary>
@@ -90,6 +94,7 @@ public record AcquisitionPhaseReport
 /// <summary>
 /// Represents details of the ingestion phase, where acquired files are processed and data is ingested.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record IngestionPhaseReport
 {
     /// <summary>

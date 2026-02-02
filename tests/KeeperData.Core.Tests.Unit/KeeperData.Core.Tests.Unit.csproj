@@ -7,6 +7,7 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <UserSecretsId>KeeperData.Bridge-20241201</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\KeeperData.Core\KeeperData.Core.csproj" />
+    <ProjectReference Include="..\..\src\KeeperData.Core.Reports\KeeperData.Core.Reports.csproj" />
   </ItemGroup>
 
   <ItemGroup>

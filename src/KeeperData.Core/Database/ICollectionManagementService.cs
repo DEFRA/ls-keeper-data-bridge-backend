@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Database;
 
 /// <summary>
@@ -56,6 +58,7 @@ public record DeleteCollectionResult
 /// <summary>
 /// Result of deleting all collections.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record DeleteAllCollectionsResult
 {
     /// <summary>

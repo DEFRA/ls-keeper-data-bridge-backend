@@ -1,26 +1,28 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using CsvHelper;
+using CsvHelper.Configuration;
 using KeeperData.Core.Database;
+using KeeperData.Core.Database.Resilience;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Telemetry;
-using CsvHelper;
-using CsvHelper.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
-using System.Collections.Immutable;
-using System.Diagnostics;
-using System.Globalization;
-using KeeperData.Core.Database.Resilience;
 
 namespace KeeperData.Core.ETL.Impl;
 
 /// <summary>
 /// This class is responsible for ingesting csv files into mongo.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Ingestion pipeline with MongoDB and S3 dependencies - covered by integration tests.")]
 public class IngestionPipeline(
     IBlobStorageServiceFactory blobStorageServiceFactory,
     IExternalCatalogueServiceFactory ExternalCatalogueServiceFactory,
@@ -1025,6 +1027,7 @@ public class IngestionPipeline(
         });
     }
 
+    [SuppressMessage("SonarQube", "S3776", Justification = "Method handles a single cohesive upsert operation; splitting would reduce clarity")]
     private void ProcessUpsertOperation(List<WriteModel<BsonDocument>> bulkOps,
                                         List<RecordLineageEvent> lineageEvents,
                                         BsonDocument document,
@@ -1230,48 +1233,6 @@ public class IngestionPipeline(
             RecordsCreated = RecordsCreated + other.RecordsCreated,
             RecordsUpdated = RecordsUpdated + other.RecordsUpdated,
             RecordsDeleted = RecordsDeleted + other.RecordsDeleted
-        };
-    }
-
-    private class RecordMetricsAccumulator
-    {
-        public int RecordsProcessed { get; set; }
-        public int RecordsSkipped { get; set; }
-        public int RecordsCreated { get; set; }
-        public int RecordsUpdated { get; set; }
-        public int RecordsDeleted { get; set; }
-
-        public void AddBatch(BatchProcessingMetrics batchMetrics)
-        {
-            RecordsProcessed += batchMetrics.RecordsProcessed;
-            RecordsCreated += batchMetrics.RecordsCreated;
-            RecordsUpdated += batchMetrics.RecordsUpdated;
-            RecordsDeleted += batchMetrics.RecordsDeleted;
-        }
-
-        public FileIngestionMetrics ToFileMetrics(double avgMongoIngestionMs) => new()
-        {
-            RecordsProcessed = RecordsProcessed,
-            RecordsCreated = RecordsCreated,
-            RecordsUpdated = RecordsUpdated,
-            RecordsDeleted = RecordsDeleted,
-            AverageMongoIngestionMs = avgMongoIngestionMs
-        };
-    }
-
-    private class BatchMetricsAccumulator
-    {
-        public int Processed { get; set; }
-        public int Created { get; set; }
-        public int Updated { get; set; }
-        public int Deleted { get; set; }
-
-        public BatchProcessingMetrics ToMetrics() => new()
-        {
-            RecordsProcessed = Processed,
-            RecordsCreated = Created,
-            RecordsUpdated = Updated,
-            RecordsDeleted = Deleted
         };
     }
 

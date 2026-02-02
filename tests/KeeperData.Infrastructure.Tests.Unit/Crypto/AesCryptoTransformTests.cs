@@ -373,65 +373,7 @@ public class AesCryptoTransformTests : IDisposable
         progressReports.Should().Contain(r => r.percentage == 0 && r.status.Contains("processed") && !r.status.Contains("%"));
     }
 
-    [Fact(Skip = "This is too fuzzy for remote ci-cd pipelines")]
-    public async Task LargeFileStreaming_Over500MB_ShouldProcessWithMinimalMemoryUsage()
-    {
-        // Arrange
-        const long fileSizeBytes = 500L * 1024 * 1024 + 1024; // 500MB + 1KB
-        var inputFile = CreateLargeTempFile(fileSizeBytes);
-        var encryptedFile = GetTempFilePath();
-        var decryptedFile = GetTempFilePath();
-
-        var encryptProgressReports = new List<(int percentage, string status)>();
-        var decryptProgressReports = new List<(int percentage, string status)>();
-
-        // Monitor memory usage
-        var initialMemory = GC.GetTotalMemory(true);
-
-        // Act - Encrypt
-        await _cryptoTransform.EncryptFileAsync(
-            inputFile,
-            encryptedFile,
-            TestPassword,
-            TestSaltBytes,
-            (percentage, status) => encryptProgressReports.Add((percentage, status)));
-
-        var memoryAfterEncrypt = GC.GetTotalMemory(false);
-
-        // Act - Decrypt
-        await _cryptoTransform.DecryptFileAsync(
-            encryptedFile,
-            decryptedFile,
-            TestPassword,
-            TestSaltBytes,
-            (percentage, status) => decryptProgressReports.Add((percentage, status)));
-
-        var memoryAfterDecrypt = GC.GetTotalMemory(false);
-
-        // Assert file sizes
-        var originalFileInfo = new FileInfo(inputFile);
-        var decryptedFileInfo = new FileInfo(decryptedFile);
-
-        originalFileInfo.Length.Should().Be(fileSizeBytes);
-        decryptedFileInfo.Length.Should().Be(fileSizeBytes);
-
-        // Assert memory usage - should not buffer entire file in memory
-        // Memory increase should be much less than file size (allowing some overhead for test framework)
-        var maxMemoryIncrease = Math.Max(memoryAfterEncrypt - initialMemory, memoryAfterDecrypt - initialMemory);
-        maxMemoryIncrease.Should().BeLessThan(10 * 1024 * 1024); // Less than 10MB increase
-
-        // Assert progress reporting
-        encryptProgressReports.Should().NotBeEmpty();
-        encryptProgressReports.Should().Contain(r => r.percentage == 100);
-        encryptProgressReports.Where(r => r.status.Contains("%")).Should().NotBeEmpty();
-
-        decryptProgressReports.Should().NotBeEmpty();
-        decryptProgressReports.Should().Contain(r => r.percentage == 100);
-        decryptProgressReports.Where(r => r.status.Contains("%")).Should().NotBeEmpty();
-
-        // Verify data integrity by comparing checksums of first and last chunks
-        await VerifyFileIntegrity(inputFile, decryptedFile);
-    }
+    
 
     [Fact]
     public async Task StreamDecryption_LargeFile_ShouldMaintainConstantMemoryUsage()

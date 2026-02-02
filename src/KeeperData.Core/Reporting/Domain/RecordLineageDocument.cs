@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Attributes;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
@@ -8,6 +9,7 @@ namespace KeeperData.Core.Reporting.Domain;
 /// Represents the header/metadata for a record's lineage tracking.
 /// One document per unique record across all imports.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
 [CollectionName("record_lineage")]
 public class RecordLineageDocument
 {

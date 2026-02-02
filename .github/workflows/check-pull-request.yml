@@ -77,7 +77,8 @@ jobs:
         with:
           compose-file: |
             ./working-dir/docker-compose.yml
-            ./working-dir/docker-compose.override.yml
+            ./working-dir/docker-compose.ci.yml
+          up-flags: "--build"
       - name: Make script executable
         run: chmod +x ./working-dir/wait-for-docker-logs.sh
       - name: Wait for localstack
@@ -87,12 +88,9 @@ jobs:
       - name: Run integration tests
         run: dotnet test ./working-dir/KeeperData.Bridge.sln --filter "Dependence=docker&testtype!=performance"
 
-    ## SonarCloud
-    ## Uncomment to unable SonarCloud scan
-    ## Requires project to be set up in SonarCloud
-    ## and the SonarCloud token to be set in the repository secrets
-#   sonarcloud-scan:
-#     name: CDP SonarCloud Scan
-#     uses: ./.github/workflows/sonarcloud.yml
-#     needs: pr-validator
-#     secrets: inherit
+  sonarcloud-scan:
+    name: CDP SonarCloud Scan
+    uses: ./.github/workflows/sonarcloud.yml
+    needs: pr-validator
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

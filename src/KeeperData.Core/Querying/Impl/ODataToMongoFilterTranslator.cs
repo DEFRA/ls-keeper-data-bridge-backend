@@ -13,7 +13,6 @@ namespace KeeperData.Core.Querying.Impl;
 internal class ODataToMongoFilterTranslator
 {
     private readonly IEdmModel _model;
-    private readonly IEdmEntityType _entityType;
 
     public ODataToMongoFilterTranslator()
     {
@@ -27,7 +26,6 @@ internal class ODataToMongoFilterTranslator
         model.AddElement(container);
 
         _model = model;
-        _entityType = entityType;
     }
 
     public FilterDefinition<BsonDocument> Parse(string filterExpression)
@@ -39,7 +37,7 @@ internal class ODataToMongoFilterTranslator
 
         try
         {
-            var parser = new ODataUriParser(_model, new Uri("http://temp"), new Uri($"http://temp/DynamicEntities?$filter={Uri.EscapeDataString(filterExpression)}"));
+            var parser = new ODataUriParser(_model, new Uri("https://temp"), new Uri($"https://temp/DynamicEntities?$filter={Uri.EscapeDataString(filterExpression)}"));
             var filterClause = parser.ParseFilter();
 
             if (filterClause == null)

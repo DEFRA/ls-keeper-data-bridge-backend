@@ -12,6 +12,10 @@ on:
       - synchronize
       - ready_for_review
 
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   pr-validator:
     name: Run Pull Request Checks

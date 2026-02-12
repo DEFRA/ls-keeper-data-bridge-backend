@@ -68,7 +68,3 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
-
-    labels:
-      - "dependencies"
-      - "nuget"

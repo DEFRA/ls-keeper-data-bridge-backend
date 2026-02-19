@@ -622,33 +622,22 @@ public class CleanseController(
 
     private static CleanseIssueQueryDto BuildIssueQuery(GetIssuesRequest request, CleanseIssueSortField sortField)
     {
-        var query = CleanseIssueQueryDto.Create()
-            .OrderBy(sortField, request.SortDescending)
-            .Page(request.Skip, request.Top);
-
-        if (request.IsActive.HasValue)
-        {
-            if (request.IsActive.Value) query.WhereActive(); else query.WhereInactive();
-        }
-
-        if (!string.IsNullOrEmpty(request.CtsLidFullIdentifier)) query.WithCtsLidFullIdentifierContaining(request.CtsLidFullIdentifier);
-        if (!string.IsNullOrEmpty(request.Cph)) query.WithCphContaining(request.Cph);
-        if (!string.IsNullOrEmpty(request.IssueCode)) query.WithIssueCode(request.IssueCode);
-        if (!string.IsNullOrEmpty(request.RuleCode)) query.WithRuleCode(request.RuleCode);
-        if (!string.IsNullOrEmpty(request.ErrorCode)) query.WithErrorCode(request.ErrorCode);
-        if (request.IsIgnored.HasValue)
-        {
-            if (request.IsIgnored.Value) query.WhereIgnored(); else query.WhereNotIgnored();
-        }
-        if (!string.IsNullOrEmpty(request.ResolutionStatus)) query.WithResolutionStatus(request.ResolutionStatus);
-        if (!string.IsNullOrEmpty(request.AssignedTo)) query.WithAssignedTo(request.AssignedTo);
-        if (request.IsUnassigned == true) query.WhereUnassigned();
-        if (request.CreatedAfterUtc.HasValue) query.CreatedAfter(request.CreatedAfterUtc.Value);
-        if (request.CreatedBeforeUtc.HasValue) query.CreatedBefore(request.CreatedBeforeUtc.Value);
-        if (request.UpdatedAfterUtc.HasValue) query.UpdatedAfter(request.UpdatedAfterUtc.Value);
-        if (request.UpdatedBeforeUtc.HasValue) query.UpdatedBefore(request.UpdatedBeforeUtc.Value);
-
-        return query;
+        return CleanseIssueQueryDto.From(
+            sortField, request.SortDescending, request.Skip, request.Top,
+            isActive: request.IsActive,
+            ctsLidFullIdentifier: request.CtsLidFullIdentifier,
+            cph: request.Cph,
+            issueCode: request.IssueCode,
+            ruleCode: request.RuleCode,
+            errorCode: request.ErrorCode,
+            isIgnored: request.IsIgnored,
+            resolutionStatus: request.ResolutionStatus,
+            assignedTo: request.AssignedTo,
+            isUnassigned: request.IsUnassigned,
+            createdAfterUtc: request.CreatedAfterUtc,
+            createdBeforeUtc: request.CreatedBeforeUtc,
+            updatedAfterUtc: request.UpdatedAfterUtc,
+            updatedBeforeUtc: request.UpdatedBeforeUtc);
     }
 }
 
@@ -865,10 +854,10 @@ public record TestNotificationResponse
 public record GetIssuesRequest
 {
     /// <summary>Number of records to skip (default: 0).</summary>
-    public int Skip { get; init; }
+    public required int Skip { get; init; }
 
     /// <summary>Maximum number of records to return (default: 50, max: 100).</summary>
-    public int Top { get; init; } = 50;
+    public required int Top { get; init; }
 
     /// <summary>Filter by CTS LID full identifier (contains, case-insensitive).</summary>
     public string? CtsLidFullIdentifier { get; init; }

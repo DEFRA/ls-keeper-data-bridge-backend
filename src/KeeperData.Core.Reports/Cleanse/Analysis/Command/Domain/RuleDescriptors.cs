@@ -1,7 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Domain;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 
+[ExcludeFromCodeCoverage(Justification = "Static rule descriptor definitions - no logic to test.")]
 public static class RuleDescriptors
 {
     public static RuleDescriptor CtsCphNotInSam => new(RuleIds.CTS_CPH_NOT_IN_SAM, "2A", "02A", "Active CTS CPH inactive / missing in Sam", "ULITP-3389");

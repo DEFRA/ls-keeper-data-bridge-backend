@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 
 /// <summary>
 /// Issue codes for cleanse analysis.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "String constants - no logic to test.")]
 public static class RuleIds
 {
     /// <summary>

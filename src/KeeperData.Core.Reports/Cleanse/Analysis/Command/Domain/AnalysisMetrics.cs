@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 
 /// <summary>
 /// Metrics collected during strategy execution.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO class - no logic to test.")]
 public sealed class AnalysisMetrics
 {
     /// <summary>

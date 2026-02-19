@@ -201,4 +201,36 @@ public sealed class CleanseIssueQueryDto
         Top = top;
         return this;
     }
+
+    /// <summary>
+    /// Creates a query from explicit filter values. Null/empty values are ignored by the query builder.
+    /// </summary>
+    public static CleanseIssueQueryDto From(
+        CleanseIssueSortField sortField, bool sortDescending, int skip, int top,
+        bool? isActive = null, string? ctsLidFullIdentifier = null, string? cph = null,
+        string? issueCode = null, string? ruleCode = null, string? errorCode = null,
+        bool? isIgnored = null, string? resolutionStatus = null,
+        string? assignedTo = null, bool? isUnassigned = null,
+        DateTime? createdAfterUtc = null, DateTime? createdBeforeUtc = null,
+        DateTime? updatedAfterUtc = null, DateTime? updatedBeforeUtc = null) => new()
+        {
+            SortBy = sortField,
+            SortDescending = sortDescending,
+            Skip = skip,
+            Top = top,
+            IsActive = isActive,
+            CtsLidFullIdentifierContains = ctsLidFullIdentifier,
+            CphContains = cph,
+            IssueCode = issueCode,
+            RuleCode = ruleCode,
+            ErrorCode = errorCode,
+            IsIgnored = isIgnored,
+            ResolutionStatus = resolutionStatus,
+            AssignedTo = assignedTo,
+            IsUnassigned = isUnassigned is true ? true : null,
+            CreatedAfterUtc = createdAfterUtc,
+            CreatedBeforeUtc = createdBeforeUtc,
+            UpdatedAfterUtc = updatedAfterUtc,
+            UpdatedBeforeUtc = updatedBeforeUtc
+        };
 }

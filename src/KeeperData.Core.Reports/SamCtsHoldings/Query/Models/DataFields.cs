@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 
 /// <summary>
 /// Common field names used across CTS and SAM data sets.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "String constants - no logic to test.")]
 public static class DataFields
 {
     public const string IsDeleted = "IsDeleted";

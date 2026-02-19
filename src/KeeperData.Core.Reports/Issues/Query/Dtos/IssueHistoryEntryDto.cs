@@ -1,0 +1,14 @@
+namespace KeeperData.Core.Reports.Issues.Query.Dtos;
+
+/// <summary>
+/// Read-side DTO for an issue history/lineage entry.
+/// </summary>
+public class IssueHistoryEntryDto
+{
+    public required string Id { get; set; }
+    public required string IssueId { get; set; }
+    public required string Action { get; set; }
+    public string PerformedBy { get; set; } = "system";
+    public string? Detail { get; set; }
+    public DateTime OccurredAtUtc { get; set; }
+}

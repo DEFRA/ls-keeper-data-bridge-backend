@@ -1,8 +1,11 @@
-using System.Diagnostics.CodeAnalysis;
-using KeeperData.Core.Reports.Abstract;
-using KeeperData.Core.Reports.Domain;
-using KeeperData.Core.Reports.Dtos;
+using KeeperData.Core.Reports;
+using KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
+using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
+using KeeperData.Core.Reports.Cleanse.Operations.Queries.Dtos;
+using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
+using KeeperData.Core.Reports.Issues.Query.Dtos;
 using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Bridge.Controllers;
 
@@ -11,7 +14,7 @@ namespace KeeperData.Bridge.Controllers;
 [ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarQube", "S6960", Justification = "Controller endpoints are cohesively related to cleanse operations")]
 public class CleanseController(
-    ICleanseReportService cleanseReportService,
+    ICleanseFacade cleanseFacade,
     ICleanseReportNotificationService notificationService,
     ILogger<CleanseController> logger) : ControllerBase
 {
@@ -31,7 +34,7 @@ public class CleanseController(
 
         try
         {
-            var operation = await cleanseReportService.StartAnalysisAsync(cancellationToken);
+            var operation = await cleanseFacade.Commands.CleanseAnalysisCommandService.StartAnalysisAsync(cancellationToken);
 
             if (operation is null)
             {
@@ -79,27 +82,17 @@ public class CleanseController(
 
         try
         {
-            var result = await cleanseReportService.DeleteReportDataAsync(cancellationToken);
+            var deletedCount = await cleanseFacade.Commands.IssueCommandService.DeleteAllIssuesAsync(cancellationToken);
 
-            if (!result.Success)
-            {
-                logger.LogError("Failed to delete cleanse report data: {Message}", result.Message);
-                return StatusCode(500, new ErrorResponse
-                {
-                    Message = result.Message,
-                    Timestamp = DateTime.UtcNow
-                });
-            }
-
-            logger.LogInformation("Successfully deleted {DeletedCount} cleanse report items", result.DeletedCount);
+            logger.LogInformation("Successfully deleted {DeletedCount} cleanse report items", deletedCount);
 
             return Ok(new DeleteDataResponse
             {
                 Success = true,
-                CollectionName = result.CollectionName,
-                DeletedCount = result.DeletedCount ?? 0,
-                Message = result.Message,
-                DeletedAtUtc = result.OperatedAtUtc
+                CollectionName = "",
+                DeletedCount = deletedCount,
+                Message = $"Successfully deleted {deletedCount} cleanse report items.",
+                DeletedAtUtc = DateTime.UtcNow
             });
         }
         catch (OperationCanceledException)
@@ -128,27 +121,17 @@ public class CleanseController(
 
         try
         {
-            var result = await cleanseReportService.DeleteMetadataAsync(cancellationToken);
+            var deletedCount = await cleanseFacade.Commands.CleanseOperationCommandService.DeleteMetadataAsync(cancellationToken);
 
-            if (!result.Success)
-            {
-                logger.LogError("Failed to delete cleanse analysis metadata: {Message}", result.Message);
-                return StatusCode(500, new ErrorResponse
-                {
-                    Message = result.Message,
-                    Timestamp = DateTime.UtcNow
-                });
-            }
-
-            logger.LogInformation("Successfully deleted {DeletedCount} analysis operation records", result.DeletedCount);
+            logger.LogInformation("Successfully deleted {DeletedCount} analysis operation records", deletedCount);
 
             return Ok(new DeleteDataResponse
             {
                 Success = true,
-                CollectionName = result.CollectionName,
-                DeletedCount = result.DeletedCount ?? 0,
-                Message = result.Message,
-                DeletedAtUtc = result.OperatedAtUtc
+                CollectionName = "",
+                DeletedCount = deletedCount,
+                Message = $"Successfully deleted {deletedCount} analysis operation records.",
+                DeletedAtUtc = DateTime.UtcNow
             });
         }
         catch (OperationCanceledException)
@@ -200,7 +183,7 @@ public class CleanseController(
 
         try
         {
-            var runs = await cleanseReportService.GetOperationsAsync(skip, top, cancellationToken);
+            var runs = await cleanseFacade.Queries.CleanseAnalysisOperationsQueries.GetOperationsAsync(skip, top, cancellationToken);
 
             logger.LogInformation("Successfully retrieved {Count} analysis runs", runs.Count);
 
@@ -231,7 +214,7 @@ public class CleanseController(
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Full details of the analysis run, or 404 if not found</returns>
     [HttpGet("run/{operationId}")]
-    [ProducesResponseType(typeof(CleanseAnalysisOperation), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(CleanseAnalysisOperationDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
     public async Task<IActionResult> GetRun(string operationId, CancellationToken cancellationToken = default)
@@ -240,7 +223,7 @@ public class CleanseController(
 
         try
         {
-            var operation = await cleanseReportService.GetOperationAsync(operationId, cancellationToken);
+            var operation = await cleanseFacade.Queries.CleanseAnalysisOperationsQueries.GetOperationAsync(operationId, cancellationToken);
 
             if (operation is null)
             {
@@ -305,7 +288,7 @@ public class CleanseController(
 
         try
         {
-            var result = await cleanseReportService.ListIssuesAsync(skip, top, cancellationToken);
+            var result = await cleanseFacade.Queries.IssueQueries.ListIssuesAsync(skip, top, cancellationToken);
 
             logger.LogInformation("Successfully retrieved {Count} issues (total: {TotalCount})", result.Items.Count, result.TotalCount);
 
@@ -348,7 +331,7 @@ public class CleanseController(
 
         try
         {
-            var result = await cleanseReportService.RegenerateReportUrlAsync(operationId, cancellationToken);
+            var result = await cleanseFacade.Commands.CleanseReportExportCommandService.RegenerateReportUrlAsync(operationId, cancellationToken);
 
             if (!result.Success)
             {
@@ -570,7 +553,7 @@ public record AnalysisRunsResponse
     /// <summary>
     /// Gets the list of analysis run summaries.
     /// </summary>
-    public required IReadOnlyList<CleanseAnalysisOperationSummary> Runs { get; init; }
+    public required IReadOnlyList<CleanseAnalysisOperationSummaryDto> Runs { get; init; }
 
     /// <summary>
     /// Gets the UTC timestamp of the response.
@@ -607,7 +590,7 @@ public record IssuesResponse
     /// <summary>
     /// Gets the list of cleanse issues.
     /// </summary>
-    public required IReadOnlyList<CleanseReportItem> Issues { get; init; }
+    public required IReadOnlyList<IssueDto> Issues { get; init; }
 
     /// <summary>
     /// Gets the UTC timestamp of the response.

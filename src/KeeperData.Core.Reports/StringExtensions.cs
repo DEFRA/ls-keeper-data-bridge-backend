@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace KeeperData.Core.Reports;
 
 /// <summary>
@@ -35,7 +37,7 @@ public static class StringExtensions
 
         foreach (var format in formats)
         {
-            if (DateTime.TryParseExact(value, format, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var result))
+            if (DateTime.TryParseExact(value, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var result))
             {
                 return result;
             }

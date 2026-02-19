@@ -8,8 +8,17 @@ public sealed class CleanseIssueQueryDto
     /// <summary>Filter by active status (null = all).</summary>
     public bool? IsActive { get; private set; }
 
+    /// <summary>Filter by CTS LID full identifier containing this value.</summary>
+    public string? CtsLidFullIdentifierContains { get; private set; }
+
     /// <summary>Filter by specific issue code.</summary>
     public string? IssueCode { get; private set; }
+
+    /// <summary>Filter by specific rule code.</summary>
+    public string? RuleCode { get; private set; }
+
+    /// <summary>Filter by specific error code.</summary>
+    public string? ErrorCode { get; private set; }
 
     /// <summary>Filter by CPH containing this value.</summary>
     public string? CphContains { get; private set; }
@@ -76,6 +85,27 @@ public sealed class CleanseIssueQueryDto
     public CleanseIssueQueryDto WithIssueCode(string code)
     {
         IssueCode = code;
+        return this;
+    }
+
+    /// <summary>Filters by specific rule code.</summary>
+    public CleanseIssueQueryDto WithRuleCode(string code)
+    {
+        RuleCode = code;
+        return this;
+    }
+
+    /// <summary>Filters by specific error code.</summary>
+    public CleanseIssueQueryDto WithErrorCode(string code)
+    {
+        ErrorCode = code;
+        return this;
+    }
+
+    /// <summary>Filters by CTS LID full identifier containing the specified value.</summary>
+    public CleanseIssueQueryDto WithCtsLidFullIdentifierContaining(string value)
+    {
+        CtsLidFullIdentifierContains = value;
         return this;
     }
 

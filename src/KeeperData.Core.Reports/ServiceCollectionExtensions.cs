@@ -16,6 +16,8 @@ using KeeperData.Core.Reports.Issues.Command.Repositories;
 using KeeperData.Core.Reports.Issues.Index;
 using KeeperData.Core.Reports.Issues.Query;
 using KeeperData.Core.Reports.Issues.Query.Abstract;
+using KeeperData.Core.Reports.SamCtsHoldings.Query;
+using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics.CodeAnalysis;
 
@@ -52,6 +54,9 @@ public static class ServiceCollectionExtensions
         // Register index manager and initialisation
         services.AddSingleton<IIssueIndexManager, IssueIndexManager>();
         services.AddSingleton<ICleanseReportInitialisation, CleanseReportInitialisation>();
+
+        // Register query services for CTS/SAM data
+        services.AddScoped<ICtsSamQueryService, CtsSamQueryService>();
 
         // Register engine
         services.AddScoped<ICleanseAnalysisEngine, CleanseAnalysisEngine>();

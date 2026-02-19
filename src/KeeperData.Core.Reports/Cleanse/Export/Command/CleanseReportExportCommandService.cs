@@ -1,5 +1,6 @@
 using Amazon.Runtime.Internal.Util;
 using CsvHelper;
+using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Results;
@@ -31,6 +32,22 @@ public class CleanseReportExportCommandService(
 {
     private const string CsvFileName = "cleanse-report.csv";
     private const int StreamBatchSize = 1000;
+
+    /// <summary>
+    /// Rule priority order for CSV export grouping.
+    /// Issues are grouped by rule in this order, sorted by CPH within each group.
+    /// </summary>
+    private static readonly IReadOnlyList<string> RulePriorityOrder =
+    [
+        RuleIds.CTS_CPH_NOT_IN_SAM,         // Rule 2A
+        RuleIds.SAM_CPH_NOT_IN_CTS,         // Rule 2B
+        RuleIds.CTS_SAM_NO_EMAIL_ADDRESSES, // Rule 4
+        RuleIds.SAM_MISSING_EMAIL_ADDRESSES, // Rule 12
+        RuleIds.CTS_SAM_NO_PHONE_NUMBERS,   // Rule 5
+        RuleIds.SAM_MISSING_PHONE_NUMBERS,  // Rule 11
+        RuleIds.SAM_NO_CATTLE_UNIT,          // Rule 1
+        RuleIds.SAM_CATTLE_RELATED_CPHs      // Rule 3
+    ];
 
     public async Task ExportReportAsync(string operationId, CancellationToken ct)
     {
@@ -182,6 +199,7 @@ public class CleanseReportExportCommandService(
 
     /// <summary>
     /// Streams issues from MongoDB directly to CSV file using CsvHelper.
+    /// Issues are grouped by rule priority order, sorted by CPH within each group.
     /// Memory footprint is O(batch_size) instead of O(total_records).
     /// </summary>
     private async Task<int> StreamIssuesToCsvAsync(string filePath, CancellationToken ct)
@@ -198,8 +216,8 @@ public class CleanseReportExportCommandService(
         csv.WriteHeader<IssueDto>();
         await csv.NextRecordAsync();
 
-        // Stream records from MongoDB and write directly to CSV
-        await foreach (var issue in issueQueries.StreamActiveIssuesAsync(StreamBatchSize, ct))
+        // Stream records from MongoDB ordered by rule priority then CPH
+        await foreach (var issue in issueQueries.StreamActiveIssuesByRulePriorityAsync(RulePriorityOrder, StreamBatchSize, ct))
         {
             csv.WriteRecord(issue);
             await csv.NextRecordAsync();
@@ -246,29 +264,21 @@ public class CleanseReportExportCommandService(
 
     private async Task SendNotificationAsync(string operationId, string reportUrl, CancellationToken ct)
     {
-        try
+        logger.LogInformation("Sending cleanse report notification for operation {OperationId}", operationId);
+
+        var notificationResult = await notificationService.SendReportNotificationAsync(reportUrl, ct);
+
+        if (notificationResult.Success)
         {
-            logger.LogInformation("Sending cleanse report notification for operation {OperationId}", operationId);
-
-            var notificationResult = await notificationService.SendReportNotificationAsync(reportUrl, ct);
-
-            if (notificationResult.Success)
-            {
-                logger.LogInformation(
-                    "Cleanse report notification sent successfully for operation {OperationId}. NotificationId: {NotificationId}, Recipient: {Recipient}",
-                    operationId, notificationResult.NotificationId, notificationResult.Recipient);
-            }
-            else
-            {
-                logger.LogWarning(
-                    "Failed to send cleanse report notification for operation {OperationId}: {Error}",
-                    operationId, notificationResult.Error ?? "Unknown error");
-            }
+            logger.LogInformation(
+                "Cleanse report notification sent successfully for operation {OperationId}. NotificationId: {NotificationId}, Recipient: {Recipient}",
+                operationId, notificationResult.NotificationId, notificationResult.Recipient);
         }
-        catch (Exception ex)
+        else
         {
-            // Log but don't fail - notification is non-critical
-            logger.LogError(ex, "Exception during notification send for operation {OperationId}", operationId);
+            logger.LogWarning(
+                "Failed to send cleanse report notification for operation {OperationId}: {Error}",
+                operationId, notificationResult.Error ?? "Unknown error");
         }
     }
 }

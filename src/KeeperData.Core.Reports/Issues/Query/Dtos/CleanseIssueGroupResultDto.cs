@@ -1,10 +1,12 @@
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Core.Reports.Issues.Query.Dtos;
 
 /// <summary>
 /// Result of grouping issues by issue code.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public sealed record CleanseIssueGroupResultDto
 {
     /// <summary>The issue code for this group.</summary>

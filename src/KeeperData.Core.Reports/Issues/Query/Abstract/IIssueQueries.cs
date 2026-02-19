@@ -27,6 +27,17 @@ public interface IIssueQueries
     /// <returns>An async enumerable of active issues.</returns>
     IAsyncEnumerable<IssueDto> StreamActiveIssuesAsync(int batchSize = 1000, CancellationToken ct = default);
 
+    /// <summary>
+    /// Streams all active issues ordered by rule priority then by CPH within each group.
+    /// Memory-efficient for CSV export with deterministic ordering.
+    /// </summary>
+    /// <param name="rulePriorityOrder">Issue codes in priority order.</param>
+    /// <param name="batchSize">Number of items to fetch per batch.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>An async enumerable of active issues ordered by rule priority then CPH.</returns>
+    IAsyncEnumerable<IssueDto> StreamActiveIssuesByRulePriorityAsync(
+        IReadOnlyList<string> rulePriorityOrder, int batchSize = 1000, CancellationToken ct = default);
+
     Task<CleanseIssueQueryResultDto> QueryAsync(CleanseIssueQueryDto query, CancellationToken ct = default);
     Task<int> CountAsync(CleanseIssueQueryDto query, CancellationToken ct = default);
     Task<IReadOnlyList<CleanseIssueGroupResultDto>> GroupByIssueCodeAsync(CleanseIssueQueryDto? baseFilter = null, int itemsPerGroup = 10, CancellationToken ct = default);

@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Issues.Query.Dtos;
 
 /// <summary>
 /// Represents a paginated result of cleanse issues.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record CleanseIssuesResultDto
 {
     /// <summary>

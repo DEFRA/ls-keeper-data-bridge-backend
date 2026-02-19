@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using KeeperData.Core.Reports.Internal.Collections;
 using KeeperData.Core.Reports.Internal.Documents;
@@ -8,6 +9,7 @@ using MongoDB.Driver;
 
 namespace KeeperData.Core.Reports.Issues.Query;
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB query class - covered by integration tests.")]
 public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollection historyCollection) : IIssueQueries
 {
     private readonly IMongoCollection<IssueDocument> _collection = issueCollection.Collection;
@@ -52,6 +54,34 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
             {
                 ct.ThrowIfCancellationRequested();
                 yield return document.ToDto();
+            }
+        }
+    }
+
+    public async IAsyncEnumerable<IssueDto> StreamActiveIssuesByRulePriorityAsync(
+        IReadOnlyList<string> rulePriorityOrder,
+        int batchSize = 1000,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var activeFilter = Builders<IssueDocument>.Filter.Eq(d => d.IsActive, true);
+        var sort = Builders<IssueDocument>.Sort.Ascending(d => d.Cph);
+
+        foreach (var issueCode in rulePriorityOrder)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var filter = activeFilter & Builders<IssueDocument>.Filter.Eq(d => d.IssueCode, issueCode);
+            var options = new FindOptions<IssueDocument> { BatchSize = batchSize, Sort = sort };
+
+            using var cursor = await _collection.FindAsync(filter, options, ct);
+
+            while (await cursor.MoveNextAsync(ct))
+            {
+                foreach (var document in cursor.Current)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    yield return document.ToDto();
+                }
             }
         }
     }

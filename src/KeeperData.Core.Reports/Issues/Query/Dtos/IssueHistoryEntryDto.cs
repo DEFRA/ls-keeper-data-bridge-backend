@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Issues.Query.Dtos;
 
 /// <summary>
 /// Read-side DTO for an issue history/lineage entry.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO class - no logic to test.")]
 public class IssueHistoryEntryDto
 {
     public required string Id { get; set; }

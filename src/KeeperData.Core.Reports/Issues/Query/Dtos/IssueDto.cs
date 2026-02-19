@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Issues.Query.Dtos;
 
+[ExcludeFromCodeCoverage(Justification = "DTO class - no logic to test.")]
 public class IssueDto
 {
     public required string Id { get; set; }

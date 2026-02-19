@@ -8,10 +8,12 @@ using KeeperData.Core.Reports.Cleanse.Operations.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.Repositories;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
+using KeeperData.Core.Reports.Initialisation;
 using KeeperData.Core.Reports.Internal.Collections;
 using KeeperData.Core.Reports.Issues.Command;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.Repositories;
+using KeeperData.Core.Reports.Issues.Index;
 using KeeperData.Core.Reports.Issues.Query;
 using KeeperData.Core.Reports.Issues.Query.Abstract;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,6 +48,10 @@ public static class ServiceCollectionExtensions
 
         // Register query services
         services.AddScoped<IIssueQueries, IssueQueries>();
+
+        // Register index manager and initialisation
+        services.AddSingleton<IIssueIndexManager, IssueIndexManager>();
+        services.AddSingleton<ICleanseReportInitialisation, CleanseReportInitialisation>();
 
         // Register engine
         services.AddScoped<ICleanseAnalysisEngine, CleanseAnalysisEngine>();

@@ -12,7 +12,7 @@ namespace KeeperData.Core.Reports.Internal.Collections;
 [ExcludeFromCodeCoverage(Justification = "MongoDB collection accessor - covered by integration tests.")]
 public class CleanseOperationsCollection
 {
-    private const string CollectionName = "cleanse_analysis_operations";
+    private const string CollectionName = "ca_operations";
 
     internal IMongoCollection<CleanseAnalysisOperationDocument> Collection { get; }
 

@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
+using KeeperData.Core.Reports.Cleanse.Export.Command.Domain;
 using KeeperData.Infrastructure.Notifications.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

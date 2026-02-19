@@ -5,7 +5,7 @@ namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 public static class RuleDescriptors
 {
     public static RuleDescriptor CtsCphNotInSam => new(RuleIds.CTS_CPH_NOT_IN_SAM, "2A", "02A", "Active CTS CPH inactive / missing in Sam", "ULITP-3389");
-    public static RuleDescriptor SamCphNotInCts => new(RuleIds.SAM_CPH_NOT_IN_CTS, "02B", "2B", "Active SAM CPH inactive / missing in CTS", "ULITP-3217");
+    public static RuleDescriptor SamCphNotInCts => new(RuleIds.SAM_CPH_NOT_IN_CTS, "2B", "2B", "Active SAM CPH inactive / missing in CTS", "ULITP-3217");
     public static RuleDescriptor CtsSamNoEmailAddresses => new(RuleIds.CTS_SAM_NO_EMAIL_ADDRESSES, "4", "04",
         "CPH present in both CTS and SAM but no email addresses in either system", "ULITP-3307");
     public static RuleDescriptor SamMissingEmailAddresses => new(RuleIds.SAM_MISSING_EMAIL_ADDRESSES, "12", "12", "Email address in CTS but missing in SAM", "ULITP-3493");

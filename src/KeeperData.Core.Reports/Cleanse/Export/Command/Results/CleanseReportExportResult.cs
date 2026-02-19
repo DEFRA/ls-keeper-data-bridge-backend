@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Cleanse.Export.Command.Results;
 
 /// <summary>
 /// Result of a cleanse report export operation.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
 public record CleanseReportExportResult
 {
     /// <summary>

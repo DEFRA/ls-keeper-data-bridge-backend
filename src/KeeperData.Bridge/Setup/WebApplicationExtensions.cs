@@ -1,4 +1,5 @@
 using KeeperData.Bridge.Middleware;
+using KeeperData.Core.Reports;
 using KeeperData.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -11,6 +12,14 @@ namespace KeeperData.Bridge.Setup;
 
 public static class WebApplicationExtensions
 {
+    [ExcludeFromCodeCoverage]
+    public static async Task InitialiseAsync(this WebApplication app)
+    {
+        using var scope = app.Services.CreateScope();
+        var facade = scope.ServiceProvider.GetRequiredService<ICleanseFacade>();
+        await facade.Initialisation.InitialiseAsync();
+    }
+
     [ExcludeFromCodeCoverage]
     public static void ConfigureRequestPipeline(this WebApplication app)
     {

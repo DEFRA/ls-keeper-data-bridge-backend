@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Cleanse.Operations.Queries.Dtos;
 
 /// <summary>
 /// Summary DTO for listing cleanse analysis operations.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO class - no logic to test.")]
 public class CleanseAnalysisOperationSummaryDto
 {
     /// <summary>

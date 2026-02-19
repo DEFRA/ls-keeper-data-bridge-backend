@@ -5,9 +5,11 @@ using KeeperData.Core.Reports.Internal.Collections;
 using KeeperData.Core.Reports.Internal.Documents;
 using KeeperData.Core.Reports.Internal.Mappers;
 using MongoDB.Driver;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Core.Reports.Cleanse.Operations.Queries;
 
+[ExcludeFromCodeCoverage(Justification = "MongoDB query class - covered by integration tests.")]
 public class CleanseAnalysisOperationsQueries(CleanseOperationsCollection operationsCollection)
     : ICleanseAnalysisOperationsQueries
 {

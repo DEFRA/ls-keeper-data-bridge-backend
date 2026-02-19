@@ -1,9 +1,12 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 
 /// <summary>
 /// Optional issue data to persist on the report item.
 /// A nullable subset of <see cref="Domain.CleanseReportItem"/> optional fields.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO class - no logic to test.")]
 public sealed class IssueContextData
 {
     public string[]? EmailCTS { get; set; }

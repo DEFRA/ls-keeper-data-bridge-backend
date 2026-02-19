@@ -12,16 +12,7 @@ public static class RuleDescriptors
     public static RuleDescriptor CtsSamNoPhoneNumbers => new(RuleIds.CTS_SAM_NO_PHONE_NUMBERS, "5", "05", "No telephone numbers in CTS or Sam", "ULITP-3351");
     public static RuleDescriptor SamMissingPhoneNumbers => new(RuleIds.SAM_MISSING_PHONE_NUMBERS, "11", "11", "Phone number in CTS but missing in SAM", "ULITP-3579");
     public static RuleDescriptor SamNoCattleUnit => new(RuleIds.SAM_NO_CATTLE_UNIT, "1", "01", "No cattle unit defined in SAM", "ULITP-3439");
-    //public static CleanseRuleDescriptor CtsSamEmailAddressesInconsistent => new(IssueCodes.CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES, "6", "06", "SAM is missing email addresses found in CTS", "ULITP-3461");
-    //public static CleanseRuleDescriptor CtsSamPhoneNosInconsistent => new(IssueCodes.CTS_SAM_INCONSISTENT_PHONENOS, "9", "09", "SAM is missing phone numbers found in CTS", "ULITP-3578");
+    public static RuleDescriptor CtsSamEmailAddressesInconsistent => new(RuleIds.CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES, "6", "06", "SAM is missing email addresses found in CTS", "ULITP-3461");
+    public static RuleDescriptor CtsSamPhoneNosInconsistent => new(RuleIds.CTS_SAM_INCONSISTENT_PHONENOS, "9", "09", "SAM is missing phone numbers found in CTS", "ULITP-3578");
     public static RuleDescriptor CtsSamLocationsDiffer => new(RuleIds.SAM_CATTLE_RELATED_CPHs, "3", "03", "Cattle-related CPHs in SAM (e.g. those with relevant animal species or purpose codes) that are not present in CTS", "ULITP-3440");
-
 }
-
-
-
-
-
-
-
-// CPH | Rule No | Error Code | Error Description | Email CTS | Email SAM | Tel CTS | Tel SAM | FSA 

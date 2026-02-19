@@ -251,67 +251,37 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
         if (query.IsUnassigned == true)
             filters.Add(builder.Eq(d => d.AssignedTo, null));
 
-        return filters.Count > 0 ? builder.And(filters) : builder.Empty;
+        return builder.And(filters);
     }
 
     private static SortDefinition<IssueDocument> BuildSort(CleanseIssueQueryDto query)
     {
-        return query.SortBy switch
-        {
-            CleanseIssueSortField.Cph => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.Cph)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.Cph),
-            CleanseIssueSortField.CtsLidFullIdentifier => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.CtsLidFullIdentifier)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.CtsLidFullIdentifier),
-            CleanseIssueSortField.IssueCode => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.IssueCode)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.IssueCode),
-            CleanseIssueSortField.RuleCode => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.RuleCode)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.RuleCode),
-            CleanseIssueSortField.ErrorCode => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.ErrorCode)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.ErrorCode),
-            CleanseIssueSortField.CreatedAtUtc => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.CreatedAtUtc)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.CreatedAtUtc),
-            CleanseIssueSortField.IsActive => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.IsActive)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.IsActive),
-            CleanseIssueSortField.IsIgnored => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.IsIgnored)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.IsIgnored),
-            CleanseIssueSortField.ResolutionStatus => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.ResolutionStatus)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.ResolutionStatus),
-            CleanseIssueSortField.AssignedTo => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.AssignedTo)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.AssignedTo),
-            _ => query.SortDescending
-                ? Builders<IssueDocument>.Sort.Descending(d => d.LastUpdatedAtUtc)
-                : Builders<IssueDocument>.Sort.Ascending(d => d.LastUpdatedAtUtc)
-        };
+        var fieldName = GetSortFieldName(query.SortBy);
+
+        return query.SortDescending
+            ? Builders<IssueDocument>.Sort.Descending(fieldName)
+            : Builders<IssueDocument>.Sort.Ascending(fieldName);
     }
 
     private static MongoDB.Bson.BsonDocument BuildSortDocument(CleanseIssueSortField field, bool descending)
     {
-        var fieldName = field switch
-        {
-            CleanseIssueSortField.Cph => "cph",
-            CleanseIssueSortField.CtsLidFullIdentifier => "cts_lid_full_identifier",
-            CleanseIssueSortField.IssueCode => "issue_code",
-            CleanseIssueSortField.RuleCode => "rule_code",
-            CleanseIssueSortField.ErrorCode => "error_code",
-            CleanseIssueSortField.CreatedAtUtc => "created_at",
-            CleanseIssueSortField.IsActive => "is_active",
-            CleanseIssueSortField.IsIgnored => "is_ignored",
-            CleanseIssueSortField.ResolutionStatus => "resolution_status",
-            CleanseIssueSortField.AssignedTo => "assigned_to",
-            _ => "last_updated_at"
-        };
-        return new MongoDB.Bson.BsonDocument(fieldName, descending ? -1 : 1);
+        return new MongoDB.Bson.BsonDocument(GetSortFieldName(field), descending ? -1 : 1);
     }
+
+    private static string GetSortFieldName(CleanseIssueSortField field) => field switch
+    {
+        CleanseIssueSortField.Cph => "cph",
+        CleanseIssueSortField.CtsLidFullIdentifier => "cts_lid_full_identifier",
+        CleanseIssueSortField.IssueCode => "issue_code",
+        CleanseIssueSortField.RuleCode => "rule_code",
+        CleanseIssueSortField.ErrorCode => "error_code",
+        CleanseIssueSortField.CreatedAtUtc => "created_at",
+        CleanseIssueSortField.IsActive => "is_active",
+        CleanseIssueSortField.IsIgnored => "is_ignored",
+        CleanseIssueSortField.ResolutionStatus => "resolution_status",
+        CleanseIssueSortField.AssignedTo => "assigned_to",
+        _ => "last_updated_at"
+    };
 
     #endregion
 }

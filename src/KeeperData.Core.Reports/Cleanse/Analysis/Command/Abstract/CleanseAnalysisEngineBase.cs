@@ -19,6 +19,15 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
 
     protected delegate Task<QueryResult> Fetch(int skip, int batchSize, CancellationToken ct);
 
+    protected record PumpContext(
+        int TotalRecords,
+        string OperationId,
+        AnalysisMetrics Metrics,
+        ProgressCallback ProgressCallback,
+        Fetch Fetcher,
+        RecordProcessor RecordProcessor,
+        string IdFieldKey);
+
     protected abstract Task ProcessCtsPrimaryRecordAsync(string id,
         string operationId, AnalysisMetrics metrics, CancellationToken ct);
 
@@ -36,52 +45,52 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
         await progressCallback(0, totalRecords, 0, 0);
 
         // iterate CTS CPH records
-        await PumpAsync(totalRecords, operationId, metrics, progressCallback, dataService.ListCtsCphHoldingsAsync, 
-            ProcessCtsPrimaryRecordAsync, DataFields.CtsCphHoldingFields.LidFullIdentifier, ct);
+        await PumpAsync(new PumpContext(totalRecords, operationId, metrics, progressCallback,
+            dataService.ListCtsCphHoldingsAsync, ProcessCtsPrimaryRecordAsync,
+            DataFields.CtsCphHoldingFields.LidFullIdentifier), ct);
 
         // iterate SAM CPH records
-        await PumpAsync(totalRecords, operationId, metrics, progressCallback, dataService.ListSamCphHoldingsAsync, 
-            ProcessSamPrimaryRecordAsync, DataFields.SamCphHoldingFields.Cph, ct);
+        await PumpAsync(new PumpContext(totalRecords, operationId, metrics, progressCallback,
+            dataService.ListSamCphHoldingsAsync, ProcessSamPrimaryRecordAsync,
+            DataFields.SamCphHoldingFields.Cph), ct);
 
         return metrics;
     }
 
 
 
-    protected async Task PumpAsync(int totalRecords, string operationId, AnalysisMetrics metrics,
-        ProgressCallback progressCallback, Fetch fetcher, RecordProcessor recordProcessor, string idFieldKey, CancellationToken ct)
+    protected async Task PumpAsync(PumpContext context, CancellationToken ct)
     {
         var skip = 0;
         while (true && !ct.IsCancellationRequested)
         {
-            var batch = await fetcher(skip, BatchSize, ct);
+            var batch = await context.Fetcher(skip, BatchSize, ct);
 
             if (batch.Data.Count == 0)
             {
                 break;
             }
 
-            await ProcessBatchAsync(batch, operationId, metrics, recordProcessor, idFieldKey, ct);
+            await ProcessBatchAsync(batch, context, ct);
 
             skip += batch.Data.Count;
-            metrics.RecordsAnalyzed = skip;
+            context.Metrics.RecordsAnalyzed = skip;
 
-            if (ShouldUpdateProgress(metrics.RecordsAnalyzed))
+            if (ShouldUpdateProgress(context.Metrics.RecordsAnalyzed))
             {
-                await progressCallback(metrics.RecordsAnalyzed, totalRecords, metrics.IssuesFound, metrics.IssuesResolved);
+                await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
             }
         }
     }
 
-    protected async Task ProcessBatchAsync(QueryResult batch, string operationId,
-        AnalysisMetrics metrics, RecordProcessor processor, string idFieldKey, CancellationToken ct)
+    protected static async Task ProcessBatchAsync(QueryResult batch, PumpContext context, CancellationToken ct)
     {
         foreach (var record in batch.Data)
         {
-            var id = record[idFieldKey]?.ToString();
+            var id = record[context.IdFieldKey]?.ToString();
             if (id != null)
             {
-                await processor(id, operationId, metrics, ct);
+                await context.RecordProcessor(id, context.OperationId, context.Metrics, ct);
             }
         }
     }

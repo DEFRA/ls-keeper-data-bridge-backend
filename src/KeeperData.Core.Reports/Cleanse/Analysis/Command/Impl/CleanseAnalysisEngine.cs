@@ -24,73 +24,79 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
         if (samCphHolding is null)
         {
             results.Add(RuleResult.Issue(RuleDescriptors.CtsCphNotInSam, lidFullIdentifier));
+            await RecordResultsAsync(lidFullIdentifier.Value, lidFullIdentifier.Cph, operationId, metrics, results, ct);
+            return;
         }
-        else // sam record exists...
+
+        var ctsHolding = await _dataService.GetCtsCphHoldingAsync(lidFullIdentifier, ct);
+        if (ctsHolding != null)
         {
-            var ctsHolding = await _dataService.GetCtsCphHoldingAsync(lidFullIdentifier, ct);
-            if(ctsHolding != null)
-            {
-                var ctsEmails = ctsHolding.GetEmailAddresses();
-                var samEmails = samCphHolding.GetEmailAddresses();
-                var ctsPhones = ctsHolding.GetPhoneNumbers();
-                var samPhones = samCphHolding.GetPhoneNumbers();
-
-                // PRIORITY 2:  RULE 4: CPH present in both CTS and SAM but no email addresses in either system
-                if (ctsEmails.Length + samEmails.Length == 0) 
-                {
-                    results.Add(RuleResult.Issue(RuleDescriptors.CtsSamNoEmailAddresses, ctsHolding.Id, samCphHolding.Cph));
-                }
-
-                // PRIORITY 3:  RULE 12 - Email addresses in CTS missing from SAM
-                var missingEmails = ctsEmails.Except(samEmails).ToArray();
-                if (missingEmails.Length > 0)
-                {
-                    results.Add(RuleResult.Issue(RuleDescriptors.SamMissingEmailAddresses, ctsHolding.Id, samCphHolding.Cph, x => x.EmailCTS = missingEmails));
-                }
-
-                // PRIORITY 4:  RULE 5  - CPH present in both CTS and SAM but no phone numbers in either system
-                if (ctsPhones.Length + samPhones.Length == 0)
-                {
-                    results.Add(RuleResult.Issue(RuleDescriptors.CtsSamNoPhoneNumbers, ctsHolding.Id, samCphHolding.Cph));
-                }
-
-                // PRIORITY 5:  RULE 11 - CTS phone numbers missing from SAM
-                var missingPhones = ctsPhones.Except(samPhones).ToArray();
-                if (missingPhones.Length > 0)
-                {
-                    results.Add(RuleResult.Issue(RuleDescriptors.SamMissingPhoneNumbers, ctsHolding.Id, samCphHolding.Cph, x => x.TelCTS = missingPhones));
-                }
-
-                // PRIORITY 6:  RULE 1  - No cattle unit defined in SAM
-                var asc = samCphHolding.Holding[DataFields.SamCphHoldingFields.AnimalSpeciesCode]?.ToString();
-                if (asc != "CTT")
-                {
-                    results.Add(RuleResult.Issue(RuleDescriptors.SamNoCattleUnit, ctsHolding.Id, samCphHolding.Cph, x => x.AnimalSpeciesCode = asc));
-                }
-
-                // PRIORITY 10: RULE 3 - Cattle-related CPHs in SAM (e.g. those with relevant animal species or purpose codes) that are not present in CTS
-                // aka: where ANIMAL_SPECIES_CODE=CTT - if SAM.FEATURE_NAME=['Unknown','Not known','Notknown','',null] OR CTS.ADR_NAME != SAM.FEATURE_NAME then raise issue
-                if (samCphHolding.AnimalSpeciesCode == "CTT")
-                {
-                    if (string.IsNullOrWhiteSpace(samCphHolding.LocationName)
-                        || samCphHolding.LocationName.Equals("unknown", StringComparison.OrdinalIgnoreCase)
-                        || samCphHolding.LocationName.Equals("not known", StringComparison.OrdinalIgnoreCase)
-                        || samCphHolding.LocationName.Equals("notknown", StringComparison.OrdinalIgnoreCase)
-                        || !string.Equals(ctsHolding.LocationName, samCphHolding.LocationName, StringComparison.OrdinalIgnoreCase)
-                        )
-                    {
-                        results.Add(RuleResult.Issue(RuleDescriptors.CtsSamLocationsDiffer, ctsHolding.Id, samCphHolding.Cph,
-                            x =>
-                            {
-                                x.LocationNameSAM = samCphHolding.LocationName;
-                                x.LocationNameCTS = ctsHolding.LocationName;
-                            }));
-                    }
-                }
-            }
+            EvaluateCtsSamRules(ctsHolding, samCphHolding, results);
         }
 
         await RecordResultsAsync(lidFullIdentifier.Value, lidFullIdentifier.Cph, operationId, metrics, results, ct);
+    }
+
+    private static void EvaluateCtsSamRules(CtsCphHoldingModel ctsHolding, SamCphHoldingModel samCphHolding, List<RuleResult> results)
+    {
+        var ctsEmails = ctsHolding.GetEmailAddresses();
+        var samEmails = samCphHolding.GetEmailAddresses();
+        var ctsPhones = ctsHolding.GetPhoneNumbers();
+        var samPhones = samCphHolding.GetPhoneNumbers();
+
+        // PRIORITY 2:  RULE 4: CPH present in both CTS and SAM but no email addresses in either system
+        if (ctsEmails.Length + samEmails.Length == 0) 
+        {
+            results.Add(RuleResult.Issue(RuleDescriptors.CtsSamNoEmailAddresses, ctsHolding.Id, samCphHolding.Cph));
+        }
+
+        // PRIORITY 3:  RULE 12 - Email addresses in CTS missing from SAM
+        var missingEmails = ctsEmails.Except(samEmails).ToArray();
+        if (missingEmails.Length > 0)
+        {
+            results.Add(RuleResult.Issue(RuleDescriptors.SamMissingEmailAddresses, ctsHolding.Id, samCphHolding.Cph, x => x.EmailCTS = missingEmails));
+        }
+
+        // PRIORITY 4:  RULE 5  - CPH present in both CTS and SAM but no phone numbers in either system
+        if (ctsPhones.Length + samPhones.Length == 0)
+        {
+            results.Add(RuleResult.Issue(RuleDescriptors.CtsSamNoPhoneNumbers, ctsHolding.Id, samCphHolding.Cph));
+        }
+
+        // PRIORITY 5:  RULE 11 - CTS phone numbers missing from SAM
+        var missingPhones = ctsPhones.Except(samPhones).ToArray();
+        if (missingPhones.Length > 0)
+        {
+            results.Add(RuleResult.Issue(RuleDescriptors.SamMissingPhoneNumbers, ctsHolding.Id, samCphHolding.Cph, x => x.TelCTS = missingPhones));
+        }
+
+        // PRIORITY 6:  RULE 1  - No cattle unit defined in SAM
+        var asc = samCphHolding.Holding[DataFields.SamCphHoldingFields.AnimalSpeciesCode]?.ToString();
+        if (asc != "CTT")
+        {
+            results.Add(RuleResult.Issue(RuleDescriptors.SamNoCattleUnit, ctsHolding.Id, samCphHolding.Cph, x => x.AnimalSpeciesCode = asc));
+        }
+
+        // PRIORITY 10: RULE 3 - Cattle-related CPHs in SAM (e.g. those with relevant animal species or purpose codes) that are not present in CTS
+        // aka: where ANIMAL_SPECIES_CODE=CTT - if SAM.FEATURE_NAME=['Unknown','Not known','Notknown','',null] OR CTS.ADR_NAME != SAM.FEATURE_NAME then raise issue
+        if (samCphHolding.AnimalSpeciesCode == "CTT" && IsLocationMismatch(ctsHolding, samCphHolding))
+        {
+            results.Add(RuleResult.Issue(RuleDescriptors.CtsSamLocationsDiffer, ctsHolding.Id, samCphHolding.Cph,
+                x =>
+                {
+                    x.LocationNameSAM = samCphHolding.LocationName;
+                    x.LocationNameCTS = ctsHolding.LocationName;
+                }));
+        }
+    }
+
+    private static bool IsLocationMismatch(CtsCphHoldingModel ctsHolding, SamCphHoldingModel samCphHolding)
+    {
+        return string.IsNullOrWhiteSpace(samCphHolding.LocationName)
+            || samCphHolding.LocationName.Equals("unknown", StringComparison.OrdinalIgnoreCase)
+            || samCphHolding.LocationName.Equals("not known", StringComparison.OrdinalIgnoreCase)
+            || samCphHolding.LocationName.Equals("notknown", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(ctsHolding.LocationName, samCphHolding.LocationName, StringComparison.OrdinalIgnoreCase);
     }
 
 

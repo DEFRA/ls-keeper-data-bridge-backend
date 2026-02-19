@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Domain;
 
@@ -6,6 +7,7 @@ namespace KeeperData.Core.Reports.Issues.Command.AggregateRoots;
 /// <summary>
 /// Aggregate root: Represents a data quality issue detected during cleanse analysis.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Aggregate root - covered by integration tests.")]
 public class Issue
 {
     /// <summary>

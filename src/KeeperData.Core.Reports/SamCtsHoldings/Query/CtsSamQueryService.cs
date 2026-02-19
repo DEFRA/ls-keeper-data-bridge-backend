@@ -57,7 +57,7 @@ public class CtsSamQueryService(DataSetDefinitions dataSetDefinitions, IQuerySer
 
     private async Task<CtsCphHoldingModel?> GetCtsCphHoldingAsync(QueryParameters holdingQuery, CancellationToken ct)
     {
-        var holding = (await queryService.QueryAsync(holdingQuery)).Data.ElementAtOrDefault(0);
+        var holding = (await queryService.QueryAsync(holdingQuery, ct)).Data.ElementAtOrDefault(0);
         var lidFullIdentifier = LidFullIdentifier.TryParse(holding?[CtsCphHoldingFields.LidFullIdentifier]?.ToString());
         if (holding == null || lidFullIdentifier == null)
         {

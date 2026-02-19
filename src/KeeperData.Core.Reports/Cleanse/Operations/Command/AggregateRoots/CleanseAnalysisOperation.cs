@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 
 namespace KeeperData.Core.Reports.Cleanse.Operations.Command.AggregateRoots;
@@ -5,6 +6,7 @@ namespace KeeperData.Core.Reports.Cleanse.Operations.Command.AggregateRoots;
 /// <summary>
 /// Agg root representing a cleanse analysis operation, tracking its progress, status, and results.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Aggregate root - covered by integration tests.")]
 public class CleanseAnalysisOperation
 {
     /// <summary>

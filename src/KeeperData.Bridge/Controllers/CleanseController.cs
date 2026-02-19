@@ -32,39 +32,27 @@ public class CleanseController(
     {
         logger.LogInformation("Received request to start cleanse analysis at {RequestTime}", DateTime.UtcNow);
 
-        try
+        var operation = await cleanseFacade.Commands.CleanseAnalysisCommandService.StartAnalysisAsync(cancellationToken);
+
+        if (operation is null)
         {
-            var operation = await cleanseFacade.Commands.CleanseAnalysisCommandService.StartAnalysisAsync(cancellationToken);
-
-            if (operation is null)
+            logger.LogWarning("Failed to start cleanse analysis - another analysis is already running");
+            return Conflict(new ErrorResponse
             {
-                logger.LogWarning("Failed to start cleanse analysis - another analysis is already running");
-                return Conflict(new ErrorResponse
-                {
-                    Message = "A cleanse analysis is already running. Please wait for it to complete.",
-                    Timestamp = DateTime.UtcNow
-                });
-            }
-
-            logger.LogInformation("Cleanse analysis started successfully with operationId={OperationId}", operation.Id);
-
-            return Accepted(new StartAnalysisResponse
-            {
-                OperationId = operation.Id,
-                Status = operation.Status.ToString(),
-                Message = "Cleanse analysis started successfully and is running in the background.",
-                StartedAtUtc = operation.StartedAtUtc
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Start analysis request was cancelled");
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
+                Message = "A cleanse analysis is already running. Please wait for it to complete.",
                 Timestamp = DateTime.UtcNow
             });
         }
+
+        logger.LogInformation("Cleanse analysis started successfully with operationId={OperationId}", operation.Id);
+
+        return Accepted(new StartAnalysisResponse
+        {
+            OperationId = operation.Id,
+            Status = operation.Status.ToString(),
+            Message = "Cleanse analysis started successfully and is running in the background.",
+            StartedAtUtc = operation.StartedAtUtc
+        });
     }
 
     /// <summary>
@@ -80,30 +68,18 @@ public class CleanseController(
     {
         logger.LogInformation("Received request to delete cleanse report data");
 
-        try
-        {
-            var deletedCount = await cleanseFacade.Commands.IssueCommandService.DeleteAllIssuesAsync(cancellationToken);
+        var deletedCount = await cleanseFacade.Commands.IssueCommandService.DeleteAllIssuesAsync(cancellationToken);
 
-            logger.LogInformation("Successfully deleted {DeletedCount} cleanse report items", deletedCount);
+        logger.LogInformation("Successfully deleted {DeletedCount} cleanse report items", deletedCount);
 
-            return Ok(new DeleteDataResponse
-            {
-                Success = true,
-                CollectionName = "",
-                DeletedCount = deletedCount,
-                Message = $"Successfully deleted {deletedCount} cleanse report items.",
-                DeletedAtUtc = DateTime.UtcNow
-            });
-        }
-        catch (OperationCanceledException)
+        return Ok(new DeleteDataResponse
         {
-            logger.LogWarning("Delete data request was cancelled");
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
-        }
+            Success = true,
+            CollectionName = "",
+            DeletedCount = deletedCount,
+            Message = $"Successfully deleted {deletedCount} cleanse report items.",
+            DeletedAtUtc = DateTime.UtcNow
+        });
     }
 
     /// <summary>
@@ -119,30 +95,18 @@ public class CleanseController(
     {
         logger.LogInformation("Received request to delete cleanse analysis metadata");
 
-        try
-        {
-            var deletedCount = await cleanseFacade.Commands.CleanseOperationCommandService.DeleteMetadataAsync(cancellationToken);
+        var deletedCount = await cleanseFacade.Commands.CleanseOperationCommandService.DeleteMetadataAsync(cancellationToken);
 
-            logger.LogInformation("Successfully deleted {DeletedCount} analysis operation records", deletedCount);
+        logger.LogInformation("Successfully deleted {DeletedCount} analysis operation records", deletedCount);
 
-            return Ok(new DeleteDataResponse
-            {
-                Success = true,
-                CollectionName = "",
-                DeletedCount = deletedCount,
-                Message = $"Successfully deleted {deletedCount} analysis operation records.",
-                DeletedAtUtc = DateTime.UtcNow
-            });
-        }
-        catch (OperationCanceledException)
+        return Ok(new DeleteDataResponse
         {
-            logger.LogWarning("Delete metadata request was cancelled");
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
-        }
+            Success = true,
+            CollectionName = "",
+            DeletedCount = deletedCount,
+            Message = $"Successfully deleted {deletedCount} analysis operation records.",
+            DeletedAtUtc = DateTime.UtcNow
+        });
     }
 
     /// <summary>
@@ -181,30 +145,18 @@ public class CleanseController(
             });
         }
 
-        try
-        {
-            var runs = await cleanseFacade.Queries.CleanseAnalysisOperationsQueries.GetOperationsAsync(skip, top, cancellationToken);
+        var runs = await cleanseFacade.Queries.CleanseAnalysisOperationsQueries.GetOperationsAsync(skip, top, cancellationToken);
 
-            logger.LogInformation("Successfully retrieved {Count} analysis runs", runs.Count);
+        logger.LogInformation("Successfully retrieved {Count} analysis runs", runs.Count);
 
-            return Ok(new AnalysisRunsResponse
-            {
-                Skip = skip,
-                Top = top,
-                Count = runs.Count,
-                Runs = runs,
-                Timestamp = DateTime.UtcNow
-            });
-        }
-        catch (OperationCanceledException)
+        return Ok(new AnalysisRunsResponse
         {
-            logger.LogWarning("Get runs request was cancelled");
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
-        }
+            Skip = skip,
+            Top = top,
+            Count = runs.Count,
+            Runs = runs,
+            Timestamp = DateTime.UtcNow
+        });
     }
 
     /// <summary>
@@ -221,56 +173,27 @@ public class CleanseController(
     {
         logger.LogInformation("Received request to get analysis run for operationId={OperationId}", operationId);
 
-        try
+        var operation = await cleanseFacade.Queries.CleanseAnalysisOperationsQueries.GetOperationAsync(operationId, cancellationToken);
+
+        if (operation is null)
         {
-            var operation = await cleanseFacade.Queries.CleanseAnalysisOperationsQueries.GetOperationAsync(operationId, cancellationToken);
-
-            if (operation is null)
+            logger.LogWarning("Analysis run not found for operationId={OperationId}", operationId);
+            return NotFound(new ErrorResponse
             {
-                logger.LogWarning("Analysis run not found for operationId={OperationId}", operationId);
-                return NotFound(new ErrorResponse
-                {
-                    Message = $"Analysis run not found for OperationId: {operationId}",
-                    Timestamp = DateTime.UtcNow
-                });
-            }
-
-            logger.LogInformation("Successfully retrieved analysis run for operationId={OperationId}", operationId);
-
-            return Ok(operation);
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Get run request was cancelled for operationId={OperationId}", operationId);
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
+                Message = $"Analysis run not found for OperationId: {operationId}",
                 Timestamp = DateTime.UtcNow
             });
         }
+
+        logger.LogInformation("Successfully retrieved analysis run for operationId={OperationId}", operationId);
+
+        return Ok(operation);
     }
 
     /// <summary>
     /// Gets a paginated, filterable, and sortable list of cleanse issues.
     /// </summary>
-    /// <param name="skip">Number of records to skip (default: 0)</param>
-    /// <param name="top">Maximum number of records to return (default: 50, max: 100)</param>
-    /// <param name="ctsLidFullIdentifier">Filter by CTS LID full identifier (contains, case-insensitive)</param>
-    /// <param name="cph">Filter by CPH (contains, case-insensitive)</param>
-    /// <param name="issueCode">Filter by exact issue code</param>
-    /// <param name="ruleCode">Filter by exact rule code</param>
-    /// <param name="errorCode">Filter by exact error code</param>
-    /// <param name="isActive">Filter by active status</param>
-    /// <param name="isIgnored">Filter by ignored status</param>
-    /// <param name="resolutionStatus">Filter by resolution status (None, Todo, InProgress, Resolved)</param>
-    /// <param name="assignedTo">Filter by assigned user</param>
-    /// <param name="isUnassigned">Filter to unassigned issues only</param>
-    /// <param name="createdAfterUtc">Filter issues created after this UTC time</param>
-    /// <param name="createdBeforeUtc">Filter issues created before this UTC time</param>
-    /// <param name="updatedAfterUtc">Filter issues updated after this UTC time</param>
-    /// <param name="updatedBeforeUtc">Filter issues updated before this UTC time</param>
-    /// <param name="sortBy">Field to sort by (default: LastUpdatedAtUtc)</param>
-    /// <param name="sortDescending">Sort in descending order (default: true)</param>
+    /// <param name="request">Query parameters for filtering, sorting, and pagination</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Paginated list of cleanse issues matching the filters</returns>
     [HttpGet("issues")]
@@ -278,29 +201,12 @@ public class CleanseController(
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
     public async Task<IActionResult> GetIssues(
-        [FromQuery] int skip = 0,
-        [FromQuery] int top = 50,
-        [FromQuery] string? ctsLidFullIdentifier = null,
-        [FromQuery] string? cph = null,
-        [FromQuery] string? issueCode = null,
-        [FromQuery] string? ruleCode = null,
-        [FromQuery] string? errorCode = null,
-        [FromQuery] bool? isActive = null,
-        [FromQuery] bool? isIgnored = null,
-        [FromQuery] string? resolutionStatus = null,
-        [FromQuery] string? assignedTo = null,
-        [FromQuery] bool? isUnassigned = null,
-        [FromQuery] DateTime? createdAfterUtc = null,
-        [FromQuery] DateTime? createdBeforeUtc = null,
-        [FromQuery] DateTime? updatedAfterUtc = null,
-        [FromQuery] DateTime? updatedBeforeUtc = null,
-        [FromQuery] string? sortBy = null,
-        [FromQuery] bool sortDescending = true,
+        [FromQuery] GetIssuesRequest request,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Received request to get issues with skip={Skip}, top={Top}", skip, top);
+        logger.LogInformation("Received request to get issues with skip={Skip}, top={Top}", request.Skip, request.Top);
 
-        if (skip < 0)
+        if (request.Skip < 0)
         {
             return BadRequest(new ErrorResponse
             {
@@ -309,7 +215,7 @@ public class CleanseController(
             });
         }
 
-        if (top <= 0 || top > 100)
+        if (request.Top <= 0 || request.Top > 100)
         {
             return BadRequest(new ErrorResponse
             {
@@ -319,66 +225,30 @@ public class CleanseController(
         }
 
         CleanseIssueSortField sortField = CleanseIssueSortField.LastUpdatedAtUtc;
-        if (!string.IsNullOrEmpty(sortBy) && !Enum.TryParse(sortBy, ignoreCase: true, out sortField))
+        if (!string.IsNullOrEmpty(request.SortBy) && !Enum.TryParse(request.SortBy, ignoreCase: true, out sortField))
         {
             return BadRequest(new ErrorResponse
             {
-                Message = $"Invalid sortBy value '{sortBy}'. Valid values are: {string.Join(", ", Enum.GetNames<CleanseIssueSortField>())}.",
+                Message = $"Invalid sortBy value '{request.SortBy}'. Valid values are: {string.Join(", ", Enum.GetNames<CleanseIssueSortField>())}.",
                 Timestamp = DateTime.UtcNow
             });
         }
 
-        try
+        var query = BuildIssueQuery(request, sortField);
+
+        var result = await cleanseFacade.Queries.IssueQueries.QueryAsync(query, cancellationToken);
+
+        logger.LogInformation("Successfully retrieved {Count} issues (total: {TotalCount})", result.Items.Count, result.TotalCount);
+
+        return Ok(new IssuesResponse
         {
-            var query = CleanseIssueQueryDto.Create()
-                .OrderBy(sortField, sortDescending)
-                .Page(skip, top);
-
-            if (isActive.HasValue)
-            {
-                if (isActive.Value) query.WhereActive(); else query.WhereInactive();
-            }
-
-            if (!string.IsNullOrEmpty(ctsLidFullIdentifier)) query.WithCtsLidFullIdentifierContaining(ctsLidFullIdentifier);
-            if (!string.IsNullOrEmpty(cph)) query.WithCphContaining(cph);
-            if (!string.IsNullOrEmpty(issueCode)) query.WithIssueCode(issueCode);
-            if (!string.IsNullOrEmpty(ruleCode)) query.WithRuleCode(ruleCode);
-            if (!string.IsNullOrEmpty(errorCode)) query.WithErrorCode(errorCode);
-            if (isIgnored.HasValue)
-            {
-                if (isIgnored.Value) query.WhereIgnored(); else query.WhereNotIgnored();
-            }
-            if (!string.IsNullOrEmpty(resolutionStatus)) query.WithResolutionStatus(resolutionStatus);
-            if (!string.IsNullOrEmpty(assignedTo)) query.WithAssignedTo(assignedTo);
-            if (isUnassigned == true) query.WhereUnassigned();
-            if (createdAfterUtc.HasValue) query.CreatedAfter(createdAfterUtc.Value);
-            if (createdBeforeUtc.HasValue) query.CreatedBefore(createdBeforeUtc.Value);
-            if (updatedAfterUtc.HasValue) query.UpdatedAfter(updatedAfterUtc.Value);
-            if (updatedBeforeUtc.HasValue) query.UpdatedBefore(updatedBeforeUtc.Value);
-
-            var result = await cleanseFacade.Queries.IssueQueries.QueryAsync(query, cancellationToken);
-
-            logger.LogInformation("Successfully retrieved {Count} issues (total: {TotalCount})", result.Items.Count, result.TotalCount);
-
-            return Ok(new IssuesResponse
-            {
-                Skip = result.Skip,
-                Top = result.Top,
-                Count = result.Items.Count,
-                TotalCount = result.TotalCount,
-                Issues = result.Items,
-                Timestamp = DateTime.UtcNow
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Get issues request was cancelled");
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
-        }
+            Skip = result.Skip,
+            Top = result.Top,
+            Count = result.Items.Count,
+            TotalCount = result.TotalCount,
+            Issues = result.Items,
+            Timestamp = DateTime.UtcNow
+        });
     }
 
     /// <summary>
@@ -397,49 +267,37 @@ public class CleanseController(
     {
         logger.LogInformation("Received request to regenerate report URL for operationId={OperationId}", operationId);
 
-        try
+        var result = await cleanseFacade.Commands.CleanseReportExportCommandService.RegenerateReportUrlAsync(operationId, cancellationToken);
+
+        if (!result.Success)
         {
-            var result = await cleanseFacade.Commands.CleanseReportExportCommandService.RegenerateReportUrlAsync(operationId, cancellationToken);
-
-            if (!result.Success)
+            if (result.Error?.Contains("not found") == true)
             {
-                if (result.Error?.Contains("not found") == true)
+                return NotFound(new ErrorResponse
                 {
-                    return NotFound(new ErrorResponse
-                    {
-                        Message = result.Error,
-                        Timestamp = DateTime.UtcNow
-                    });
-                }
-
-                return BadRequest(new ErrorResponse
-                {
-                    Message = result.Error ?? "Failed to regenerate report URL.",
+                    Message = result.Error,
                     Timestamp = DateTime.UtcNow
                 });
             }
 
-            logger.LogInformation(
-                "Successfully regenerated report URL for operationId={OperationId}. New URL: {ReportUrl}",
-                operationId, result.ReportUrl);
-
-            return Ok(new RegenerateUrlResponse
+            return BadRequest(new ErrorResponse
             {
-                OperationId = result.OperationId!,
-                ObjectKey = result.ObjectKey!,
-                ReportUrl = result.ReportUrl!,
-                RegeneratedAtUtc = DateTime.UtcNow
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Regenerate URL request was cancelled for operationId={OperationId}", operationId);
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
+                Message = result.Error ?? "Failed to regenerate report URL.",
                 Timestamp = DateTime.UtcNow
             });
         }
+
+        logger.LogInformation(
+            "Successfully regenerated report URL for operationId={OperationId}. New URL: {ReportUrl}",
+            operationId, result.ReportUrl);
+
+        return Ok(new RegenerateUrlResponse
+        {
+            OperationId = result.OperationId!,
+            ObjectKey = result.ObjectKey!,
+            ReportUrl = result.ReportUrl!,
+            RegeneratedAtUtc = DateTime.UtcNow
+        });
     }
 
     /// <summary>
@@ -486,15 +344,6 @@ public class CleanseController(
                 NotificationId = result.NotificationId,
                 Message = "Test notification sent successfully.",
                 SentAtUtc = DateTime.UtcNow
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Test notification request was cancelled");
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
             });
         }
         catch (Exception ex)
@@ -546,15 +395,6 @@ public class CleanseController(
                 Timestamp = DateTime.UtcNow
             });
         }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Ignore issue request was cancelled for issueId={IssueId}", issueId);
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
-        }
     }
 
     /// <summary>
@@ -592,15 +432,6 @@ public class CleanseController(
             return NotFound(new ErrorResponse
             {
                 Message = ex.Message,
-                Timestamp = DateTime.UtcNow
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Unignore issue request was cancelled for issueId={IssueId}", issueId);
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
                 Timestamp = DateTime.UtcNow
             });
         }
@@ -654,15 +485,6 @@ public class CleanseController(
                 Timestamp = DateTime.UtcNow
             });
         }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Update resolution status request was cancelled for issueId={IssueId}", issueId);
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
-        }
     }
 
     /// <summary>
@@ -700,15 +522,6 @@ public class CleanseController(
             return NotFound(new ErrorResponse
             {
                 Message = ex.Message,
-                Timestamp = DateTime.UtcNow
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Assign issue request was cancelled for issueId={IssueId}", issueId);
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
                 Timestamp = DateTime.UtcNow
             });
         }
@@ -752,15 +565,6 @@ public class CleanseController(
                 Timestamp = DateTime.UtcNow
             });
         }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Unassign issue request was cancelled for issueId={IssueId}", issueId);
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
-        }
     }
 
     /// <summary>
@@ -801,31 +605,50 @@ public class CleanseController(
             });
         }
 
-        try
-        {
-            var entries = await cleanseFacade.Queries.IssueQueries.GetIssueHistoryAsync(issueId, skip, top, cancellationToken);
+        var entries = await cleanseFacade.Queries.IssueQueries.GetIssueHistoryAsync(issueId, skip, top, cancellationToken);
 
-            logger.LogInformation("Successfully retrieved {Count} history entries for issueId={IssueId}", entries.Count, issueId);
+        logger.LogInformation("Successfully retrieved {Count} history entries for issueId={IssueId}", entries.Count, issueId);
 
-            return Ok(new IssueHistoryResponse
-            {
-                IssueId = issueId,
-                Skip = skip,
-                Top = top,
-                Count = entries.Count,
-                Entries = entries,
-                Timestamp = DateTime.UtcNow
-            });
-        }
-        catch (OperationCanceledException)
+        return Ok(new IssueHistoryResponse
         {
-            logger.LogWarning("Get issue history request was cancelled for issueId={IssueId}", issueId);
-            return StatusCode(499, new ErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
+            IssueId = issueId,
+            Skip = skip,
+            Top = top,
+            Count = entries.Count,
+            Entries = entries,
+            Timestamp = DateTime.UtcNow
+        });
+    }
+
+    private static CleanseIssueQueryDto BuildIssueQuery(GetIssuesRequest request, CleanseIssueSortField sortField)
+    {
+        var query = CleanseIssueQueryDto.Create()
+            .OrderBy(sortField, request.SortDescending)
+            .Page(request.Skip, request.Top);
+
+        if (request.IsActive.HasValue)
+        {
+            if (request.IsActive.Value) query.WhereActive(); else query.WhereInactive();
         }
+
+        if (!string.IsNullOrEmpty(request.CtsLidFullIdentifier)) query.WithCtsLidFullIdentifierContaining(request.CtsLidFullIdentifier);
+        if (!string.IsNullOrEmpty(request.Cph)) query.WithCphContaining(request.Cph);
+        if (!string.IsNullOrEmpty(request.IssueCode)) query.WithIssueCode(request.IssueCode);
+        if (!string.IsNullOrEmpty(request.RuleCode)) query.WithRuleCode(request.RuleCode);
+        if (!string.IsNullOrEmpty(request.ErrorCode)) query.WithErrorCode(request.ErrorCode);
+        if (request.IsIgnored.HasValue)
+        {
+            if (request.IsIgnored.Value) query.WhereIgnored(); else query.WhereNotIgnored();
+        }
+        if (!string.IsNullOrEmpty(request.ResolutionStatus)) query.WithResolutionStatus(request.ResolutionStatus);
+        if (!string.IsNullOrEmpty(request.AssignedTo)) query.WithAssignedTo(request.AssignedTo);
+        if (request.IsUnassigned == true) query.WhereUnassigned();
+        if (request.CreatedAfterUtc.HasValue) query.CreatedAfter(request.CreatedAfterUtc.Value);
+        if (request.CreatedBeforeUtc.HasValue) query.CreatedBefore(request.CreatedBeforeUtc.Value);
+        if (request.UpdatedAfterUtc.HasValue) query.UpdatedAfter(request.UpdatedAfterUtc.Value);
+        if (request.UpdatedBeforeUtc.HasValue) query.UpdatedBefore(request.UpdatedBeforeUtc.Value);
+
+        return query;
     }
 }
 
@@ -1033,6 +856,67 @@ public record TestNotificationResponse
     /// Gets the UTC timestamp when the notification was sent.
     /// </summary>
     public DateTime SentAtUtc { get; init; }
+}
+
+/// <summary>
+/// Query parameters for the GetIssues endpoint supporting filtering, sorting, and pagination.
+/// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
+public record GetIssuesRequest
+{
+    /// <summary>Number of records to skip (default: 0).</summary>
+    public int Skip { get; init; }
+
+    /// <summary>Maximum number of records to return (default: 50, max: 100).</summary>
+    public int Top { get; init; } = 50;
+
+    /// <summary>Filter by CTS LID full identifier (contains, case-insensitive).</summary>
+    public string? CtsLidFullIdentifier { get; init; }
+
+    /// <summary>Filter by CPH (contains, case-insensitive).</summary>
+    public string? Cph { get; init; }
+
+    /// <summary>Filter by exact issue code.</summary>
+    public string? IssueCode { get; init; }
+
+    /// <summary>Filter by exact rule code.</summary>
+    public string? RuleCode { get; init; }
+
+    /// <summary>Filter by exact error code.</summary>
+    public string? ErrorCode { get; init; }
+
+    /// <summary>Filter by active status.</summary>
+    public bool? IsActive { get; init; }
+
+    /// <summary>Filter by ignored status.</summary>
+    public bool? IsIgnored { get; init; }
+
+    /// <summary>Filter by resolution status (None, Todo, InProgress, Resolved).</summary>
+    public string? ResolutionStatus { get; init; }
+
+    /// <summary>Filter by assigned user.</summary>
+    public string? AssignedTo { get; init; }
+
+    /// <summary>Filter to unassigned issues only.</summary>
+    public bool? IsUnassigned { get; init; }
+
+    /// <summary>Filter issues created after this UTC time.</summary>
+    public DateTime? CreatedAfterUtc { get; init; }
+
+    /// <summary>Filter issues created before this UTC time.</summary>
+    public DateTime? CreatedBeforeUtc { get; init; }
+
+    /// <summary>Filter issues updated after this UTC time.</summary>
+    public DateTime? UpdatedAfterUtc { get; init; }
+
+    /// <summary>Filter issues updated before this UTC time.</summary>
+    public DateTime? UpdatedBeforeUtc { get; init; }
+
+    /// <summary>Field to sort by (default: LastUpdatedAtUtc).</summary>
+    public string? SortBy { get; init; }
+
+    /// <summary>Sort in descending order (default: true).</summary>
+    public bool SortDescending { get; init; } = true;
 }
 
 /// <summary>

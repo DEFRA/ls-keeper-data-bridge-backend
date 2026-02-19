@@ -72,20 +72,20 @@ public static class RuleIds
     /////     PRIORITY 7:  RULE 6 - Email addresses inconsistent between CTS and SAM
     ///// </remarks>
     ///// BLOCKED: same as rule 12
-    //public const string CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES = "CTS_SAM_INCONSIS_EMAILS";
+    public const string CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES = "CTS_SAM_INCONSIS_EMAILS";
 
 
     /// <summary>
     /// iterate cts; where exists in both - for each phone no that does not exist somewhere in SAM, raise issue
     /// </summary>
     // BLOCKED same as rule 11
-    //public const string CTS_SAM_INCONSISTENT_PHONENOS = "CTS_SAM_INCONSIS_PHONENOS";        // [*TODO] PRIORITY 8:  RULE 9 - Phone nos inconsistent between CTS and SAM
+    public const string CTS_SAM_INCONSISTENT_PHONENOS = "CTS_SAM_INCONSIS_PHONENOS";        // [*TODO] PRIORITY 8:  RULE 9 - Phone nos inconsistent between CTS and SAM
     
     
     ///// <summary>
     ///// ON_HOLD
     ///// </summary>
-    //public const string CTS_SAM_INCONSISTENT_ADDRESSES = "CTS_SAM_INCONSIS_ADDRESS";        // [!HOLD] PRIORITY 9:  RULE 10 - Correspondence address details inconsistent between CTS and SAM
+    public const string CTS_SAM_INCONSISTENT_ADDRESSES = "CTS_SAM_INCONSIS_ADDRESS";        // [!HOLD] PRIORITY 9:  RULE 10 - Correspondence address details inconsistent between CTS and SAM
 
     /// <summary>
     /// iterate cts; where exists in both and ANIMAL_SPECIES_CODE=CTT - if SAM.FEATURE_NAME=['Unknown','Not known','Notknown','',null] OR CTS.ADR_NAME != SAM.FEATURE_NAME then raise issue
@@ -95,12 +95,12 @@ public static class RuleIds
     ///// <summary>
     ///// ON_HOLD; iterate cts where LTY_LOC_TYPE='SH', lidfullidentifier format 'SH-{FSANUMBER:d4}' 'SH-8357' --- cannot identify the SAM record using the logic provided.
     ///// </summary>
-    //public const string SAM_MISSING_FSA_NO = "SAM_MISSING_FSA_NO";                          // [!HOLD] PRIORITY 11: RULE 7 - CPHs in SAM missing FSA number
+    public const string SAM_MISSING_FSA_NO = "SAM_MISSING_FSA_NO";                          // [!HOLD] PRIORITY 11: RULE 7 - CPHs in SAM missing FSA number
 
     ///// <summary>
     ///// ON_HOLD; virtually the same as Rule 1B
     ///// </summary>
-    //public const string CTS_CATTLE_CPH_MISSING = "CTS_CATTLE_CPH_MISSING";                   // [!HOLD] PRIORITY 12: RULE 8 - Cattle-related CPHs missing in CTS
+    public const string CTS_CATTLE_CPH_MISSING = "CTS_CATTLE_CPH_MISSING";                   // [!HOLD] PRIORITY 12: RULE 8 - Cattle-related CPHs missing in CTS
 }
 
 

@@ -46,6 +46,8 @@ public class CleanseReportExportCommandService(
         RuleIds.CTS_SAM_NO_PHONE_NUMBERS,   // Rule 5
         RuleIds.SAM_MISSING_PHONE_NUMBERS,  // Rule 11
         RuleIds.SAM_NO_CATTLE_UNIT,          // Rule 1
+        RuleIds.CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES, // Rule 6
+        RuleIds.CTS_SAM_INCONSISTENT_PHONENOS, // Rule 9
         RuleIds.SAM_CATTLE_RELATED_CPHs      // Rule 3
     ];
 

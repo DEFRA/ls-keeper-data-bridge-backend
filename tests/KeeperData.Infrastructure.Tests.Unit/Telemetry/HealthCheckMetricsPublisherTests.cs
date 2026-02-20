@@ -8,6 +8,7 @@ using Moq;
 
 namespace KeeperData.Infrastructure.Tests.Unit.Telemetry;
 
+[Collection("HealthCheckMetrics")]
 public class HealthCheckMetricsPublisherTests : IDisposable
 {
     private readonly TestMeterFactoryForPublisher _meterFactory;

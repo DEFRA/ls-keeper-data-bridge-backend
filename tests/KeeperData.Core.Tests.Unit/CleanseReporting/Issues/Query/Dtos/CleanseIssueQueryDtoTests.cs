@@ -154,4 +154,65 @@ public class CleanseIssueQueryDtoTests
         query.Skip.Should().Be(0);
         query.Top.Should().Be(25);
     }
+
+    [Fact]
+    public void From_WithFilters_ShouldMapAllProperties()
+    {
+        var created = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var updated = new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var query = CleanseIssueQueryDto.From(
+            CleanseIssueSortField.Cph, sortDescending: true, skip: 5, top: 20,
+            new CleanseIssueFilterValues
+            {
+                IsActive = true,
+                CtsLidFullIdentifier = "UK-12/345/6789",
+                Cph = "12/345",
+                IssueCode = "RULE_1",
+                RuleCode = "2A",
+                ErrorCode = "02A",
+                IsIgnored = false,
+                ResolutionStatus = "InProgress",
+                AssignedTo = "user@test.com",
+                IsUnassigned = true,
+                CreatedAfterUtc = created,
+                CreatedBeforeUtc = updated,
+                UpdatedAfterUtc = created,
+                UpdatedBeforeUtc = updated
+            });
+
+        query.SortBy.Should().Be(CleanseIssueSortField.Cph);
+        query.SortDescending.Should().BeTrue();
+        query.Skip.Should().Be(5);
+        query.Top.Should().Be(20);
+        query.IsActive.Should().BeTrue();
+        query.CtsLidFullIdentifierContains.Should().Be("UK-12/345/6789");
+        query.CphContains.Should().Be("12/345");
+        query.IssueCode.Should().Be("RULE_1");
+        query.RuleCode.Should().Be("2A");
+        query.ErrorCode.Should().Be("02A");
+        query.IsIgnored.Should().BeFalse();
+        query.ResolutionStatus.Should().Be("InProgress");
+        query.AssignedTo.Should().Be("user@test.com");
+        query.IsUnassigned.Should().BeTrue();
+        query.CreatedAfterUtc.Should().Be(created);
+        query.CreatedBeforeUtc.Should().Be(updated);
+        query.UpdatedAfterUtc.Should().Be(created);
+        query.UpdatedBeforeUtc.Should().Be(updated);
+    }
+
+    [Fact]
+    public void From_WithoutFilters_ShouldUseDefaults()
+    {
+        var query = CleanseIssueQueryDto.From(
+            CleanseIssueSortField.LastUpdatedAtUtc, sortDescending: false, skip: 0, top: 50);
+
+        query.IsActive.Should().BeNull();
+        query.IssueCode.Should().BeNull();
+        query.CphContains.Should().BeNull();
+        query.IsIgnored.Should().BeNull();
+        query.IsUnassigned.Should().BeNull();
+        query.SortBy.Should().Be(CleanseIssueSortField.LastUpdatedAtUtc);
+        query.SortDescending.Should().BeFalse();
+    }
 }

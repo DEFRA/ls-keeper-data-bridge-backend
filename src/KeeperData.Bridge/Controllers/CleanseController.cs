@@ -624,20 +624,23 @@ public class CleanseController(
     {
         return CleanseIssueQueryDto.From(
             sortField, request.SortDescending, request.Skip, request.Top,
-            isActive: request.IsActive,
-            ctsLidFullIdentifier: request.CtsLidFullIdentifier,
-            cph: request.Cph,
-            issueCode: request.IssueCode,
-            ruleCode: request.RuleCode,
-            errorCode: request.ErrorCode,
-            isIgnored: request.IsIgnored,
-            resolutionStatus: request.ResolutionStatus,
-            assignedTo: request.AssignedTo,
-            isUnassigned: request.IsUnassigned,
-            createdAfterUtc: request.CreatedAfterUtc,
-            createdBeforeUtc: request.CreatedBeforeUtc,
-            updatedAfterUtc: request.UpdatedAfterUtc,
-            updatedBeforeUtc: request.UpdatedBeforeUtc);
+            new CleanseIssueFilterValues
+            {
+                IsActive = request.IsActive,
+                CtsLidFullIdentifier = request.CtsLidFullIdentifier,
+                Cph = request.Cph,
+                IssueCode = request.IssueCode,
+                RuleCode = request.RuleCode,
+                ErrorCode = request.ErrorCode,
+                IsIgnored = request.IsIgnored,
+                ResolutionStatus = request.ResolutionStatus,
+                AssignedTo = request.AssignedTo,
+                IsUnassigned = request.IsUnassigned,
+                CreatedAfterUtc = request.CreatedAfterUtc,
+                CreatedBeforeUtc = request.CreatedBeforeUtc,
+                UpdatedAfterUtc = request.UpdatedAfterUtc,
+                UpdatedBeforeUtc = request.UpdatedBeforeUtc
+            });
     }
 }
 

@@ -203,34 +203,33 @@ public sealed class CleanseIssueQueryDto
     }
 
     /// <summary>
-    /// Creates a query from explicit filter values. Null/empty values are ignored by the query builder.
+    /// Creates a query from sort/pagination parameters and optional filter values.
     /// </summary>
     public static CleanseIssueQueryDto From(
         CleanseIssueSortField sortField, bool sortDescending, int skip, int top,
-        bool? isActive = null, string? ctsLidFullIdentifier = null, string? cph = null,
-        string? issueCode = null, string? ruleCode = null, string? errorCode = null,
-        bool? isIgnored = null, string? resolutionStatus = null,
-        string? assignedTo = null, bool? isUnassigned = null,
-        DateTime? createdAfterUtc = null, DateTime? createdBeforeUtc = null,
-        DateTime? updatedAfterUtc = null, DateTime? updatedBeforeUtc = null) => new()
+        CleanseIssueFilterValues? filters = null)
+    {
+        var f = filters ?? new CleanseIssueFilterValues();
+        return new()
         {
             SortBy = sortField,
             SortDescending = sortDescending,
             Skip = skip,
             Top = top,
-            IsActive = isActive,
-            CtsLidFullIdentifierContains = ctsLidFullIdentifier,
-            CphContains = cph,
-            IssueCode = issueCode,
-            RuleCode = ruleCode,
-            ErrorCode = errorCode,
-            IsIgnored = isIgnored,
-            ResolutionStatus = resolutionStatus,
-            AssignedTo = assignedTo,
-            IsUnassigned = isUnassigned is true ? true : null,
-            CreatedAfterUtc = createdAfterUtc,
-            CreatedBeforeUtc = createdBeforeUtc,
-            UpdatedAfterUtc = updatedAfterUtc,
-            UpdatedBeforeUtc = updatedBeforeUtc
+            IsActive = f.IsActive,
+            CtsLidFullIdentifierContains = f.CtsLidFullIdentifier,
+            CphContains = f.Cph,
+            IssueCode = f.IssueCode,
+            RuleCode = f.RuleCode,
+            ErrorCode = f.ErrorCode,
+            IsIgnored = f.IsIgnored,
+            ResolutionStatus = f.ResolutionStatus,
+            AssignedTo = f.AssignedTo,
+            IsUnassigned = f.IsUnassigned is true ? true : null,
+            CreatedAfterUtc = f.CreatedAfterUtc,
+            CreatedBeforeUtc = f.CreatedBeforeUtc,
+            UpdatedAfterUtc = f.UpdatedAfterUtc,
+            UpdatedBeforeUtc = f.UpdatedBeforeUtc
         };
+    }
 }

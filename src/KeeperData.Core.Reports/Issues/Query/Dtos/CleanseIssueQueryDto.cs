@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Core.Reports.Issues.Query.Dtos;
 
 /// <summary>
 /// Fluent query builder for cleanse issues.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Query builder DTO - covered by integration tests.")]
 public sealed class CleanseIssueQueryDto
 {
     /// <summary>Filter by active status (null = all).</summary>

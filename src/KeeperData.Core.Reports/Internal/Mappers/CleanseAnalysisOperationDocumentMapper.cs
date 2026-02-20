@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.AggregateRoots;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries.Dtos;
@@ -8,6 +9,7 @@ namespace KeeperData.Core.Reports.Internal.Mappers;
 /// <summary>
 /// Maps between <see cref="CleanseAnalysisOperationDocument"/> and domain/DTO types.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Internal mapper - covered by integration tests.")]
 internal static class CleanseAnalysisOperationDocumentMapper
 {
     public static CleanseAnalysisOperationDocument ToDocument(this CleanseAnalysisOperation operation) => new()

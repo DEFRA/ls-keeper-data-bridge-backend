@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.Reports.Internal.Documents;
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
 using KeeperData.Core.Reports.Issues.Query.Dtos;
@@ -7,6 +8,7 @@ namespace KeeperData.Core.Reports.Internal.Mappers;
 /// <summary>
 /// Maps between <see cref="IssueDocument"/> and domain/DTO types.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Internal mapper - covered by integration tests.")]
 internal static class IssueDocumentMapper
 {
     public static IssueDocument ToDocument(this Issue issue) => new()

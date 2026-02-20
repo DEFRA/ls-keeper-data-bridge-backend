@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
@@ -7,6 +8,7 @@ namespace KeeperData.Core.Reports.Internal.Documents;
 /// Persistence document for an issue history/lineage entry.
 /// Anti-corruption layer between domain and MongoDB.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Internal persistence document - covered by integration tests.")]
 internal class IssueHistoryEntryDocument
 {
     [BsonId] public string Id { get; set; } = string.Empty;

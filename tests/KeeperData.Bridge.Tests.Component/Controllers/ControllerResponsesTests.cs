@@ -1,7 +1,8 @@
 using FluentAssertions;
 using KeeperData.Bridge.Controllers;
-using KeeperData.Core.Reports.Domain;
-using KeeperData.Core.Reports.Dtos;
+using KeeperData.Core.Reports.Cleanse.Operations.Queries.Dtos;
+using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
+using KeeperData.Core.Reports.Issues.Query.Dtos;
 
 namespace KeeperData.Bridge.Tests.Component.Controllers;
 
@@ -74,7 +75,7 @@ public class CleanseControllerResponsesTests
     [Fact]
     public void AnalysisRunsResponse_AllProperties_CanBeSet()
     {
-        var runs = new List<CleanseAnalysisOperationSummary>
+        var runs = new List<CleanseAnalysisOperationSummaryDto>
         {
             new() { Id = "run-1", Status = "Completed" },
             new() { Id = "run-2", Status = "Running" }
@@ -98,9 +99,9 @@ public class CleanseControllerResponsesTests
     [Fact]
     public void IssuesResponse_AllProperties_CanBeSet()
     {
-        var issues = new List<CleanseReportItem>
+        var issues = new List<IssueDto>
         {
-            new() { Id = "issue-1", Code = "CTS_CPH_NOT_IN_SAM", CtsLidFullIdentifier = "EN-01/001/0001", Cph = "01/001/0001" }
+            new() { Id = "issue-1", IssueCode = "CTS_CPH_NOT_IN_SAM", RuleCode = "2A", ErrorCode = "02A", ErrorDescription = "Active CTS CPH inactive / missing in Sam", CtsLidFullIdentifier = "EN-01/001/0001", Cph = "01/001/0001" }
         };
 
         var response = new IssuesResponse

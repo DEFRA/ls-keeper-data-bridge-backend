@@ -1,6 +1,7 @@
 using KeeperData.Application.Setup;
 using KeeperData.Bridge.Authentication;
 using KeeperData.Bridge.Config;
+using KeeperData.Bridge.Filters;
 using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Core.ETL.Setup;
 using KeeperData.Core.Querying.Setup;
@@ -188,7 +189,10 @@ namespace KeeperData.Bridge.Setup
                         .Build();
                 });
 
-                services.AddControllers()
+                services.AddControllers(options =>
+                    {
+                        options.Filters.Add<OperationCancelledExceptionFilter>();
+                    })
                     .AddJsonOptions(opts =>
                     {
                         var enumConverter = new JsonStringEnumConverter();
@@ -223,6 +227,7 @@ namespace KeeperData.Bridge.Setup
                     .AddAuthenticationSchemes(ApiKeyAuthenticationSchemeOptions.DefaultScheme)
                     .Build();
                 options.Filters.Add(new AuthorizeFilter(policy));
+                options.Filters.Add<OperationCancelledExceptionFilter>();
             })
             .AddJsonOptions(opts =>
             {

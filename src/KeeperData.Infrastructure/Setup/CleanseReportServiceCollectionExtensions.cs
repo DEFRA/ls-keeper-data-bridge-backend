@@ -1,7 +1,7 @@
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
-using KeeperData.Core.Reports.Abstract;
-using KeeperData.Core.Reports.Setup;
+using KeeperData.Core.Reports;
+using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
 using KeeperData.Infrastructure.Notifications;
 using KeeperData.Infrastructure.Notifications.Configuration;
 using Microsoft.Extensions.Configuration;

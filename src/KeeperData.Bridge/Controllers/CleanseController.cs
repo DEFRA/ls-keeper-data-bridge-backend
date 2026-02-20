@@ -857,7 +857,7 @@ public record TestNotificationResponse
 public record GetIssuesRequest
 {
     /// <summary>Number of records to skip (default: 0).</summary>
-    public int Skip { get; init; }
+    public int Skip { get; init; } = 0;
 
     /// <summary>Maximum number of records to return (default: 10, max: 100).</summary>
     public int Top { get; init; } = 10;

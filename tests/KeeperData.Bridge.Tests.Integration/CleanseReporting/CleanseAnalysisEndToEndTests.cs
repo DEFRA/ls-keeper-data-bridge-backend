@@ -149,7 +149,75 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
             "Rule 1 should fire for CPH 12/345/6003 (ANIMAL_SPECIES_CODE != CTT)");
 
         activeIssueCount.Should().Be(5, "Exactly 5 issues should be raised across the 3 scenarios");
-        _output.WriteLine("✓ Step 3 complete: all 5 expected issues verified");
+
+        // --- QueryAsync: retrieve all active issues ---
+        _output.WriteLine("  Verifying QueryAsync for active issues...");
+        var allActiveQuery = await issueQueries.QueryAsync(
+            CleanseIssueQueryDto.Create().WhereActive().Page(0, 50), ct);
+        allActiveQuery.TotalCount.Should().Be(5, "QueryAsync should return 5 active issues");
+        allActiveQuery.Items.Should().HaveCount(5);
+        allActiveQuery.Skip.Should().Be(0);
+        allActiveQuery.Top.Should().Be(50);
+        allActiveQuery.HasMore.Should().BeFalse("all 5 issues fit within a single page of 50");
+
+        // --- QueryAsync: filter by issue code ---
+        _output.WriteLine("  Verifying QueryAsync filtered by issue code...");
+        var rule2aQuery = await issueQueries.QueryAsync(
+            CleanseIssueQueryDto.Create().WhereActive().WithIssueCode(RuleIds.CTS_CPH_NOT_IN_SAM), ct);
+        rule2aQuery.TotalCount.Should().Be(1, "Only one Rule 2A issue should exist");
+        rule2aQuery.Items.Should().ContainSingle()
+            .Which.Cph.Should().Be("12/345/6001");
+
+        // --- QueryAsync: filter by CPH contains ---
+        _output.WriteLine("  Verifying QueryAsync filtered by CPH contains...");
+        var cph6003Query = await issueQueries.QueryAsync(
+            CleanseIssueQueryDto.Create().WhereActive().WithCphContaining("6003"), ct);
+        cph6003Query.TotalCount.Should().Be(3, "CPH 12/345/6003 should have 3 active issues (Rules 4, 5, 1)");
+        cph6003Query.Items.Should().HaveCount(3);
+        cph6003Query.Items.Should().OnlyContain(i => i.Cph == "12/345/6003");
+
+        // --- QueryAsync: sorting ---
+        _output.WriteLine("  Verifying QueryAsync with sorting...");
+        var sortedByCphAsc = await issueQueries.QueryAsync(
+            CleanseIssueQueryDto.Create()
+                .WhereActive()
+                .OrderBy(CleanseIssueSortField.Cph, descending: false)
+                .Page(0, 50), ct);
+        sortedByCphAsc.Items.Should().BeInAscendingOrder(i => i.Cph, "issues should be sorted by CPH ascending");
+
+        var sortedByCphDesc = await issueQueries.QueryAsync(
+            CleanseIssueQueryDto.Create()
+                .WhereActive()
+                .OrderBy(CleanseIssueSortField.Cph, descending: true)
+                .Page(0, 50), ct);
+        sortedByCphDesc.Items.Should().BeInDescendingOrder(i => i.Cph, "issues should be sorted by CPH descending");
+
+        // --- QueryAsync: pagination ---
+        _output.WriteLine("  Verifying QueryAsync with pagination...");
+        var page1 = await issueQueries.QueryAsync(
+            CleanseIssueQueryDto.Create().WhereActive().Page(0, 2), ct);
+        page1.Items.Should().HaveCount(2, "first page should return 2 items");
+        page1.TotalCount.Should().Be(5, "total count should still reflect all matching issues");
+        page1.HasMore.Should().BeTrue("there are more issues beyond the first page");
+
+        var page2 = await issueQueries.QueryAsync(
+            CleanseIssueQueryDto.Create().WhereActive().Page(2, 2), ct);
+        page2.Items.Should().HaveCount(2, "second page should return 2 items");
+        page2.HasMore.Should().BeTrue("there is still one more issue on the next page");
+
+        var page3 = await issueQueries.QueryAsync(
+            CleanseIssueQueryDto.Create().WhereActive().Page(4, 2), ct);
+        page3.Items.Should().HaveCount(1, "third page should return the remaining 1 item");
+        page3.HasMore.Should().BeFalse("no more issues remain");
+
+        // --- QueryAsync: no results ---
+        _output.WriteLine("  Verifying QueryAsync returns empty for non-matching filter...");
+        var noResults = await issueQueries.QueryAsync(
+            CleanseIssueQueryDto.Create().WhereActive().WithIssueCode("NON_EXISTENT_CODE"), ct);
+        noResults.TotalCount.Should().Be(0);
+        noResults.Items.Should().BeEmpty();
+
+        _output.WriteLine("✓ Step 3 complete: all 5 expected issues and QueryAsync verified");
 
         // ----------------------------------------------------------------
         // Step 4: Verify the exported CSV report and notification

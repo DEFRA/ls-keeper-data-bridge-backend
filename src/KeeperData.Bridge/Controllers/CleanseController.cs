@@ -857,10 +857,10 @@ public record TestNotificationResponse
 public record GetIssuesRequest
 {
     /// <summary>Number of records to skip (default: 0).</summary>
-    public required int Skip { get; init; }
+    public int Skip { get; init; }
 
-    /// <summary>Maximum number of records to return (default: 50, max: 100).</summary>
-    public required int Top { get; init; }
+    /// <summary>Maximum number of records to return (default: 10, max: 100).</summary>
+    public int Top { get; init; } = 10;
 
     /// <summary>Filter by CTS LID full identifier (contains, case-insensitive).</summary>
     public string? CtsLidFullIdentifier { get; init; }

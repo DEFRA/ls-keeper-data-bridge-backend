@@ -45,17 +45,27 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
         var samPhones = samCphHolding.GetPhoneNumbers();
 
         // PRIORITY 2:  RULE 4: CPH present in both CTS and SAM but no email addresses in either system
-        if (ctsEmails.Length + samEmails.Length == 0) 
+        if (ctsEmails.Length + samEmails.Length == 0)
         {
             results.Add(RuleResult.Issue(RuleDescriptors.CtsSamNoEmailAddresses, ctsHolding.Id, samCphHolding.Cph));
         }
 
-        // PRIORITY 3:  RULE 12 - Email addresses in CTS missing from SAM
         var missingEmails = ctsEmails.Except(samEmails).ToArray();
         if (missingEmails.Length > 0)
         {
-            results.Add(RuleResult.Issue(RuleDescriptors.SamMissingEmailAddresses, ctsHolding.Id, samCphHolding.Cph, x => x.EmailCTS = missingEmails));
+            if (samEmails.Length == 0) // PRIORITY 3:  RULE 12 - Email addresses in CTS missing from SAM
+            {
+                results.Add(RuleResult.Issue(RuleDescriptors.SamMissingEmailAddresses, ctsHolding.Id, samCphHolding.Cph, x => x.EmailCTS = missingEmails)); }
         }
+        else // PRIORITY 7:  RULE 6 - Email addresses inconsistent between CTS and SAM
+        {
+            results.Add(RuleResult.Issue(RuleDescriptors.CtsSamEmailAddressesInconsistent, ctsHolding.Id, samCphHolding.Cph, x =>
+            {
+                x.EmailCTS = missingEmails;
+                x.EmailSAM = string.Join(";",samEmails);
+            }));
+        }
+    
 
         // PRIORITY 4:  RULE 5  - CPH present in both CTS and SAM but no phone numbers in either system
         if (ctsPhones.Length + samPhones.Length == 0)
@@ -63,11 +73,22 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
             results.Add(RuleResult.Issue(RuleDescriptors.CtsSamNoPhoneNumbers, ctsHolding.Id, samCphHolding.Cph));
         }
 
-        // PRIORITY 5:  RULE 11 - CTS phone numbers missing from SAM
         var missingPhones = ctsPhones.Except(samPhones).ToArray();
         if (missingPhones.Length > 0)
         {
-            results.Add(RuleResult.Issue(RuleDescriptors.SamMissingPhoneNumbers, ctsHolding.Id, samCphHolding.Cph, x => x.TelCTS = missingPhones));
+            if (samPhones.Length == 0) // // PRIORITY 5:  RULE 11 - CTS phone numbers missing from SAM
+            {
+                results.Add(RuleResult.Issue(RuleDescriptors.SamMissingPhoneNumbers, ctsHolding.Id, samCphHolding.Cph, x => x.TelCTS = missingPhones));
+            }
+            else
+            {
+                // PRIORITY 8:  RULE 7 - Phone numbers inconsistent between CTS and SAM
+                results.Add(RuleResult.Issue(RuleDescriptors.CtsSamPhoneNosInconsistent, ctsHolding.Id, samCphHolding.Cph, x =>
+                {
+                    x.TelCTS = missingPhones;
+                    x.TelSAM = string.Join(";", samPhones);
+                }));
+            }
         }
 
         // PRIORITY 6:  RULE 1  - No cattle unit defined in SAM

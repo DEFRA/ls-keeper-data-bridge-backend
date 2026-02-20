@@ -1,11 +1,13 @@
 using KeeperData.Bridge.Setup;
 using KeeperData.Bridge.Utils;
+using KeeperData.Core.Reports;
 using KeeperData.Infrastructure.Telemetry.Logging;
 using Serilog;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 var app = CreateWebApplication(args);
+await app.InitialiseAsync();
 await app.RunAsync();
 return;
 

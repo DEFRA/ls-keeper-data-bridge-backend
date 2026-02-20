@@ -1,0 +1,284 @@
+using Amazon.Runtime.Internal.Util;
+using CsvHelper;
+using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
+using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
+using KeeperData.Core.Reports.Cleanse.Export.Command.Domain;
+using KeeperData.Core.Reports.Cleanse.Export.Command.Results;
+using KeeperData.Core.Reports.Cleanse.Operations.Command.Requests;
+using KeeperData.Core.Reports.Cleanse.Operations.Command.Abstract;
+using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
+using KeeperData.Core.Reports.Issues.Query.Abstract;
+using KeeperData.Core.Reports.Issues.Query.Dtos;
+using KeeperData.Core.Storage;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.IO.Compression;
+
+namespace KeeperData.Core.Reports.Cleanse.Export.Command;
+
+/// <summary>
+/// Service for exporting cleanse reports to CSV and uploading to S3.
+/// Streams data from MongoDB to minimize memory usage.
+/// </summary>
+[ExcludeFromCodeCoverage(Justification = "Export service with S3 and streaming dependencies - covered by integration tests.")]
+public class CleanseReportExportCommandService(
+    IIssueQueries issueQueries,
+    IBlobStorageServiceFactory blobStorageServiceFactory,
+    ICleanseReportNotificationService notificationService,
+    ICleanseOperationCommandService cleanseOperationCommands,
+    ICleanseAnalysisOperationsQueries cleanseAnalysisOperationsQueries,
+    ILogger<CleanseReportExportCommandService> logger) : ICleanseReportExportCommandService
+{
+    private const string CsvFileName = "cleanse-report.csv";
+    private const int StreamBatchSize = 1000;
+
+    /// <summary>
+    /// Rule priority order for CSV export grouping.
+    /// Issues are grouped by rule in this order, sorted by CPH within each group.
+    /// </summary>
+    private static readonly IReadOnlyList<string> RulePriorityOrder =
+    [
+        RuleIds.CTS_CPH_NOT_IN_SAM,         // Rule 2A
+        RuleIds.SAM_CPH_NOT_IN_CTS,         // Rule 2B
+        RuleIds.CTS_SAM_NO_EMAIL_ADDRESSES, // Rule 4
+        RuleIds.SAM_MISSING_EMAIL_ADDRESSES, // Rule 12
+        RuleIds.CTS_SAM_NO_PHONE_NUMBERS,   // Rule 5
+        RuleIds.SAM_MISSING_PHONE_NUMBERS,  // Rule 11
+        RuleIds.SAM_NO_CATTLE_UNIT,          // Rule 1
+        RuleIds.SAM_CATTLE_RELATED_CPHs      // Rule 3
+    ];
+
+    public async Task ExportReportAsync(string operationId, CancellationToken ct)
+    {
+        try
+        {
+            logger.LogInformation("Starting report export for operation {OperationId}", operationId);
+
+            var exportResult = await ExportAndUploadAsync(operationId, ct);
+
+            if (exportResult.Success && !string.IsNullOrEmpty(exportResult.ReportUrl) && !string.IsNullOrEmpty(exportResult.ObjectKey))
+            {
+                await cleanseOperationCommands.SetReportDetailsAsync(new SetReportDetailsCommand(operationId, exportResult.ObjectKey, exportResult.ReportUrl), ct);
+                logger.LogInformation(
+                    "Cleanse report exported successfully for operation {OperationId}. Report URL: {ReportUrl}",
+                    operationId, exportResult.ReportUrl);
+
+                // Send email notification with the report URL
+                await SendNotificationAsync(operationId, exportResult.ReportUrl, ct);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Failed to export cleanse report for operation {OperationId}: {Error}",
+                    operationId, exportResult.Error ?? "Unknown error");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail the operation - the analysis completed successfully
+            logger.LogError(ex, "Exception during report export for operation {OperationId}", operationId);
+        }
+    }
+
+    public async Task<RegenerateReportUrlResult> RegenerateReportUrlAsync(string operationId, CancellationToken ct = default)
+    {
+        try
+        {
+            var operation = await cleanseAnalysisOperationsQueries.GetOperationAsync(operationId, ct);
+
+            if (operation is null)
+            {
+                return new RegenerateReportUrlResult
+                {
+                    Success = false,
+                    OperationId = operationId,
+                    Error = $"Operation not found: {operationId}"
+                };
+            }
+
+            if (string.IsNullOrEmpty(operation.ReportObjectKey))
+            {
+                return new RegenerateReportUrlResult
+                {
+                    Success = false,
+                    OperationId = operationId,
+                    Error = "Operation does not have a report file. The analysis may not have completed successfully."
+                };
+            }
+
+            var blobService = blobStorageServiceFactory.GetCleanseReportsBlobService();
+            var newUrl = blobService.GeneratePresignedUrl(operation.ReportObjectKey);
+
+            await cleanseOperationCommands.UpdateReportUrlAsync(new UpdateReportUrlCommand(operationId, newUrl), ct);
+
+            logger.LogInformation(
+                "Regenerated presigned URL for operation {OperationId}. New Report URL: {ReportUrl}",
+                operationId, newUrl);
+
+            return new RegenerateReportUrlResult
+            {
+                Success = true,
+                OperationId = operationId,
+                ObjectKey = operation.ReportObjectKey,
+                ReportUrl = newUrl
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to regenerate presigned URL for operation {OperationId}", operationId);
+            return new RegenerateReportUrlResult
+            {
+                Success = false,
+                OperationId = operationId,
+                Error = ex.Message
+            };
+        }
+    }
+
+    /// <inheritdoc />
+    private async Task<CleanseReportExportResult> ExportAndUploadAsync(string operationId, CancellationToken ct = default)
+    {
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+        var zipFileName = $"cleanse-report_{timestamp}.zip";
+
+        string? tempCsvPath = null;
+        string? tempZipPath = null;
+
+        try
+        {
+            logger.LogInformation(
+                "Starting cleanse report export for operation {OperationId}, timestamp {Timestamp}",
+                operationId, timestamp);
+
+            // Step 1: Stream issues from MongoDB directly to CSV file
+            tempCsvPath = Path.GetRandomFileName();
+            var recordCount = await StreamIssuesToCsvAsync(tempCsvPath, ct);
+            logger.LogInformation("Streamed {RecordCount} issues to CSV file at {TempPath}", recordCount, tempCsvPath);
+
+            // Step 2: Create zip file
+            tempZipPath = Path.GetRandomFileName();
+            CreateZipFile(tempCsvPath, tempZipPath, CsvFileName);
+            logger.LogInformation("Created zip file at {ZipPath}", tempZipPath);
+
+            // Step 3: Upload to S3 (using the cleanse reports blob service which has the correct prefix)
+            var blobService = blobStorageServiceFactory.GetCleanseReportsBlobService();
+            var zipContent = await File.ReadAllBytesAsync(tempZipPath, ct);
+            await blobService.UploadAsync(zipFileName, zipContent, "application/zip", cancellationToken: ct);
+            logger.LogInformation("Uploaded report to S3 with key {ObjectKey}", zipFileName);
+
+            // Step 4: Generate presigned URL (using the zip file name as the key - blob service handles the prefix)
+            var presignedUrl = blobService.GeneratePresignedUrl(zipFileName);
+            logger.LogInformation(
+                "Generated presigned URL for cleanse report (operation {OperationId}): {ReportUrl}",
+                operationId, presignedUrl);
+
+            return new CleanseReportExportResult
+            {
+                Success = true,
+                ReportUrl = presignedUrl,
+                ObjectKey = zipFileName
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to export cleanse report for operation {OperationId}", operationId);
+            return new CleanseReportExportResult
+            {
+                Success = false,
+                Error = ex.Message
+            };
+        }
+        finally
+        {
+            // Clean up temp files
+            CleanupTempFile(tempCsvPath);
+            CleanupTempFile(tempZipPath);
+        }
+    }
+
+    /// <summary>
+    /// Streams issues from MongoDB directly to CSV file using CsvHelper.
+    /// Issues are grouped by rule priority order, sorted by CPH within each group.
+    /// Memory footprint is O(batch_size) instead of O(total_records).
+    /// </summary>
+    private async Task<int> StreamIssuesToCsvAsync(string filePath, CancellationToken ct)
+    {
+        var recordCount = 0;
+
+        await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
+        await using var writer = new StreamWriter(fileStream);
+        await using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
+
+        csv.Context.RegisterClassMap<CleanseReportCsvMap>();
+
+        // Write header
+        csv.WriteHeader<IssueDto>();
+        await csv.NextRecordAsync();
+
+        // Stream records from MongoDB ordered by rule priority then CPH
+        await foreach (var issue in issueQueries.StreamActiveIssuesByRulePriorityAsync(RulePriorityOrder, StreamBatchSize, ct))
+        {
+            csv.WriteRecord(issue);
+            await csv.NextRecordAsync();
+            recordCount++;
+
+            // Periodic flush to avoid buffering too much in StreamWriter
+            if (recordCount % 10000 == 0)
+            {
+                await csv.FlushAsync();
+                logger.LogDebug("Streamed {RecordCount} records to CSV...", recordCount);
+            }
+        }
+
+        await csv.FlushAsync();
+        return recordCount;
+    }
+
+    private static void CreateZipFile(string sourceFilePath, string zipFilePath, string entryName)
+    {
+        // Delete existing file if it exists (since we're using GetTempFileName which creates the file)
+        if (File.Exists(zipFilePath))
+            File.Delete(zipFilePath);
+
+        using var zipArchive = ZipFile.Open(zipFilePath, ZipArchiveMode.Create);
+        zipArchive.CreateEntryFromFile(sourceFilePath, entryName, CompressionLevel.Optimal);
+    }
+
+    private void CleanupTempFile(string? filePath)
+    {
+        if (string.IsNullOrEmpty(filePath))
+            return;
+
+        try
+        {
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to clean up temp file {FilePath}", filePath);
+        }
+    }
+
+
+    private async Task SendNotificationAsync(string operationId, string reportUrl, CancellationToken ct)
+    {
+        logger.LogInformation("Sending cleanse report notification for operation {OperationId}", operationId);
+
+        var notificationResult = await notificationService.SendReportNotificationAsync(reportUrl, ct);
+
+        if (notificationResult.Success)
+        {
+            logger.LogInformation(
+                "Cleanse report notification sent successfully for operation {OperationId}. NotificationId: {NotificationId}, Recipient: {Recipient}",
+                operationId, notificationResult.NotificationId, notificationResult.Recipient);
+        }
+        else
+        {
+            logger.LogWarning(
+                "Failed to send cleanse report notification for operation {OperationId}: {Error}",
+                operationId, notificationResult.Error ?? "Unknown error");
+        }
+    }
+}

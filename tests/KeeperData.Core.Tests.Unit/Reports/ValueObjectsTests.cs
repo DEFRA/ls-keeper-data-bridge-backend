@@ -1,5 +1,5 @@
 using FluentAssertions;
-using KeeperData.Core.Reports;
+using KeeperData.Core.Reports.Domain;
 
 namespace KeeperData.Core.Tests.Unit.Reports;
 

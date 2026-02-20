@@ -6,6 +6,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace KeeperData.Infrastructure.Tests.Unit.Telemetry;
 
+[Collection("HealthCheckMetrics")]
 public class HealthCheckMetricsTests : IDisposable
 {
     private readonly TestMeterFactory _meterFactory;

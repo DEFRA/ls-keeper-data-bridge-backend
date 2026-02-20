@@ -7,6 +7,21 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Cleanse\Export\Command\Commands\**" />
+    <Compile Remove="Cleanse\Export\Query\**" />
+    <Compile Remove="Issues\Abstract\**" />
+    <Compile Remove="Issues\Command\Results\**" />
+    <EmbeddedResource Remove="Cleanse\Export\Command\Commands\**" />
+    <EmbeddedResource Remove="Cleanse\Export\Query\**" />
+    <EmbeddedResource Remove="Issues\Abstract\**" />
+    <EmbeddedResource Remove="Issues\Command\Results\**" />
+    <None Remove="Cleanse\Export\Command\Commands\**" />
+    <None Remove="Cleanse\Export\Query\**" />
+    <None Remove="Issues\Abstract\**" />
+    <None Remove="Issues\Command\Results\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\KeeperData.Core\KeeperData.Core.csproj" />
   </ItemGroup>
 

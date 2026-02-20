@@ -1,19 +1,17 @@
-using System.Diagnostics.CodeAnalysis;
-using KeeperData.Core.Reports.Abstract;
+using KeeperData.Core.Reports;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Bridge.Worker.Tasks.Implementations;
 
 [ExcludeFromCodeCoverage(Justification = "Background task with service dependency - covered by integration tests.")]
-public class TaskRunCleanseReport(
-    ILogger<TaskRunCleanseReport> logger,
-    ICleanseReportService cleanseReportService) : ITaskRunCleanseReport
+public class TaskRunCleanseReport(ILogger<TaskRunCleanseReport> logger, ICleanseFacade cleanseFacade) : ITaskRunCleanseReport
 {
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Starting scheduled cleanse report analysis");
 
-        var operation = await cleanseReportService.StartAnalysisAsync(cancellationToken);
+        var operation = await cleanseFacade.Commands.CleanseAnalysisCommandService.StartAnalysisAsync(cancellationToken);
 
         if (operation is null)
         {

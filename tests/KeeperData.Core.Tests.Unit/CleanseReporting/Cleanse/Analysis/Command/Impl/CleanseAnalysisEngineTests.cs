@@ -82,7 +82,7 @@ public class CleanseAnalysisEngineTests
     {
         SetupCtsHoldings("UK-12/345/6003");
         SetupSamHoldings();
-        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com", "c@d.com"], samEmails: ["a@b.com"], ctsPhones: ["01234"], samPhones: ["01234"]);
+        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com", "c@d.com"], samEmails: [], ctsPhones: ["01234"], samPhones: ["01234"]);
 
         await RunEngineAsync();
 
@@ -94,11 +94,52 @@ public class CleanseAnalysisEngineTests
     {
         SetupCtsHoldings("UK-12/345/6003");
         SetupSamHoldings();
-        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com"], samEmails: ["a@b.com"], ctsPhones: ["01234", "05678"], samPhones: ["01234"]);
+        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com"], samEmails: ["a@b.com"], ctsPhones: ["01234", "05678"], samPhones: []);
 
         await RunEngineAsync();
 
         VerifyIssueRecorded(RuleIds.SAM_MISSING_PHONE_NUMBERS);
+    }
+
+    [Fact]
+    public async Task Execute_CtsEmailsAllInSam_ShouldRaiseRule6()
+    {
+        SetupCtsHoldings("UK-12/345/6003");
+        SetupSamHoldings();
+        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com"], samEmails: ["a@b.com", "extra@sam.com"], ctsPhones: ["01234"], samPhones: ["01234"]);
+
+        await RunEngineAsync();
+
+        VerifyIssueRecorded(RuleIds.CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES);
+    }
+
+    [Fact]
+    public async Task Execute_CtsEmailNotInSam_WhenSamHasEmails_ShouldNotRaiseRule12OrRule6()
+    {
+        SetupCtsHoldings("UK-12/345/6003");
+        SetupSamHoldings();
+        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com", "c@d.com"], samEmails: ["a@b.com"], ctsPhones: ["01234"], samPhones: ["01234"]);
+
+        await RunEngineAsync();
+
+        _issueServiceMock.Verify(s => s.RecordIssueAsync(
+            It.Is<RecordIssueCommand>(c => c.Descriptor.RuleId == RuleIds.SAM_MISSING_EMAIL_ADDRESSES),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _issueServiceMock.Verify(s => s.RecordIssueAsync(
+            It.Is<RecordIssueCommand>(c => c.Descriptor.RuleId == RuleIds.CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Execute_CtsPhoneNotInSam_WhenSamHasPhones_ShouldRaiseRule9()
+    {
+        SetupCtsHoldings("UK-12/345/6003");
+        SetupSamHoldings();
+        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com"], samEmails: ["a@b.com"], ctsPhones: ["01234", "05678"], samPhones: ["01234"]);
+
+        await RunEngineAsync();
+
+        VerifyIssueRecorded(RuleIds.CTS_SAM_INCONSISTENT_PHONENOS);
     }
 
     [Fact]
@@ -150,7 +191,9 @@ public class CleanseAnalysisEngineTests
 
         await RunEngineAsync();
 
-        _issueServiceMock.Verify(s => s.RecordIssueAsync(It.IsAny<RecordIssueCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        _issueServiceMock.Verify(s => s.RecordIssueAsync(
+            It.Is<RecordIssueCommand>(c => c.Descriptor.RuleId != RuleIds.CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

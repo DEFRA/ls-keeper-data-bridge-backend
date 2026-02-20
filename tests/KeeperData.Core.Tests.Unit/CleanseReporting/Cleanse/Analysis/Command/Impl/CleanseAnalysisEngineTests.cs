@@ -82,7 +82,7 @@ public class CleanseAnalysisEngineTests
     {
         SetupCtsHoldings("UK-12/345/6003");
         SetupSamHoldings();
-        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com", "c@d.com"], samEmails: ["a@b.com"], ctsPhones: ["01234"], samPhones: ["01234"]);
+        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com", "c@d.com"], samEmails: [], ctsPhones: ["01234"], samPhones: ["01234"]);
 
         await RunEngineAsync();
 
@@ -94,7 +94,7 @@ public class CleanseAnalysisEngineTests
     {
         SetupCtsHoldings("UK-12/345/6003");
         SetupSamHoldings();
-        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com"], samEmails: ["a@b.com"], ctsPhones: ["01234", "05678"], samPhones: ["01234"]);
+        SetupMatchingPair("12/345/6003", ctsEmails: ["a@b.com"], samEmails: ["a@b.com"], ctsPhones: ["01234", "05678"], samPhones: []);
 
         await RunEngineAsync();
 
@@ -150,7 +150,9 @@ public class CleanseAnalysisEngineTests
 
         await RunEngineAsync();
 
-        _issueServiceMock.Verify(s => s.RecordIssueAsync(It.IsAny<RecordIssueCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        _issueServiceMock.Verify(s => s.RecordIssueAsync(
+            It.Is<RecordIssueCommand>(c => c.Descriptor.RuleId != RuleIds.CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

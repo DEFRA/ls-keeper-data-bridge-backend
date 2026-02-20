@@ -50,7 +50,7 @@ public class CleanseController(
         {
             OperationId = operation.Id,
             Status = operation.Status.ToString(),
-            Message = "Cleanse analysis started successfully and is running in the background.",
+            Message = "Cleanse analysis started successfully and is running in the background",
             StartedAtUtc = operation.StartedAtUtc
         });
     }

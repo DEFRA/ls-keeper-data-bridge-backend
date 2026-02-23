@@ -74,15 +74,16 @@ public static class RuleIds
     ///// <remarks>
     /////     PRIORITY 7:  RULE 6 - Email addresses inconsistent between CTS and SAM
     ///// </remarks>
-    ///// BLOCKED: same as rule 12
     public const string CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES = "CTS_SAM_INCONSIS_EMAILS";
 
 
     /// <summary>
     /// iterate cts; where exists in both - for each phone no that does not exist somewhere in SAM, raise issue
     /// </summary>
-    // BLOCKED same as rule 11
-    public const string CTS_SAM_INCONSISTENT_PHONENOS = "CTS_SAM_INCONSIS_PHONENOS";        // [*TODO] PRIORITY 8:  RULE 9 - Phone nos inconsistent between CTS and SAM
+    /// <remarks>
+    ///     PRIORITY 8:  RULE 9 - Phone nos inconsistent between CTS and SAM
+    /// </remarks>
+    public const string CTS_SAM_INCONSISTENT_PHONENOS = "CTS_SAM_INCONSIS_PHONENOS"; 
     
     
     ///// <summary>

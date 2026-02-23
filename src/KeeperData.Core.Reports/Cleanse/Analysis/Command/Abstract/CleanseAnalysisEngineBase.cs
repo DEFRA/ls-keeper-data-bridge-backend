@@ -8,7 +8,8 @@ namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 
 public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService, IIssueCommandService issueCommandService)
 {
-    private const int BatchSize = 100;
+    private const int ThrottlingPumpDelayMs = 400;
+    private const int BatchSize = 70;
     private const int ProgressUpdateInterval = 100;
     private const string DateTimeFormat = "yyyy-MM-dd HH:mm:ss";
 
@@ -34,6 +35,33 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
     protected abstract Task ProcessSamPrimaryRecordAsync(string id,
         string operationId, AnalysisMetrics metrics, CancellationToken ct);
 
+
+    protected async Task PumpAsync(PumpContext context, CancellationToken ct)
+    {
+        var skip = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            var batch = await context.Fetcher(skip, BatchSize, ct);
+
+            if (batch.Data.Count == 0)
+            {
+                break;
+            }
+
+            await ProcessBatchAsync(batch, context, ct);
+
+            skip += batch.Data.Count;
+            context.Metrics.RecordsAnalyzed = skip;
+
+            if (ShouldUpdateProgress(context.Metrics.RecordsAnalyzed))
+            {
+                await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
+            }
+
+            await Task.Delay(ThrottlingPumpDelayMs, ct);
+        }
+    }
+
     public async Task<AnalysisMetrics> ExecuteAsync(string operationId, ProgressCallback progressCallback, CancellationToken ct)
     {
         var metrics = new AnalysisMetrics();
@@ -55,32 +83,6 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
             DataFields.SamCphHoldingFields.Cph), ct);
 
         return metrics;
-    }
-
-
-
-    protected async Task PumpAsync(PumpContext context, CancellationToken ct)
-    {
-        var skip = 0;
-        while (true && !ct.IsCancellationRequested)
-        {
-            var batch = await context.Fetcher(skip, BatchSize, ct);
-
-            if (batch.Data.Count == 0)
-            {
-                break;
-            }
-
-            await ProcessBatchAsync(batch, context, ct);
-
-            skip += batch.Data.Count;
-            context.Metrics.RecordsAnalyzed = skip;
-
-            if (ShouldUpdateProgress(context.Metrics.RecordsAnalyzed))
-            {
-                await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
-            }
-        }
     }
 
     protected static async Task ProcessBatchAsync(QueryResult batch, PumpContext context, CancellationToken ct)

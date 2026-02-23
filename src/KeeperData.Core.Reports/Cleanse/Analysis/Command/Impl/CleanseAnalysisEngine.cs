@@ -15,6 +15,8 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
     private readonly RecordIdGenerator _recordIdGenerator = new();
     private readonly ICtsSamQueryService _dataService = dataService;
 
+    private const int ThrottleDelayMs = 100;
+
     private async Task ProcessCtsPrimaryRecordInternalAsync(LidFullIdentifier lidFullIdentifier, string operationId, AnalysisMetrics metrics, CancellationToken ct)
     {
         var samCphHolding = await _dataService.GetSamCphHoldingAsync(lidFullIdentifier.Cph, ct);
@@ -39,46 +41,87 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
 
     private static void EvaluateCtsSamRules(CtsCphHoldingModel ctsHolding, SamCphHoldingModel samCphHolding, List<RuleResult> results)
     {
+        EvaluateEmailRules(ctsHolding, samCphHolding, results);
+        EvaluatePhoneRules(ctsHolding, samCphHolding, results);
+        EvaluateCattleUnitRule(ctsHolding, samCphHolding, results);
+        EvaluateLocationConsistencyRule(ctsHolding, samCphHolding, results);
+    }
+
+    private static void EvaluateEmailRules(CtsCphHoldingModel ctsHolding, SamCphHoldingModel samCphHolding, List<RuleResult> results)
+    {
         var ctsEmails = ctsHolding.GetEmailAddresses();
         var samEmails = samCphHolding.GetEmailAddresses();
-        var ctsPhones = ctsHolding.GetPhoneNumbers();
-        var samPhones = samCphHolding.GetPhoneNumbers();
 
-        // PRIORITY 2:  RULE 4: CPH present in both CTS and SAM but no email addresses in either system
-        if (ctsEmails.Length + samEmails.Length == 0) 
+        // PRIORITY 2: RULE 4 - CPH present in both CTS and SAM but no email addresses in either system
+        if (ctsEmails.Length + samEmails.Length == 0)
         {
             results.Add(RuleResult.Issue(RuleDescriptors.CtsSamNoEmailAddresses, ctsHolding.Id, samCphHolding.Cph));
         }
 
-        // PRIORITY 3:  RULE 12 - Email addresses in CTS missing from SAM
         var missingEmails = ctsEmails.Except(samEmails).ToArray();
         if (missingEmails.Length > 0)
         {
-            results.Add(RuleResult.Issue(RuleDescriptors.SamMissingEmailAddresses, ctsHolding.Id, samCphHolding.Cph, x => x.EmailCTS = missingEmails));
+            if (samEmails.Length == 0) // PRIORITY 3: RULE 12 - Email addresses in CTS missing from SAM
+            {
+                results.Add(RuleResult.Issue(RuleDescriptors.SamMissingEmailAddresses, ctsHolding.Id, samCphHolding.Cph,
+                    x => x.EmailCTS = missingEmails));
+            }
         }
+        else // PRIORITY 7: RULE 6 - Email addresses inconsistent between CTS and SAM
+        {
+            results.Add(RuleResult.Issue(RuleDescriptors.CtsSamEmailAddressesInconsistent, ctsHolding.Id, samCphHolding.Cph, x =>
+            {
+                x.EmailCTS = missingEmails;
+                x.EmailSAM = string.Join("; ", samEmails);
+            }));
+        }
+    }
 
-        // PRIORITY 4:  RULE 5  - CPH present in both CTS and SAM but no phone numbers in either system
+    private static void EvaluatePhoneRules(CtsCphHoldingModel ctsHolding, SamCphHoldingModel samCphHolding, List<RuleResult> results)
+    {
+        var ctsPhones = ctsHolding.GetPhoneNumbers();
+        var samPhones = samCphHolding.GetPhoneNumbers();
+
+        // PRIORITY 4: RULE 5 - CPH present in both CTS and SAM but no phone numbers in either system
         if (ctsPhones.Length + samPhones.Length == 0)
         {
             results.Add(RuleResult.Issue(RuleDescriptors.CtsSamNoPhoneNumbers, ctsHolding.Id, samCphHolding.Cph));
         }
 
-        // PRIORITY 5:  RULE 11 - CTS phone numbers missing from SAM
         var missingPhones = ctsPhones.Except(samPhones).ToArray();
         if (missingPhones.Length > 0)
         {
-            results.Add(RuleResult.Issue(RuleDescriptors.SamMissingPhoneNumbers, ctsHolding.Id, samCphHolding.Cph, x => x.TelCTS = missingPhones));
+            if (samPhones.Length == 0) // PRIORITY 5: RULE 11 - CTS phone numbers missing from SAM
+            {
+                results.Add(RuleResult.Issue(RuleDescriptors.SamMissingPhoneNumbers, ctsHolding.Id, samCphHolding.Cph,
+                    x => x.TelCTS = missingPhones));
+            }
+            else
+            {
+                // PRIORITY 8: RULE 7 - Phone numbers inconsistent between CTS and SAM
+                results.Add(RuleResult.Issue(RuleDescriptors.CtsSamPhoneNosInconsistent, ctsHolding.Id, samCphHolding.Cph, x =>
+                {
+                    x.TelCTS = missingPhones;
+                    x.TelSAM = string.Join("; ", samPhones);
+                }));
+            }
         }
+    }
 
-        // PRIORITY 6:  RULE 1  - No cattle unit defined in SAM
+    private static void EvaluateCattleUnitRule(CtsCphHoldingModel ctsHolding, SamCphHoldingModel samCphHolding, List<RuleResult> results)
+    {
+        // PRIORITY 6: RULE 1 - No cattle unit defined in SAM
         var asc = samCphHolding.Holding[DataFields.SamCphHoldingFields.AnimalSpeciesCode]?.ToString();
         if (asc != "CTT")
         {
-            results.Add(RuleResult.Issue(RuleDescriptors.SamNoCattleUnit, ctsHolding.Id, samCphHolding.Cph, x => x.AnimalSpeciesCode = asc));
+            results.Add(RuleResult.Issue(RuleDescriptors.SamNoCattleUnit, ctsHolding.Id, samCphHolding.Cph,
+                x => x.AnimalSpeciesCode = asc));
         }
+    }
 
-        // PRIORITY 10: RULE 3 - Cattle-related CPHs in SAM (e.g. those with relevant animal species or purpose codes) that are not present in CTS
-        // aka: where ANIMAL_SPECIES_CODE=CTT - if SAM.FEATURE_NAME=['Unknown','Not known','Notknown','',null] OR CTS.ADR_NAME != SAM.FEATURE_NAME then raise issue
+    private static void EvaluateLocationConsistencyRule(CtsCphHoldingModel ctsHolding, SamCphHoldingModel samCphHolding, List<RuleResult> results)
+    {
+        // PRIORITY 10: RULE 3 - Cattle-related CPHs in SAM with mismatched or unknown location names
         if (samCphHolding.AnimalSpeciesCode == "CTT" && IsLocationMismatch(ctsHolding, samCphHolding))
         {
             results.Add(RuleResult.Issue(RuleDescriptors.CtsSamLocationsDiffer, ctsHolding.Id, samCphHolding.Cph,
@@ -99,7 +142,6 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
             || !string.Equals(ctsHolding.LocationName, samCphHolding.LocationName, StringComparison.OrdinalIgnoreCase);
     }
 
-
     private async Task ProcessSamPrimaryRecordInternalAsync(Cph cph, string operationId, AnalysisMetrics metrics, CancellationToken ct)
     {
         var results = new List<RuleResult>();
@@ -113,8 +155,6 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
 
         await RecordResultsAsync(cph.Value, cph, operationId, metrics, results, ct);
     }
-
-    #region Overrides 
 
     protected override async Task ProcessCtsPrimaryRecordAsync(string id, string operationId, AnalysisMetrics metrics, CancellationToken ct)
     {
@@ -135,10 +175,6 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
             await ProcessSamPrimaryRecordInternalAsync(cph, operationId, metrics, ct);
         }
     }
-
-    #endregion
-
-    #region Helpers
 
     private async Task RecordResultsAsync(string primaryRecordId, Cph cph, string operationId,
         AnalysisMetrics metrics, List<RuleResult> results, CancellationToken ct)
@@ -161,6 +197,8 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
             {
                 metrics.IssuesFound++;
             }
+
+            await Task.Delay(ThrottleDelayMs, ct);
         }
     }
 
@@ -172,8 +210,6 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
 
     protected string GenerateThumbprint(string primaryRecordId, string ruleId)
         => _recordIdGenerator.GenerateId($"{primaryRecordId}:{ruleId}");
-
-    #endregion
 }
 
 

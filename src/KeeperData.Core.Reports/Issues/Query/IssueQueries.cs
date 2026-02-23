@@ -206,6 +206,17 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
         var builder = Builders<IssueDocument>.Filter;
         var filters = new List<FilterDefinition<IssueDocument>>();
 
+        AddCodeFilters(filters, builder, query);
+        AddTextSearchFilters(filters, builder, query);
+        AddDateRangeFilters(filters, builder, query);
+        AddStatusFilters(filters, builder, query);
+
+        return filters.Count == 0 ? builder.Empty : builder.And(filters);
+    }
+
+    private static void AddCodeFilters(
+        List<FilterDefinition<IssueDocument>> filters, FilterDefinitionBuilder<IssueDocument> builder, CleanseIssueQueryDto query)
+    {
         if (query.IsActive.HasValue)
             filters.Add(builder.Eq(d => d.IsActive, query.IsActive.Value));
 
@@ -217,7 +228,11 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
 
         if (!string.IsNullOrEmpty(query.ErrorCode))
             filters.Add(builder.Eq(d => d.ErrorCode, query.ErrorCode));
+    }
 
+    private static void AddTextSearchFilters(
+        List<FilterDefinition<IssueDocument>> filters, FilterDefinitionBuilder<IssueDocument> builder, CleanseIssueQueryDto query)
+    {
         if (!string.IsNullOrEmpty(query.CtsLidFullIdentifierContains))
             filters.Add(builder.Regex(d => d.CtsLidFullIdentifier, new MongoDB.Bson.BsonRegularExpression(query.CtsLidFullIdentifierContains, "i")));
 
@@ -226,7 +241,11 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
 
         if (!string.IsNullOrEmpty(query.CphStartsWith))
             filters.Add(builder.Regex(d => d.Cph, new MongoDB.Bson.BsonRegularExpression($"^{query.CphStartsWith}", "i")));
+    }
 
+    private static void AddDateRangeFilters(
+        List<FilterDefinition<IssueDocument>> filters, FilterDefinitionBuilder<IssueDocument> builder, CleanseIssueQueryDto query)
+    {
         if (query.CreatedAfterUtc.HasValue)
             filters.Add(builder.Gt(d => d.CreatedAtUtc, query.CreatedAfterUtc.Value));
 
@@ -238,7 +257,11 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
 
         if (query.UpdatedBeforeUtc.HasValue)
             filters.Add(builder.Lt(d => d.LastUpdatedAtUtc, query.UpdatedBeforeUtc.Value));
+    }
 
+    private static void AddStatusFilters(
+        List<FilterDefinition<IssueDocument>> filters, FilterDefinitionBuilder<IssueDocument> builder, CleanseIssueQueryDto query)
+    {
         if (query.IsIgnored.HasValue)
             filters.Add(builder.Eq(d => d.IsIgnored, query.IsIgnored.Value));
 
@@ -250,8 +273,6 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
 
         if (query.IsUnassigned == true)
             filters.Add(builder.Eq(d => d.AssignedTo, null));
-
-        return builder.And(filters);
     }
 
     private static SortDefinition<IssueDocument> BuildSort(CleanseIssueQueryDto query)

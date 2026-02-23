@@ -35,7 +35,7 @@ public class IngestionPipeline(
     ILogger<IngestionPipeline> logger) : IIngestionPipeline
 {
     private const int BatchSize = 200;
-    private const int BatchDelayMs = 500;
+    private const int BatchDelayMs = 600;
     private const int LogInterval = BatchSize;
     private const int ProgressUpdateInterval = BatchSize;
 
@@ -91,36 +91,7 @@ public class IngestionPipeline(
 
             ingestionStopwatch.Stop();
 
-            metrics.RecordRequest(MetricNames.Ingestion, MetricNames.Operations.IngestionCompletions);
-            metrics.RecordValue(MetricNames.Ingestion, ingestionStopwatch.ElapsedMilliseconds,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionDuration),
-                (MetricNames.CommonTags.SourceType, report.SourceType));
-            metrics.RecordCount(MetricNames.Ingestion, 1,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionCompletions),
-                (MetricNames.CommonTags.SourceType, report.SourceType),
-                (MetricNames.CommonTags.Status, "success"));
-
-            var totalRecords = ingestionResults.RecordsCreated + ingestionResults.RecordsUpdated + ingestionResults.RecordsDeleted;
-            if (totalRecords > 0 && ingestionStopwatch.ElapsedMilliseconds > 0)
-            {
-                var recordsPerMinute = (totalRecords * 60000.0) / ingestionStopwatch.ElapsedMilliseconds;
-                metrics.RecordValue(MetricNames.Ingestion, recordsPerMinute,
-                    (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsPerMinute),
-                    (MetricNames.CommonTags.SourceType, report.SourceType));
-            }
-
-            metrics.RecordCount(MetricNames.Ingestion, ingestionResults.FilesProcessed,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionFilesProcessed),
-                (MetricNames.CommonTags.SourceType, report.SourceType));
-            metrics.RecordCount(MetricNames.Ingestion, ingestionResults.RecordsCreated,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsCreated),
-                (MetricNames.CommonTags.SourceType, report.SourceType));
-            metrics.RecordCount(MetricNames.Ingestion, ingestionResults.RecordsUpdated,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsUpdated),
-                (MetricNames.CommonTags.SourceType, report.SourceType));
-            metrics.RecordCount(MetricNames.Ingestion, ingestionResults.RecordsDeleted,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsDeleted),
-                (MetricNames.CommonTags.SourceType, report.SourceType));
+            RecordIngestionSuccessMetrics(ingestionResults, report.SourceType, ingestionStopwatch.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
@@ -133,18 +104,7 @@ public class IngestionPipeline(
 
             ingestionStopwatch.Stop();
 
-            metrics.RecordRequest(MetricNames.Ingestion, MetricNames.Operations.IngestionErrors);
-            metrics.RecordValue(MetricNames.Ingestion, ingestionStopwatch.ElapsedMilliseconds,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionDuration),
-                (MetricNames.CommonTags.SourceType, report.SourceType));
-            metrics.RecordCount(MetricNames.Ingestion, 1,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionCompletions),
-                (MetricNames.CommonTags.SourceType, report.SourceType),
-                (MetricNames.CommonTags.Status, "failed"));
-            metrics.RecordCount(MetricNames.Ingestion, 1,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionErrors),
-                (MetricNames.CommonTags.SourceType, report.SourceType),
-                (MetricNames.CommonTags.ErrorType, ex.GetType().Name));
+            RecordIngestionFailureMetrics(report.SourceType, ingestionStopwatch.ElapsedMilliseconds, ex);
 
             throw;
         }
@@ -385,57 +345,14 @@ public class IngestionPipeline(
                 MongoIngestionDurationMs = mongoIngestionStopwatch.ElapsedMilliseconds
             };
 
-            metrics.RecordRequest(MetricNames.File, MetricNames.Operations.FileIngested);
-            metrics.RecordCount(MetricNames.File, 1,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileIngested),
-                (MetricNames.CommonTags.Collection, collectionName),
-                (MetricNames.CommonTags.Status, "success"));
-
-            metrics.RecordCount(MetricNames.File, fileMetrics.RecordsProcessed,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileRecordsProcessed),
-                (MetricNames.CommonTags.Collection, collectionName));
-            metrics.RecordValue(MetricNames.File, downloadStopwatch.ElapsedMilliseconds,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileS3Download),
-                (MetricNames.CommonTags.Collection, collectionName));
-            metrics.RecordValue(MetricNames.File, mongoIngestionStopwatch.ElapsedMilliseconds,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileMongoIngestion),
-                (MetricNames.CommonTags.Collection, collectionName));
-            metrics.RecordValue(MetricNames.File, fileMetrics.AverageMongoIngestionMs,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileAvgRecordProcessing),
-                (MetricNames.CommonTags.Collection, collectionName));
-
-            if (overallStopwatch.ElapsedMilliseconds > 0)
-            {
-                var s3Ratio = (double)downloadStopwatch.ElapsedMilliseconds / overallStopwatch.ElapsedMilliseconds;
-                var mongoRatio = (double)mongoIngestionStopwatch.ElapsedMilliseconds / overallStopwatch.ElapsedMilliseconds;
-
-                metrics.RecordValue(MetricNames.File, s3Ratio,
-                    (MetricNames.CommonTags.Operation, MetricNames.Operations.FileS3Ratio),
-                    (MetricNames.CommonTags.Collection, collectionName));
-                metrics.RecordValue(MetricNames.File, mongoRatio,
-                    (MetricNames.CommonTags.Operation, MetricNames.Operations.FileMongoRatio),
-                    (MetricNames.CommonTags.Collection, collectionName));
-            }
+            RecordFileIngestionMetrics(fileMetrics, downloadStopwatch.ElapsedMilliseconds,
+                mongoIngestionStopwatch.ElapsedMilliseconds, overallStopwatch.ElapsedMilliseconds, collectionName);
 
             return result;
         }
         finally
         {
-            // Ensure temp file is always cleaned up
-            if (tempFilePath != null && File.Exists(tempFilePath))
-            {
-                try
-                {
-                    File.Delete(tempFilePath);
-                    Debug.WriteLine($"[keepetl] Deleted temp file: {tempFilePath}");
-                    logger.LogDebug("Deleted temp file: {TempPath}", tempFilePath);
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[keepetl] Failed to delete temp file: {tempFilePath} - Error: {ex.Message}");
-                    logger.LogWarning(ex, "Failed to delete temp file: {TempPath}", tempFilePath);
-                }
-            }
+            CleanupTempFile(tempFilePath);
         }
     }
 
@@ -623,21 +540,7 @@ public class IngestionPipeline(
                 progressTracker.UpdateProgress(fileMetrics.RecordsProcessed);
 
                 var currentStatus = progressTracker.GetCurrentStatus();
-                // Update report with current file status
-                report.IngestionPhase!.RecordsCreated = totals.RecordsCreated + fileMetrics.RecordsCreated;
-                report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated + fileMetrics.RecordsUpdated;
-                report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted + fileMetrics.RecordsDeleted;
-                report.IngestionPhase!.CurrentFileStatus = new IngestionCurrentFileStatus
-                {
-                    FileName = currentStatus.FileName,
-                    TotalRows = currentStatus.TotalRows,
-                    RowNumber = currentStatus.RowNumber,
-                    PercentageCompleted = currentStatus.PercentageCompleted,
-                    RowsPerMinute = currentStatus.RowsPerMinute,
-                    EstimatedTimeRemaining = currentStatus.EstimatedTimeRemaining,
-                    EstimatedCompletionUtc = currentStatus.EstimatedCompletionUtc
-                };
-                await reportingService.UpsertImportReportAsync(report, ct);
+                await UpdateReportWithFileProgressAsync(report, currentStatus, totals, fileMetrics, ct);
 
                 Debug.WriteLine($"[keepetl] STATS: rpm:{currentStatus.RowsPerMinute}, {currentStatus.PercentageCompleted}% done, tot:{currentStatus.TotalRows}, num:{currentStatus.RowNumber}");
 
@@ -674,21 +577,7 @@ public class IngestionPipeline(
         // Final progress update
         progressTracker.UpdateProgress(fileMetrics.RecordsProcessed);
         var finalStatus = progressTracker.Complete();
-
-        report.IngestionPhase!.RecordsCreated = totals.RecordsCreated + fileMetrics.RecordsCreated;
-        report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated + fileMetrics.RecordsUpdated;
-        report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted + fileMetrics.RecordsDeleted;
-        report.IngestionPhase!.CurrentFileStatus = new IngestionCurrentFileStatus
-        {
-            FileName = finalStatus.FileName,
-            TotalRows = finalStatus.TotalRows,
-            RowNumber = finalStatus.RowNumber,
-            PercentageCompleted = finalStatus.PercentageCompleted,
-            RowsPerMinute = finalStatus.RowsPerMinute,
-            EstimatedTimeRemaining = finalStatus.EstimatedTimeRemaining,
-            EstimatedCompletionUtc = finalStatus.EstimatedCompletionUtc
-        };
-        await reportingService.UpsertImportReportAsync(report, ct);
+        await UpdateReportWithFileProgressAsync(report, finalStatus, totals, fileMetrics, ct);
 
         // Flush remaining lineage events
         await FlushLineageEventsAsync(lineageEvents, ct);
@@ -942,30 +831,8 @@ public class IngestionPipeline(
 
         Debug.WriteLine($"[keepetl] Batch processing complete. Processed: {batchMetrics.Processed}, Created: {batchMetrics.Created}, Updated: {batchMetrics.Updated}, Deleted: {batchMetrics.Deleted}, Elapsed: {elapsedSeconds:F3}s");
 
-        metrics.RecordValue(MetricNames.Batch, batchStopwatch.ElapsedMilliseconds,
-            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchDuration),
-            ("batch_size", batch.Count.ToString()),
-            (MetricNames.CommonTags.Collection, collectionName));
-
-        if (batchStopwatch.ElapsedMilliseconds > 0)
-        {
-            var recordsPerSecond = (batch.Count * 1000.0) / batchStopwatch.ElapsedMilliseconds;
-            metrics.RecordValue(MetricNames.Batch, recordsPerSecond,
-                (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchRecordsPerSecond),
-                (MetricNames.CommonTags.Collection, collectionName));
-        }
-
-        metrics.RecordCount(MetricNames.Batch, insertOps,
-            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchInserts),
-            (MetricNames.CommonTags.Collection, collectionName));
-        metrics.RecordCount(MetricNames.Batch, updateOps,
-            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchUpdates),
-            (MetricNames.CommonTags.Collection, collectionName));
-        metrics.RecordCount(MetricNames.Batch, deleteOps,
-            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchDeletes),
-            (MetricNames.CommonTags.Collection, collectionName));
-
-        metrics.RecordRequest(MetricNames.Batch, "completed");
+        RecordBatchCompletionMetrics(batchStopwatch.ElapsedMilliseconds, batch.Count,
+            insertOps, updateOps, deleteOps, collectionName);
 
         return new BatchProcessingMetrics
         {
@@ -1027,7 +894,6 @@ public class IngestionPipeline(
         });
     }
 
-    [SuppressMessage("SonarQube", "S3776", Justification = "Method handles a single cohesive upsert operation; splitting would reduce clarity")]
     private void ProcessUpsertOperation(List<WriteModel<BsonDocument>> bulkOps,
                                         List<RecordLineageEvent> lineageEvents,
                                         BsonDocument document,
@@ -1048,74 +914,14 @@ public class IngestionPipeline(
 
         document[FieldIsDeleted] = false;
 
-        var update = Builders<BsonDocument>.Update
-            .SetOnInsert(FieldCreatedAtUtc, document[FieldCreatedAtUtc])
-            .Set(FieldUpdatedAtUtc, document[FieldUpdatedAtUtc])
-            .Set(FieldIsDeleted, false)
-            .Unset(FieldDeletedAtUtc); // Unset DeletedAtUtc when undeleting
-
-        var accumulatorSet = new HashSet<string>(definition.Accumulators ?? []);
-
-        foreach (var element in document.Elements)
-        {
-            if (element.Name != FieldId && element.Name != FieldCreatedAtUtc && element.Name != FieldUpdatedAtUtc && element.Name != FieldIsDeleted)
-            {
-                if (accumulatorSet.Contains(element.Name))
-                {
-                    if (element.Value.IsBsonArray)
-                    {
-                        var arrayValue = element.Value.AsBsonArray;
-
-                        if (arrayValue.Count == 0)
-                        {
-                            update = update.SetOnInsert(element.Name, new BsonArray());
-                        }
-                        else
-                        {
-                            foreach (var item in arrayValue)
-                            {
-                                // Only add non-null values
-                                if (item != BsonNull.Value && !string.IsNullOrEmpty(item.ToString()))
-                                {
-                                    update = update.AddToSet(element.Name, item);
-                                }
-                            }
-                        }
-                    }
-                    else if (element.Value != BsonNull.Value && !string.IsNullOrEmpty(element.Value.ToString()))
-                    {
-                        update = update.AddToSet(element.Name, element.Value);
-                    }
-                }
-                else
-                {
-                    // For non-accumulator fields, use Set to overwrite
-                    update = update.Set(element.Name, element.Value);
-                }
-            }
-        }
+        var update = BuildUpsertUpdateDefinition(document, definition);
 
         bulkOps.Add(new UpdateOneModel<BsonDocument>(upsertFilter, update)
         {
             IsUpsert = true
         });
 
-        // Determine the correct event type based on the operation
-        RecordEventType eventType;
-        if (isSoftDeleted)
-        {
-            eventType = RecordEventType.Undeleted;
-            Debug.WriteLine($"[keepetl] Undeleting soft-deleted record with _id: {docId} in file {fileKey}");
-            logger.LogInformation("Undeleting soft-deleted record with _id: {DocId} in file {FileKey}", docId, fileKey);
-        }
-        else if (isCreate)
-        {
-            eventType = RecordEventType.Created;
-        }
-        else
-        {
-            eventType = RecordEventType.Updated;
-        }
+        var eventType = DetermineUpsertEventType(isSoftDeleted, isCreate, docId, fileKey);
 
         lineageEvents.Add(new RecordLineageEvent
         {
@@ -1203,6 +1009,232 @@ public class IngestionPipeline(
             importId,
             stopwatch.ElapsedMilliseconds,
             stopwatch.Elapsed.TotalSeconds);
+    }
+
+    private void RecordIngestionSuccessMetrics(IngestionTotals ingestionResults, string sourceType, long elapsedMs)
+    {
+        metrics.RecordRequest(MetricNames.Ingestion, MetricNames.Operations.IngestionCompletions);
+        metrics.RecordValue(MetricNames.Ingestion, elapsedMs,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionDuration),
+            (MetricNames.CommonTags.SourceType, sourceType));
+        metrics.RecordCount(MetricNames.Ingestion, 1,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionCompletions),
+            (MetricNames.CommonTags.SourceType, sourceType),
+            (MetricNames.CommonTags.Status, "success"));
+
+        var totalRecords = ingestionResults.RecordsCreated + ingestionResults.RecordsUpdated + ingestionResults.RecordsDeleted;
+        if (totalRecords > 0 && elapsedMs > 0)
+        {
+            var recordsPerMinute = (totalRecords * 60000.0) / elapsedMs;
+            metrics.RecordValue(MetricNames.Ingestion, recordsPerMinute,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsPerMinute),
+                (MetricNames.CommonTags.SourceType, sourceType));
+        }
+
+        metrics.RecordCount(MetricNames.Ingestion, ingestionResults.FilesProcessed,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionFilesProcessed),
+            (MetricNames.CommonTags.SourceType, sourceType));
+        metrics.RecordCount(MetricNames.Ingestion, ingestionResults.RecordsCreated,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsCreated),
+            (MetricNames.CommonTags.SourceType, sourceType));
+        metrics.RecordCount(MetricNames.Ingestion, ingestionResults.RecordsUpdated,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsUpdated),
+            (MetricNames.CommonTags.SourceType, sourceType));
+        metrics.RecordCount(MetricNames.Ingestion, ingestionResults.RecordsDeleted,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionRecordsDeleted),
+            (MetricNames.CommonTags.SourceType, sourceType));
+    }
+
+    private void RecordIngestionFailureMetrics(string sourceType, long elapsedMs, Exception ex)
+    {
+        metrics.RecordRequest(MetricNames.Ingestion, MetricNames.Operations.IngestionErrors);
+        metrics.RecordValue(MetricNames.Ingestion, elapsedMs,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionDuration),
+            (MetricNames.CommonTags.SourceType, sourceType));
+        metrics.RecordCount(MetricNames.Ingestion, 1,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionCompletions),
+            (MetricNames.CommonTags.SourceType, sourceType),
+            (MetricNames.CommonTags.Status, "failed"));
+        metrics.RecordCount(MetricNames.Ingestion, 1,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.IngestionErrors),
+            (MetricNames.CommonTags.SourceType, sourceType),
+            (MetricNames.CommonTags.ErrorType, ex.GetType().Name));
+    }
+
+    private void RecordFileIngestionMetrics(FileIngestionMetrics fileMetrics, long downloadMs,
+        long mongoMs, long overallMs, string collectionName)
+    {
+        metrics.RecordRequest(MetricNames.File, MetricNames.Operations.FileIngested);
+        metrics.RecordCount(MetricNames.File, 1,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.FileIngested),
+            (MetricNames.CommonTags.Collection, collectionName),
+            (MetricNames.CommonTags.Status, "success"));
+
+        metrics.RecordCount(MetricNames.File, fileMetrics.RecordsProcessed,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.FileRecordsProcessed),
+            (MetricNames.CommonTags.Collection, collectionName));
+        metrics.RecordValue(MetricNames.File, downloadMs,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.FileS3Download),
+            (MetricNames.CommonTags.Collection, collectionName));
+        metrics.RecordValue(MetricNames.File, mongoMs,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.FileMongoIngestion),
+            (MetricNames.CommonTags.Collection, collectionName));
+        metrics.RecordValue(MetricNames.File, fileMetrics.AverageMongoIngestionMs,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.FileAvgRecordProcessing),
+            (MetricNames.CommonTags.Collection, collectionName));
+
+        if (overallMs > 0)
+        {
+            var s3Ratio = (double)downloadMs / overallMs;
+            var mongoRatio = (double)mongoMs / overallMs;
+
+            metrics.RecordValue(MetricNames.File, s3Ratio,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileS3Ratio),
+                (MetricNames.CommonTags.Collection, collectionName));
+            metrics.RecordValue(MetricNames.File, mongoRatio,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.FileMongoRatio),
+                (MetricNames.CommonTags.Collection, collectionName));
+        }
+    }
+
+    private void CleanupTempFile(string? tempFilePath)
+    {
+        if (tempFilePath != null && File.Exists(tempFilePath))
+        {
+            try
+            {
+                File.Delete(tempFilePath);
+                Debug.WriteLine($"[keepetl] Deleted temp file: {tempFilePath}");
+                logger.LogDebug("Deleted temp file: {TempPath}", tempFilePath);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[keepetl] Failed to delete temp file: {tempFilePath} - Error: {ex.Message}");
+                logger.LogWarning(ex, "Failed to delete temp file: {TempPath}", tempFilePath);
+            }
+        }
+    }
+
+    private async Task UpdateReportWithFileProgressAsync(ImportReport report, IngestionCurrentFileStatus status,
+        IngestionTotals totals, FileMetricsTracker fileMetrics, CancellationToken ct)
+    {
+        report.IngestionPhase!.RecordsCreated = totals.RecordsCreated + fileMetrics.RecordsCreated;
+        report.IngestionPhase!.RecordsUpdated = totals.RecordsUpdated + fileMetrics.RecordsUpdated;
+        report.IngestionPhase!.RecordsDeleted = totals.RecordsDeleted + fileMetrics.RecordsDeleted;
+        report.IngestionPhase!.CurrentFileStatus = new IngestionCurrentFileStatus
+        {
+            FileName = status.FileName,
+            TotalRows = status.TotalRows,
+            RowNumber = status.RowNumber,
+            PercentageCompleted = status.PercentageCompleted,
+            RowsPerMinute = status.RowsPerMinute,
+            EstimatedTimeRemaining = status.EstimatedTimeRemaining,
+            EstimatedCompletionUtc = status.EstimatedCompletionUtc
+        };
+        await reportingService.UpsertImportReportAsync(report, ct);
+    }
+
+    private void RecordBatchCompletionMetrics(long elapsedMs, int batchCount,
+        int insertOps, int updateOps, int deleteOps, string collectionName)
+    {
+        metrics.RecordValue(MetricNames.Batch, elapsedMs,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchDuration),
+            ("batch_size", batchCount.ToString()),
+            (MetricNames.CommonTags.Collection, collectionName));
+
+        if (elapsedMs > 0)
+        {
+            var recordsPerSecond = (batchCount * 1000.0) / elapsedMs;
+            metrics.RecordValue(MetricNames.Batch, recordsPerSecond,
+                (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchRecordsPerSecond),
+                (MetricNames.CommonTags.Collection, collectionName));
+        }
+
+        metrics.RecordCount(MetricNames.Batch, insertOps,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchInserts),
+            (MetricNames.CommonTags.Collection, collectionName));
+        metrics.RecordCount(MetricNames.Batch, updateOps,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchUpdates),
+            (MetricNames.CommonTags.Collection, collectionName));
+        metrics.RecordCount(MetricNames.Batch, deleteOps,
+            (MetricNames.CommonTags.Operation, MetricNames.Operations.BatchDeletes),
+            (MetricNames.CommonTags.Collection, collectionName));
+
+        metrics.RecordRequest(MetricNames.Batch, "completed");
+    }
+
+    private UpdateDefinition<BsonDocument> BuildUpsertUpdateDefinition(BsonDocument document, DataSetDefinition definition)
+    {
+        var update = Builders<BsonDocument>.Update
+            .SetOnInsert(FieldCreatedAtUtc, document[FieldCreatedAtUtc])
+            .Set(FieldUpdatedAtUtc, document[FieldUpdatedAtUtc])
+            .Set(FieldIsDeleted, false)
+            .Unset(FieldDeletedAtUtc);
+
+        var accumulatorSet = new HashSet<string>(definition.Accumulators ?? []);
+
+        foreach (var element in document.Elements)
+        {
+            if (element.Name == FieldId || element.Name == FieldCreatedAtUtc ||
+                element.Name == FieldUpdatedAtUtc || element.Name == FieldIsDeleted)
+            {
+                continue;
+            }
+
+            if (accumulatorSet.Contains(element.Name))
+            {
+                update = ApplyAccumulatorField(update, element);
+            }
+            else
+            {
+                update = update.Set(element.Name, element.Value);
+            }
+        }
+
+        return update;
+    }
+
+    private static UpdateDefinition<BsonDocument> ApplyAccumulatorField(
+        UpdateDefinition<BsonDocument> update, BsonElement element)
+    {
+        if (element.Value.IsBsonArray)
+        {
+            var arrayValue = element.Value.AsBsonArray;
+
+            if (arrayValue.Count == 0)
+            {
+                return update.SetOnInsert(element.Name, new BsonArray());
+            }
+
+            foreach (var item in arrayValue)
+            {
+                if (item != BsonNull.Value && !string.IsNullOrEmpty(item.ToString()))
+                {
+                    update = update.AddToSet(element.Name, item);
+                }
+            }
+
+            return update;
+        }
+
+        if (element.Value != BsonNull.Value && !string.IsNullOrEmpty(element.Value.ToString()))
+        {
+            return update.AddToSet(element.Name, element.Value);
+        }
+
+        return update;
+    }
+
+    private RecordEventType DetermineUpsertEventType(bool isSoftDeleted, bool isCreate, BsonValue docId, string fileKey)
+    {
+        if (isSoftDeleted)
+        {
+            Debug.WriteLine($"[keepetl] Undeleting soft-deleted record with _id: {docId} in file {fileKey}");
+            logger.LogInformation("Undeleting soft-deleted record with _id: {DocId} in file {FileKey}", docId, fileKey);
+            return RecordEventType.Undeleted;
+        }
+
+        return isCreate ? RecordEventType.Created : RecordEventType.Updated;
     }
 
     // Helper records and classes for internal state management

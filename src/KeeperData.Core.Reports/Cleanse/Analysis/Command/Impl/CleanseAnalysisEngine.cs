@@ -6,16 +6,17 @@ using KeeperData.Core.Reports.Issues.Command.Requests;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
+using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
 
-public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueCommandService issueCommandService) 
-    : CleanseAnalysisEngineBase(dataService, issueCommandService), ICleanseAnalysisEngine
+public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueCommandService issueCommandService, ILogger<CleanseAnalysisEngine> logger) 
+    : CleanseAnalysisEngineBase(dataService, issueCommandService, logger), ICleanseAnalysisEngine
 {
     private readonly RecordIdGenerator _recordIdGenerator = new();
     private readonly ICtsSamQueryService _dataService = dataService;
 
-    private const int ThrottleDelayMs = 100;
+    private const int ThrottleDelayMs = 50;
 
     private async Task ProcessCtsPrimaryRecordInternalAsync(LidFullIdentifier lidFullIdentifier, string operationId, AnalysisMetrics metrics, CancellationToken ct)
     {
@@ -146,8 +147,15 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
     {
         var results = new List<RuleResult>();
 
-        // get the CTS CPH Holding...
-        var ctsCphHolding = await _dataService.GetCtsCphHoldingAsync(cph, ct);
+        // Resolve CPH to full LID_FULL_IDENTIFIER via the in-memory lookup
+        // so we can query by equals instead of a regex endswith on MongoDB.
+        CtsCphHoldingModel? ctsCphHolding = null;
+        if (CphToLidLookup.TryGetValue(cph.Value, out var lidValue))
+        {
+            var lid = LidFullIdentifier.Parse(lidValue);
+            ctsCphHolding = await _dataService.GetCtsCphHoldingAsync(lid, ct);
+        }
+
         if (ctsCphHolding is null) // does not exist
         {
             results.Add(RuleResult.Issue(RuleDescriptors.SamCphNotInCts, cph)); // PRIORITY 1B: RULE 2B - CPH present in SAM but missing in CTS

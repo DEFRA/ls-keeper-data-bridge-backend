@@ -6,6 +6,7 @@ using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Command;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.Repositories;
+using KeeperData.Core.Reports.Cleanse.Operations.Index;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Initialisation;
@@ -51,8 +52,10 @@ public static class ServiceCollectionExtensions
         // Register query services
         services.AddScoped<IIssueQueries, IssueQueries>();
 
-        // Register index manager and initialisation
+        // Register index managers and initialisation
         services.AddSingleton<IIssueIndexManager, IssueIndexManager>();
+        services.AddSingleton<IIssueHistoryIndexManager, IssueHistoryIndexManager>();
+        services.AddSingleton<ICleanseOperationsIndexManager, CleanseOperationsIndexManager>();
         services.AddSingleton<ICleanseReportInitialisation, CleanseReportInitialisation>();
 
         // Register query services for CTS/SAM data

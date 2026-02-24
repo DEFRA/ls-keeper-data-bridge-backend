@@ -76,7 +76,8 @@ namespace KeeperData.Bridge.Setup
 
         private static void ConfigureHealthChecks(this IServiceCollection services)
         {
-            services.AddHealthChecks();
+            services.AddHealthChecks()
+                .AddCheck<QuartzJobsHealthCheck>("quartz_jobs", tags: ["quartz", "jobs"]);
             services.AddSingleton<IHealthCheckPublisher, HealthCheckMetricsPublisher>();
         }
 

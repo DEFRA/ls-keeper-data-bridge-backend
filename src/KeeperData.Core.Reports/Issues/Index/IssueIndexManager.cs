@@ -52,6 +52,7 @@ public class IssueIndexManager : IIssueIndexManager
 
             await CreateExportSortIndexAsync(cancellationToken);
             await CreateActiveIssueCodeIndexAsync(cancellationToken);
+            await CreateDeactivateStaleIndexAsync(cancellationToken);
             await CreateCphIndexAsync(cancellationToken);
             await CreateCtsLidFullIdentifierIndexAsync(cancellationToken);
             await CreateRuleCodeIndexAsync(cancellationToken);
@@ -117,6 +118,28 @@ public class IssueIndexManager : IIssueIndexManager
 
         await _collection.Indexes.CreateOneAsync(indexModel, cancellationToken: cancellationToken);
         _logger.LogDebug("Created active issue code index on (is_active, issue_code)");
+    }
+
+    /// <summary>
+    /// Compound index for stale issue deactivation after analysis completes.
+    /// Query pattern: WHERE is_active = true AND operation_id != X
+    /// </summary>
+    private async Task CreateDeactivateStaleIndexAsync(CancellationToken cancellationToken)
+    {
+        var indexKeys = Builders<IssueDocument>.IndexKeys
+            .Ascending(d => d.IsActive)
+            .Ascending(d => d.OperationId);
+
+        var indexModel = new CreateIndexModel<IssueDocument>(
+            indexKeys,
+            new CreateIndexOptions
+            {
+                Name = "idx_issues_active_operationid",
+                Background = true
+            });
+
+        await _collection.Indexes.CreateOneAsync(indexModel, cancellationToken: cancellationToken);
+        _logger.LogDebug("Created deactivate-stale index on (is_active, operation_id)");
     }
 
     /// <summary>

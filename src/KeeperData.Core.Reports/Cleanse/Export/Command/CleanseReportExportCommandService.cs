@@ -32,6 +32,7 @@ public class CleanseReportExportCommandService(
 {
     private const string CsvFileName = "cleanse-report.csv";
     private const int StreamBatchSize = 1000;
+    private const int ThrottlingDelayMs = 100; 
 
     /// <summary>
     /// Rule priority order for CSV export grouping.
@@ -231,6 +232,8 @@ public class CleanseReportExportCommandService(
                 await csv.FlushAsync();
                 logger.LogDebug("Streamed {RecordCount} records to CSV...", recordCount);
             }
+
+            await Task.Delay(ThrottlingDelayMs, ct);
         }
 
         await csv.FlushAsync();

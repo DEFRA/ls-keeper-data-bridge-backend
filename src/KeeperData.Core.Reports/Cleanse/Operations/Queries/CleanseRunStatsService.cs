@@ -9,7 +9,7 @@ namespace KeeperData.Core.Reports.Cleanse.Operations.Queries;
 /// Singleton service that tracks in-memory sliding-window snapshots for computing live RPM
 /// and projected end times during cleanse analysis operations.
 /// </summary>
-public sealed class CleanseRunStatsService(IThrottler throttler) : ICleanseRunStatsService
+public sealed class CleanseRunStatsService(IThrottler throttler, TimeProvider timeProvider) : ICleanseRunStatsService
 {
     private readonly record struct Snapshot(DateTime TimestampUtc, int RecordsAnalyzed);
 
@@ -19,7 +19,7 @@ public sealed class CleanseRunStatsService(IThrottler throttler) : ICleanseRunSt
     public void RecordSnapshot(string operationId, int recordsAnalyzed)
     {
         var queue = _snapshots.GetOrAdd(operationId, _ => new ConcurrentQueue<Snapshot>());
-        queue.Enqueue(new Snapshot(DateTime.UtcNow, recordsAnalyzed));
+        queue.Enqueue(new Snapshot(timeProvider.GetUtcNow().UtcDateTime, recordsAnalyzed));
 
         PruneOldSnapshots(queue, throttler.Settings.CleanseAnalysis.RpmWindowSeconds);
     }
@@ -28,7 +28,7 @@ public sealed class CleanseRunStatsService(IThrottler throttler) : ICleanseRunSt
     public CleanseRunStatsDto? CalculateStats(string operationId, int recordsAnalyzed, int totalRecords, DateTime startedAtUtc)
     {
         var settings = throttler.Settings.CleanseAnalysis;
-        var now = DateTime.UtcNow;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
         var elapsedMinutes = (now - startedAtUtc).TotalMinutes;
 
         var averageRpm = elapsedMinutes > 0
@@ -85,9 +85,9 @@ public sealed class CleanseRunStatsService(IThrottler throttler) : ICleanseRunSt
         return Math.Round(recordsDelta / windowMinutes, 2);
     }
 
-    private static void PruneOldSnapshots(ConcurrentQueue<Snapshot> queue, int windowSeconds)
+    private void PruneOldSnapshots(ConcurrentQueue<Snapshot> queue, int windowSeconds)
     {
-        var cutoff = DateTime.UtcNow.AddSeconds(-windowSeconds);
+        var cutoff = timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-windowSeconds);
         while (queue.TryPeek(out var oldest) && oldest.TimestampUtc < cutoff)
         {
             queue.TryDequeue(out _);

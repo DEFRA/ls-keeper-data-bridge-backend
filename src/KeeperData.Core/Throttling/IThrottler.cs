@@ -10,5 +10,7 @@ namespace KeeperData.Core.Throttling;
 public interface IThrottler
 {
     ThrottlePolicySettings Settings { get; }
+    string ActivePolicyName { get; }
+    string ActivePolicySlug { get; }
     Task DelayAsync(int milliseconds, CancellationToken ct);
 }

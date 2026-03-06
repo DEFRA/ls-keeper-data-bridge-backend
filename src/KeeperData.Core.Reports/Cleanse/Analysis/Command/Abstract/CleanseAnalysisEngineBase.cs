@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
+using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
@@ -10,12 +11,13 @@ using Microsoft.Extensions.Logging;
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 
 public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService, IIssueCommandService issueCommandService,
-    IThrottler throttler, ILogger logger)
+    IThrottler throttler, ICleanseRunStatsService runStatsService, ILogger logger)
 {
     private const string DateTimeFormat = "yyyy-MM-dd HH:mm:ss";
 
     protected IIssueCommandService IssueCommandService { get; } = issueCommandService;
     protected IThrottler Throttler { get; } = throttler;
+    protected ICleanseRunStatsService RunStatsService { get; } = runStatsService;
 
     /// <summary>
     /// In-memory lookup mapping CPH values to their full LID_FULL_IDENTIFIER strings.
@@ -61,6 +63,8 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
 
             skip += batch.Data.Count;
             context.Metrics.RecordsAnalyzed = skip;
+
+            RunStatsService.RecordSnapshot(context.OperationId, context.Metrics.RecordsAnalyzed);
 
             if (context.Metrics.RecordsAnalyzed % settings.ProgressUpdateInterval == 0)
             {

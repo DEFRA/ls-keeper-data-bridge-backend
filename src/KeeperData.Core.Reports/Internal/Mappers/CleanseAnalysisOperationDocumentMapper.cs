@@ -27,7 +27,8 @@ internal static class CleanseAnalysisOperationDocumentMapper
         Error = operation.Error,
         DurationMs = operation.DurationMs,
         ReportObjectKey = operation.ReportObjectKey,
-        ReportUrl = operation.ReportUrl
+        ReportUrl = operation.ReportUrl,
+        FinalAverageRpm = operation.FinalAverageRpm
     };
 
     public static CleanseAnalysisOperation ToAggregateRoot(this CleanseAnalysisOperationDocument doc) => new()
@@ -45,7 +46,8 @@ internal static class CleanseAnalysisOperationDocumentMapper
         Error = doc.Error,
         DurationMs = doc.DurationMs,
         ReportObjectKey = doc.ReportObjectKey,
-        ReportUrl = doc.ReportUrl
+        ReportUrl = doc.ReportUrl,
+        FinalAverageRpm = doc.FinalAverageRpm
     };
 
     public static CleanseAnalysisOperationDto ToDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -63,7 +65,8 @@ internal static class CleanseAnalysisOperationDocumentMapper
         Error = doc.Error,
         DurationMs = doc.DurationMs,
         ReportObjectKey = doc.ReportObjectKey,
-        ReportUrl = doc.ReportUrl
+        ReportUrl = doc.ReportUrl,
+        FinalAverageRpm = doc.FinalAverageRpm
     };
 
     public static CleanseAnalysisOperationSummaryDto ToSummaryDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -78,6 +81,7 @@ internal static class CleanseAnalysisOperationDocumentMapper
         IssuesResolved = doc.IssuesResolved,
         DurationMs = doc.DurationMs,
         ReportObjectKey = doc.ReportObjectKey,
-        ReportUrl = doc.ReportUrl
+        ReportUrl = doc.ReportUrl,
+        FinalAverageRpm = doc.FinalAverageRpm
     };
 }

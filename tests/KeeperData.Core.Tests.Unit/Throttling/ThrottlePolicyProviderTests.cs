@@ -14,6 +14,7 @@ public class ThrottlePolicyProviderTests
 
         sut.Current.Should().Be(ThrottlePolicyDefaults.NormalPolicy.Settings);
         sut.ActivePolicyName.Should().Be(ThrottlePolicyDefaults.NormalName);
+        sut.ActivePolicySlug.Should().Be(ThrottlePolicyDefaults.NormalSlug);
     }
 
     [Fact]
@@ -35,6 +36,7 @@ public class ThrottlePolicyProviderTests
 
         sut.Current.Ingestion.BatchSize.Should().Be(999);
         sut.ActivePolicyName.Should().Be("Test");
+        sut.ActivePolicySlug.Should().Be("test");
     }
 
     [Fact]
@@ -50,6 +52,7 @@ public class ThrottlePolicyProviderTests
         sut.Refresh(null);
 
         sut.ActivePolicyName.Should().Be(ThrottlePolicyDefaults.NormalName);
+        sut.ActivePolicySlug.Should().Be(ThrottlePolicyDefaults.NormalSlug);
         sut.Current.Ingestion.BatchSize.Should().Be(ThrottlePolicyDefaults.NormalPolicy.Settings.Ingestion.BatchSize);
     }
 }

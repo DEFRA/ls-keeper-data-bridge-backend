@@ -7,6 +7,7 @@ public sealed class TestThrottlePolicyProvider : IThrottlePolicyProvider
 {
     public ThrottlePolicySettings Current { get; set; } = UnitTestSettings;
     public string ActivePolicyName { get; set; } = "UnitTest";
+    public string ActivePolicySlug { get; set; } = "unit-test";
 
     public void Refresh(ThrottlePolicy? activePolicy)
     {
@@ -14,6 +15,7 @@ public sealed class TestThrottlePolicyProvider : IThrottlePolicyProvider
         {
             Current = activePolicy.Settings;
             ActivePolicyName = activePolicy.Name;
+            ActivePolicySlug = activePolicy.Slug;
         }
     }
 

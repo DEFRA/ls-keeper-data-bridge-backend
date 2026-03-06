@@ -2,6 +2,7 @@ using FluentAssertions;
 using KeeperData.Core.Querying.Models;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
+using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
@@ -14,11 +15,13 @@ namespace KeeperData.Core.Tests.Unit.CleanseReporting.Cleanse.Analysis.Command.A
 
 public class CleanseAnalysisEngineBaseTests
 {
+    private readonly Mock<ICleanseRunStatsService> _runStatsServiceMock = new();
+
     /// <summary>
     /// Concrete test subclass to expose protected static members.
     /// </summary>
-    private sealed class TestableEngine(ICtsSamQueryService ds, IIssueCommandService ics)
-        : CleanseAnalysisEngineBase(ds, ics, new FakeThrottler(), NullLogger.Instance)
+    private sealed class TestableEngine(ICtsSamQueryService ds, IIssueCommandService ics, ICleanseRunStatsService rss)
+        : CleanseAnalysisEngineBase(ds, ics, new FakeThrottler(), rss, NullLogger.Instance)
     {
         public readonly List<(string Id, string OperationId)> CtsRecords = [];
         public readonly List<(string Id, string OperationId)> SamRecords = [];
@@ -48,7 +51,7 @@ public class CleanseAnalysisEngineBaseTests
     private readonly Mock<ICtsSamQueryService> _dataServiceMock = new();
     private readonly Mock<IIssueCommandService> _issueServiceMock = new();
 
-    private TestableEngine CreateEngine() => new(_dataServiceMock.Object, _issueServiceMock.Object);
+    private TestableEngine CreateEngine() => new(_dataServiceMock.Object, _issueServiceMock.Object, _runStatsServiceMock.Object);
 
     #region IsCtsCphHoldingRecordActive
 

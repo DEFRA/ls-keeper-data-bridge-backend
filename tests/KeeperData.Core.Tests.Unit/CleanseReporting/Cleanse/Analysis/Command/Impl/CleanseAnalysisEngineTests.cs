@@ -2,6 +2,7 @@ using FluentAssertions;
 using KeeperData.Core.Querying.Models;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
+using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
@@ -18,6 +19,7 @@ public class CleanseAnalysisEngineTests
 {
     private readonly Mock<ICtsSamQueryService> _dataServiceMock = new();
     private readonly Mock<IIssueCommandService> _issueServiceMock = new();
+    private readonly Mock<ICleanseRunStatsService> _runStatsServiceMock = new();
     private readonly CleanseAnalysisEngine _sut;
 
     private const string OperationId = "op-1";
@@ -25,7 +27,7 @@ public class CleanseAnalysisEngineTests
     public CleanseAnalysisEngineTests()
     {
         _sut = new CleanseAnalysisEngine(_dataServiceMock.Object, _issueServiceMock.Object,
-            new FakeThrottler(), NullLogger<CleanseAnalysisEngine>.Instance);
+            new FakeThrottler(), _runStatsServiceMock.Object, NullLogger<CleanseAnalysisEngine>.Instance);
         _issueServiceMock.Setup(s => s.RecordIssueAsync(It.IsAny<RecordIssueCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(IssueRecordResult.Created);
     }

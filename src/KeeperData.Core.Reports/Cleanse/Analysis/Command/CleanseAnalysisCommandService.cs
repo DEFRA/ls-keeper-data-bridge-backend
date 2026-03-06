@@ -48,13 +48,14 @@ public class CleanseAnalysisCommandService(
 
         var operation = await CreateOperationAsync(ct);
 
-        // Use a long-running thread to avoid thread pool starvation
+        // Use a long-running thread to avoid thread pool starvation.
+        // Do not capture the request-scoped ct here; it will be cancelled when the HTTP request completes.
         _ = Task.Factory.StartNew(
             async () =>
             {
                 try
                 {
-                    await RunAnalysisWithLockAsync(operation, lockHandle, ct);
+                    await RunAnalysisWithLockAsync(operation, lockHandle, CancellationToken.None);
                 }
                 catch (OperationCanceledException)
                 {

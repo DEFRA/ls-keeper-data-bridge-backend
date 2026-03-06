@@ -617,6 +617,7 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
         // Throttle policy dependencies (test-optimized: no delays, large batches)
         services.AddSingleton<KeeperData.Core.Throttling.Abstract.IThrottlePolicyProvider, TestThrottlePolicyProvider>();
         services.AddSingleton<KeeperData.Core.Throttling.IThrottleDelay, FakeThrottleDelay>();
+        services.AddSingleton<KeeperData.Core.Throttling.IThrottler, FakeThrottler>();
 
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddScoped<IIngestionPipeline, IngestionPipeline>();

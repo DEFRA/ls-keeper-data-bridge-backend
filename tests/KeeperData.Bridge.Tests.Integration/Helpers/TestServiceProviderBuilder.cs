@@ -129,6 +129,7 @@ public static class TestServiceProviderBuilder
         // Register throttle policy dependencies (test-optimized: no delays, large batches)
         services.AddSingleton<IThrottlePolicyProvider, TestThrottlePolicyProvider>();
         services.AddSingleton<IThrottleDelay, FakeThrottleDelay>();
+        services.AddSingleton<IThrottler, FakeThrottler>();
 
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddScoped<IIngestionPipeline, IngestionPipeline>();

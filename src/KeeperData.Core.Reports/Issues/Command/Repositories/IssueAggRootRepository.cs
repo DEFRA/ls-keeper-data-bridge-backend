@@ -6,7 +6,6 @@ using KeeperData.Core.Reports.Internal.Mappers;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
 using KeeperData.Core.Throttling;
-using KeeperData.Core.Throttling.Abstract;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 
@@ -17,7 +16,7 @@ namespace KeeperData.Core.Reports.Issues.Command.Repositories;
 /// </summary>
 [ExcludeFromCodeCoverage(Justification = "MongoDB repository - covered by integration tests.")]
 public class IssueAggRootRepository(IssueCollection issueCollection,
-    IThrottlePolicyProvider policyProvider, IThrottleDelay throttleDelay,
+    IThrottler throttler,
     ILogger<IssueAggRootRepository> logger) : IIssueAggRootRepository
 {
     private readonly IMongoCollection<IssueDocument> _collection = issueCollection.Collection;
@@ -49,7 +48,7 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
 
         while (!ct.IsCancellationRequested)
         {
-            var settings = policyProvider.Current.IssueDeactivation;
+            var settings = throttler.Settings.IssueDeactivation;
 
             // Find a batch of stale document IDs (lightweight read, _id only)
             var staleIds = await _collection
@@ -77,7 +76,7 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
                 break;
             }
 
-            await throttleDelay.DelayAsync(settings.ThrottleDelayMs, ct);
+            await throttler.DelayAsync(settings.ThrottleDelayMs, ct);
         }
 
         stopwatch.Stop();

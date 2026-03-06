@@ -5,19 +5,17 @@ using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 using KeeperData.Core.Throttling;
-using KeeperData.Core.Throttling.Abstract;
 using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 
 public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService, IIssueCommandService issueCommandService,
-    IThrottlePolicyProvider policyProvider, IThrottleDelay throttleDelay, ILogger logger)
+    IThrottler throttler, ILogger logger)
 {
     private const string DateTimeFormat = "yyyy-MM-dd HH:mm:ss";
 
     protected IIssueCommandService IssueCommandService { get; } = issueCommandService;
-    protected IThrottlePolicyProvider PolicyProvider { get; } = policyProvider;
-    protected IThrottleDelay ThrottleDelay { get; } = throttleDelay;
+    protected IThrottler Throttler { get; } = throttler;
 
     /// <summary>
     /// In-memory lookup mapping CPH values to their full LID_FULL_IDENTIFIER strings.
@@ -51,7 +49,7 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
         var skip = 0;
         while (!ct.IsCancellationRequested)
         {
-            var settings = PolicyProvider.Current.CleanseAnalysis;
+            var settings = Throttler.Settings.CleanseAnalysis;
             var batch = await context.Fetcher(skip, settings.PumpBatchSize, ct);
 
             if (batch.Data.Count == 0)
@@ -69,7 +67,7 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
                 await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
             }
 
-            await ThrottleDelay.DelayAsync(settings.PumpDelayMs, ct);
+            await Throttler.DelayAsync(settings.PumpDelayMs, ct);
         }
     }
 
@@ -146,7 +144,7 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
 
         while (!ct.IsCancellationRequested)
         {
-            var settings = PolicyProvider.Current.CleanseAnalysis;
+            var settings = Throttler.Settings.CleanseAnalysis;
             var batch = await dataService.ListCtsCphHoldingsAsync(skip, settings.PumpBatchSize, ct);
 
             if (batch.Data.Count == 0)
@@ -164,7 +162,7 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
             }
 
             skip += batch.Data.Count;
-            await ThrottleDelay.DelayAsync(settings.PumpDelayMs, ct);
+            await Throttler.DelayAsync(settings.PumpDelayMs, ct);
         }
 
         stopwatch.Stop();

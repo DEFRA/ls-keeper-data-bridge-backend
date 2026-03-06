@@ -7,14 +7,13 @@ using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 using KeeperData.Core.Throttling;
-using KeeperData.Core.Throttling.Abstract;
 using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
 
 public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueCommandService issueCommandService,
-    IThrottlePolicyProvider policyProvider, IThrottleDelay throttleDelay, ILogger<CleanseAnalysisEngine> logger) 
-    : CleanseAnalysisEngineBase(dataService, issueCommandService, policyProvider, throttleDelay, logger), ICleanseAnalysisEngine
+    IThrottler throttler, ILogger<CleanseAnalysisEngine> logger) 
+    : CleanseAnalysisEngineBase(dataService, issueCommandService, throttler, logger), ICleanseAnalysisEngine
 {
     private readonly RecordIdGenerator _recordIdGenerator = new();
     private readonly ICtsSamQueryService _dataService = dataService;
@@ -207,7 +206,7 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
                 metrics.IssuesFound++;
             }
 
-            await ThrottleDelay.DelayAsync(PolicyProvider.Current.CleanseAnalysis.RecordIssueDelayMs, ct);
+            await Throttler.DelayAsync(Throttler.Settings.CleanseAnalysis.RecordIssueDelayMs, ct);
         }
     }
 

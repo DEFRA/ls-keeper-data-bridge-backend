@@ -91,8 +91,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             csvRowCounterMock.Object,
             resilientMongoOpsMock.Object,
             coreApplicationMetricsMock.Object,
-            new TestThrottlePolicyProvider(),
-            new FakeThrottleDelay(),
+            new FakeThrottler(),
             _loggerMock.Object);
     }
 

@@ -1,6 +1,7 @@
 using KeeperData.Core.Exceptions;
 using KeeperData.Core.Throttling.Abstract;
 using KeeperData.Core.Throttling.Commands;
+using KeeperData.Core.Throttling.Models;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics.CodeAnalysis;
 
@@ -15,7 +16,7 @@ public class ThrottlePoliciesController(
     ILogger<ThrottlePoliciesController> logger) : ControllerBase
 {
     [HttpGet]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<IReadOnlyList<ThrottlePolicy>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
         var policies = await queryService.GetAllAsync(ct);
@@ -23,7 +24,7 @@ public class ThrottlePoliciesController(
     }
 
     [HttpGet("active")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ThrottlePolicy>(StatusCodes.Status200OK)]
     public IActionResult GetActive()
     {
         var policy = queryService.GetActive();
@@ -31,7 +32,7 @@ public class ThrottlePoliciesController(
     }
 
     [HttpGet("{slug}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ThrottlePolicy>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetBySlug(string slug, CancellationToken ct)
     {
@@ -40,7 +41,7 @@ public class ThrottlePoliciesController(
     }
 
     [HttpPost]
-    [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType<ThrottlePolicy>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create([FromBody] CreateThrottlePolicyCommand command, CancellationToken ct)
@@ -58,7 +59,7 @@ public class ThrottlePoliciesController(
     }
 
     [HttpPut("{slug}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ThrottlePolicy>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(string slug, [FromBody] UpdateThrottlePolicyCommand command, CancellationToken ct)
@@ -107,7 +108,7 @@ public class ThrottlePoliciesController(
     }
 
     [HttpPost("{slug}/activate")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ThrottlePolicy>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Activate(string slug, CancellationToken ct)

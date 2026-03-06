@@ -380,6 +380,7 @@ public class PerformanceTests : IAsyncLifetime
         services.AddSingleton<KeeperData.Core.Throttling.Abstract.IThrottlePolicyProvider>(
             new KeeperData.Core.Throttling.Impl.ThrottlePolicyProvider());
         services.AddSingleton<KeeperData.Core.Throttling.IThrottleDelay, KeeperData.Core.Throttling.ThrottleDelay>();
+        services.AddSingleton<KeeperData.Core.Throttling.IThrottler, KeeperData.Core.Throttling.Impl.Throttler>();
 
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddScoped<IIngestionPipeline, IngestionPipeline>();

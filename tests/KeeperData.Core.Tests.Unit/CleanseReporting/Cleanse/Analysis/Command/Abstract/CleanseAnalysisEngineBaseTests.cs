@@ -18,7 +18,7 @@ public class CleanseAnalysisEngineBaseTests
     /// Concrete test subclass to expose protected static members.
     /// </summary>
     private sealed class TestableEngine(ICtsSamQueryService ds, IIssueCommandService ics)
-        : CleanseAnalysisEngineBase(ds, ics, new TestThrottlePolicyProvider(), new FakeThrottleDelay(), NullLogger.Instance)
+        : CleanseAnalysisEngineBase(ds, ics, new FakeThrottler(), NullLogger.Instance)
     {
         public readonly List<(string Id, string OperationId)> CtsRecords = [];
         public readonly List<(string Id, string OperationId)> SamRecords = [];

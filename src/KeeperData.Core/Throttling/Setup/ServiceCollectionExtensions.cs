@@ -22,6 +22,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IThrottlePolicyCommandService, ThrottlePolicyCommandService>();
 
         services.AddSingleton<IThrottleDelay, ThrottleDelay>();
+        services.AddSingleton<IThrottler, Throttler>();
 
         services.AddHostedService<ThrottlePolicySeedService>();
         services.AddHostedService<ThrottlePolicyPollingService>();

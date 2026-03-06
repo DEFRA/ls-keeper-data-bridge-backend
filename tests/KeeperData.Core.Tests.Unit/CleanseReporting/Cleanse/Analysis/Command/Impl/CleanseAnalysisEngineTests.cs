@@ -25,7 +25,7 @@ public class CleanseAnalysisEngineTests
     public CleanseAnalysisEngineTests()
     {
         _sut = new CleanseAnalysisEngine(_dataServiceMock.Object, _issueServiceMock.Object,
-            new TestThrottlePolicyProvider(), new FakeThrottleDelay(), NullLogger<CleanseAnalysisEngine>.Instance);
+            new FakeThrottler(), NullLogger<CleanseAnalysisEngine>.Instance);
         _issueServiceMock.Setup(s => s.RecordIssueAsync(It.IsAny<RecordIssueCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(IssueRecordResult.Created);
     }

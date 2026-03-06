@@ -13,7 +13,6 @@ using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Telemetry;
 using KeeperData.Core.Throttling;
-using KeeperData.Core.Throttling.Abstract;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
@@ -34,8 +33,7 @@ public class IngestionPipeline(
     CsvRowCounter csvRowCounter,
     ResilientMongoOperations resilientMongoOps,
     IApplicationMetrics metrics,
-    IThrottlePolicyProvider policyProvider,
-    IThrottleDelay throttleDelay,
+    IThrottler throttler,
     ILogger<IngestionPipeline> logger) : IIngestionPipeline
 {
 
@@ -491,7 +489,7 @@ public class IngestionPipeline(
             var document = CreateDocumentFromCsvRecord(csv, headers, definition);
             batch.Add((document, changeType));
 
-            var ingestionSettings = policyProvider.Current.Ingestion;
+            var ingestionSettings = throttler.Settings.Ingestion;
             if (batch.Count >= ingestionSettings.BatchSize)
             {
                 var batchStopwatch = Stopwatch.StartNew();
@@ -526,7 +524,7 @@ public class IngestionPipeline(
                 if (ingestionSettings.BatchDelayMs > 0)
                 {
                     Debug.WriteLine($"[keepetl] Throttling: waiting {ingestionSettings.BatchDelayMs}ms before next batch");
-                    await throttleDelay.DelayAsync(ingestionSettings.BatchDelayMs, ct);
+                    await throttler.DelayAsync(ingestionSettings.BatchDelayMs, ct);
                 }
 
                 Debug.WriteLine($"[keepetl] ");
@@ -609,7 +607,7 @@ public class IngestionPipeline(
 
     private void LogProgressIfNeeded(int recordsProcessed, string fileKey)
     {
-        var settings = policyProvider.Current.Ingestion;
+        var settings = throttler.Settings.Ingestion;
         if (recordsProcessed % (settings.LogInterval * settings.BatchSize) == 0 || recordsProcessed % settings.LogInterval == 0)
         {
             Debug.WriteLine($"[keepetl] Imported {recordsProcessed} records from file {fileKey}");

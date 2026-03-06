@@ -11,7 +11,6 @@ using KeeperData.Core.Reports.Issues.Query.Abstract;
 using KeeperData.Core.Reports.Issues.Query.Dtos;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Throttling;
-using KeeperData.Core.Throttling.Abstract;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -30,8 +29,7 @@ public class CleanseReportExportCommandService(
     ICleanseReportNotificationService notificationService,
     ICleanseOperationCommandService cleanseOperationCommands,
     ICleanseAnalysisOperationsQueries cleanseAnalysisOperationsQueries,
-    IThrottlePolicyProvider policyProvider,
-    IThrottleDelay throttleDelay,
+    IThrottler throttler,
     ILogger<CleanseReportExportCommandService> logger) : ICleanseReportExportCommandService
 {
     private const string CsvFileName = "cleanse-report.csv";
@@ -212,7 +210,7 @@ public class CleanseReportExportCommandService(
         var recordCount = 0;
 
         // Read batch size once to start the cursor; the cursor's batch size is fixed for its lifetime.
-        var initialBatchSize = policyProvider.Current.CleanseExport.StreamBatchSize;
+        var initialBatchSize = throttler.Settings.CleanseExport.StreamBatchSize;
 
         await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
         await using var writer = new StreamWriter(fileStream);
@@ -232,12 +230,12 @@ public class CleanseReportExportCommandService(
             recordCount++;
 
             // Periodic flush and throttle to avoid buffering and DB pressure — re-read settings each time
-            var exportSettings = policyProvider.Current.CleanseExport;
+            var exportSettings = throttler.Settings.CleanseExport;
             if (recordCount % exportSettings.StreamBatchSize == 0)
             {
                 await csv.FlushAsync();
                 logger.LogDebug("Streamed {RecordCount} records to CSV...", recordCount);
-                await throttleDelay.DelayAsync(exportSettings.ThrottlingDelayMs, ct);
+                await throttler.DelayAsync(exportSettings.ThrottlingDelayMs, ct);
             }
         }
 

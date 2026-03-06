@@ -13,6 +13,8 @@ using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Impl;
 using KeeperData.Core.Reporting.Services;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Throttling;
+using KeeperData.Core.Throttling.Abstract;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Database.Configuration;
 using KeeperData.Infrastructure.Storage;
@@ -123,6 +125,10 @@ public static class TestServiceProviderBuilder
         // Register Core telemetry interface for ETL pipelines
         services.AddSingleton<KeeperData.Core.Telemetry.IApplicationMetrics>(provider =>
             Mock.Of<KeeperData.Core.Telemetry.IApplicationMetrics>());
+
+        // Register throttle policy dependencies (test-optimized: no delays, large batches)
+        services.AddSingleton<IThrottlePolicyProvider, TestThrottlePolicyProvider>();
+        services.AddSingleton<IThrottleDelay, FakeThrottleDelay>();
 
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddScoped<IIngestionPipeline, IngestionPipeline>();

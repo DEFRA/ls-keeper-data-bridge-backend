@@ -613,6 +613,11 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
         services.AddTransient<CsvRowCounter>();
         services.AddTransient<IExternalCatalogueServiceFactory, ExternalCatalogueServiceFactory>();
         services.AddSingleton<KeeperData.Core.Telemetry.IApplicationMetrics>(Mock.Of<KeeperData.Core.Telemetry.IApplicationMetrics>());
+
+        // Throttle policy dependencies (test-optimized: no delays, large batches)
+        services.AddSingleton<KeeperData.Core.Throttling.Abstract.IThrottlePolicyProvider, TestThrottlePolicyProvider>();
+        services.AddSingleton<KeeperData.Core.Throttling.IThrottleDelay, FakeThrottleDelay>();
+
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddScoped<IIngestionPipeline, IngestionPipeline>();
         services.AddScoped<IImportOrchestrator, ImportOrchestrator>();

@@ -4,18 +4,20 @@ using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
+using KeeperData.Core.Throttling;
+using KeeperData.Core.Throttling.Abstract;
 using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 
-public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService, IIssueCommandService issueCommandService, ILogger logger)
+public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService, IIssueCommandService issueCommandService,
+    IThrottlePolicyProvider policyProvider, IThrottleDelay throttleDelay, ILogger logger)
 {
-    private const int ThrottlingPumpDelayMs = 150;
-    private const int BatchSize = 100;
-    private const int ProgressUpdateInterval = 100;
     private const string DateTimeFormat = "yyyy-MM-dd HH:mm:ss";
 
     protected IIssueCommandService IssueCommandService { get; } = issueCommandService;
+    protected IThrottlePolicyProvider PolicyProvider { get; } = policyProvider;
+    protected IThrottleDelay ThrottleDelay { get; } = throttleDelay;
 
     /// <summary>
     /// In-memory lookup mapping CPH values to their full LID_FULL_IDENTIFIER strings.
@@ -49,7 +51,8 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
         var skip = 0;
         while (!ct.IsCancellationRequested)
         {
-            var batch = await context.Fetcher(skip, BatchSize, ct);
+            var settings = PolicyProvider.Current.CleanseAnalysis;
+            var batch = await context.Fetcher(skip, settings.PumpBatchSize, ct);
 
             if (batch.Data.Count == 0)
             {
@@ -61,12 +64,12 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
             skip += batch.Data.Count;
             context.Metrics.RecordsAnalyzed = skip;
 
-            if (ShouldUpdateProgress(context.Metrics.RecordsAnalyzed))
+            if (context.Metrics.RecordsAnalyzed % settings.ProgressUpdateInterval == 0)
             {
                 await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
             }
 
-            await Task.Delay(ThrottlingPumpDelayMs, ct);
+            await ThrottleDelay.DelayAsync(settings.PumpDelayMs, ct);
         }
     }
 
@@ -143,7 +146,8 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
 
         while (!ct.IsCancellationRequested)
         {
-            var batch = await dataService.ListCtsCphHoldingsAsync(skip, BatchSize, ct);
+            var settings = PolicyProvider.Current.CleanseAnalysis;
+            var batch = await dataService.ListCtsCphHoldingsAsync(skip, settings.PumpBatchSize, ct);
 
             if (batch.Data.Count == 0)
             {
@@ -160,7 +164,7 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
             }
 
             skip += batch.Data.Count;
-            await Task.Delay(ThrottlingPumpDelayMs, ct);
+            await ThrottleDelay.DelayAsync(settings.PumpDelayMs, ct);
         }
 
         stopwatch.Stop();
@@ -170,6 +174,4 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
         return lookup;
     }
 
-    protected static bool ShouldUpdateProgress(int recordsAnalyzed)
-        => recordsAnalyzed % ProgressUpdateInterval == 0;
-}
+    }

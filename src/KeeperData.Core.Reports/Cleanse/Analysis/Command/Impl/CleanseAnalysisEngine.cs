@@ -6,17 +6,18 @@ using KeeperData.Core.Reports.Issues.Command.Requests;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
+using KeeperData.Core.Throttling;
+using KeeperData.Core.Throttling.Abstract;
 using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
 
-public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueCommandService issueCommandService, ILogger<CleanseAnalysisEngine> logger) 
-    : CleanseAnalysisEngineBase(dataService, issueCommandService, logger), ICleanseAnalysisEngine
+public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueCommandService issueCommandService,
+    IThrottlePolicyProvider policyProvider, IThrottleDelay throttleDelay, ILogger<CleanseAnalysisEngine> logger) 
+    : CleanseAnalysisEngineBase(dataService, issueCommandService, policyProvider, throttleDelay, logger), ICleanseAnalysisEngine
 {
     private readonly RecordIdGenerator _recordIdGenerator = new();
     private readonly ICtsSamQueryService _dataService = dataService;
-
-    private const int ThrottleDelayMs = 50;
 
     private async Task ProcessCtsPrimaryRecordInternalAsync(LidFullIdentifier lidFullIdentifier, string operationId, AnalysisMetrics metrics, CancellationToken ct)
     {
@@ -206,7 +207,7 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
                 metrics.IssuesFound++;
             }
 
-            await Task.Delay(ThrottleDelayMs, ct);
+            await ThrottleDelay.DelayAsync(PolicyProvider.Current.CleanseAnalysis.RecordIssueDelayMs, ct);
         }
     }
 

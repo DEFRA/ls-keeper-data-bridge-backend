@@ -90,6 +90,8 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                                    csvRowCounterMock.Object,
                                                    resilientMongoOpsMock.Object,
                                                    coreApplicationMetricsMock.Object,
+                                                   new TestThrottlePolicyProvider(),
+                                                   new FakeThrottleDelay(),
                                                    _loggerMock.Object);
     }
 
@@ -579,6 +581,8 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                                              new Mock<CsvRowCounter>(new Mock<ILogger<CsvRowCounter>>().Object).Object,
                                              resilientMongoOpsMock.Object,
                                              coreApplicationMetricsMock.Object,
+                                             new TestThrottlePolicyProvider(),
+                                             new FakeThrottleDelay(),
                                              _loggerMock.Object);
 
         var report = new ImportReport

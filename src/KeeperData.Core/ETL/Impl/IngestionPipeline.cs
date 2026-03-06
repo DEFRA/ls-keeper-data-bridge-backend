@@ -12,6 +12,8 @@ using KeeperData.Core.Reporting;
 using KeeperData.Core.Reporting.Dtos;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Telemetry;
+using KeeperData.Core.Throttling;
+using KeeperData.Core.Throttling.Abstract;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
@@ -32,12 +34,10 @@ public class IngestionPipeline(
     CsvRowCounter csvRowCounter,
     ResilientMongoOperations resilientMongoOps,
     IApplicationMetrics metrics,
+    IThrottlePolicyProvider policyProvider,
+    IThrottleDelay throttleDelay,
     ILogger<IngestionPipeline> logger) : IIngestionPipeline
 {
-    private const int BatchSize = 200;
-    private const int BatchDelayMs = 600;
-    private const int LogInterval = BatchSize;
-    private const int ProgressUpdateInterval = BatchSize;
 
     private readonly IDatabaseConfig _databaseConfig = databaseConfig.Value;
     private readonly CsvRowCounter _rowCounter = csvRowCounter;
@@ -491,10 +491,11 @@ public class IngestionPipeline(
             var document = CreateDocumentFromCsvRecord(csv, headers, definition);
             batch.Add((document, changeType));
 
-            if (batch.Count >= BatchSize)
+            var ingestionSettings = policyProvider.Current.Ingestion;
+            if (batch.Count >= ingestionSettings.BatchSize)
             {
                 var batchStopwatch = Stopwatch.StartNew();
-                Debug.WriteLine($"[keepetl] -- NEW BATCH (size:{BatchSize}) --");
+                Debug.WriteLine($"[keepetl] -- NEW BATCH (size:{ingestionSettings.BatchSize}) --");
                 Debug.WriteLine($"[keepetl] Processing batch of {batch.Count} documents for collection {collectionName}");
 
                 var batchMetrics = await ProcessBatchAsync(importId, collection, batch, fileKey, collectionName, definition, lineageEvents, ct);
@@ -519,13 +520,13 @@ public class IngestionPipeline(
                 batchStopwatch.Stop();
                 totalMongoProcessingMs += batchStopwatch.ElapsedMilliseconds;
 
-                Debug.WriteLine($"[keepetl] Processed batch of {BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {fileMetrics.RecordsProcessed}, Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}");
+                Debug.WriteLine($"[keepetl] Processed batch of {ingestionSettings.BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {fileMetrics.RecordsProcessed}, Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}");
                 Debug.WriteLine($"[keepetl] -- END BATCH ({batchStopwatch.Elapsed.TotalSeconds}s, {batchStopwatch.ElapsedMilliseconds}ms) --");
 
-                if (BatchDelayMs > 0)
+                if (ingestionSettings.BatchDelayMs > 0)
                 {
-                    Debug.WriteLine($"[keepetl] Throttling: waiting {BatchDelayMs}ms before next batch");
-                    await Task.Delay(BatchDelayMs, ct);
+                    Debug.WriteLine($"[keepetl] Throttling: waiting {ingestionSettings.BatchDelayMs}ms before next batch");
+                    await throttleDelay.DelayAsync(ingestionSettings.BatchDelayMs, ct);
                 }
 
                 Debug.WriteLine($"[keepetl] ");
@@ -534,7 +535,7 @@ public class IngestionPipeline(
             }
 
             if (fileMetrics.RecordsProcessed > lastReportedRecordCount &&
-                fileMetrics.RecordsProcessed - lastReportedRecordCount >= ProgressUpdateInterval)
+                fileMetrics.RecordsProcessed - lastReportedRecordCount >= ingestionSettings.ProgressUpdateInterval)
             {
                 LogProgressIfNeeded(fileMetrics.RecordsProcessed, fileKey);
                 progressTracker.UpdateProgress(fileMetrics.RecordsProcessed);
@@ -608,7 +609,8 @@ public class IngestionPipeline(
 
     private void LogProgressIfNeeded(int recordsProcessed, string fileKey)
     {
-        if (recordsProcessed % (LogInterval * BatchSize) == 0 || recordsProcessed % LogInterval == 0)
+        var settings = policyProvider.Current.Ingestion;
+        if (recordsProcessed % (settings.LogInterval * settings.BatchSize) == 0 || recordsProcessed % settings.LogInterval == 0)
         {
             Debug.WriteLine($"[keepetl] Imported {recordsProcessed} records from file {fileKey}");
             logger.LogInformation("Imported {RecordsProcessed} records from file {FileKey}",

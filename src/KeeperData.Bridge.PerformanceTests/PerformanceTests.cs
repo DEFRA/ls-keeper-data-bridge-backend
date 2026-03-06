@@ -442,8 +442,7 @@ public class PerformanceTests : IAsyncLifetime
         var tempPath = Path.Combine(Path.GetTempPath(), encryptedFileName);
         var encryptedBytes = await File.ReadAllBytesAsync(tempPath);
 
-        var dateStr = DateTime.UtcNow.ToString(EtlConstants.DateTimePattern);
-        var s3Key = $"LITP_SAMCPHHOLDING_{dateStr}.csv.enc";
+        var s3Key = encryptedFileName;
 
         _output.WriteLine($"Uploading to S3: {s3Key} ({encryptedBytes.Length:N0} bytes)");
 

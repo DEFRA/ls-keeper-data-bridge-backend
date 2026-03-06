@@ -26,6 +26,7 @@ public class CleanseAnalysisCommandService(
     IIssueCommandService issueCommandService,
     IDistributedLock distributedLock,
     ICleanseReportExportCommandService cleanseReportExportCommandService,
+    ICleanseRunStatsService runStatsService,
     ILogger<CleanseAnalysisCommandService> logger,
     ICleanseAnalysisEngine engine) : ICleanseAnalysisCommandService
 {
@@ -151,6 +152,7 @@ public class CleanseAnalysisCommandService(
         }
         finally
         {
+            runStatsService.ClearSnapshots(operation.Id);
             await renewalCts.CancelAsync();
             try { await renewalTask; } catch { /* Ignore cancellation */ }
             await lockHandle.DisposeAsync();

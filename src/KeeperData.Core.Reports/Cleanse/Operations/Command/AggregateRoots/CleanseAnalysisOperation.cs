@@ -80,6 +80,11 @@ public class CleanseAnalysisOperation
     public string? ReportUrl { get; set; }
 
     /// <summary>
+    /// Gets or sets the final average records per minute when the operation completed.
+    /// </summary>
+    public double? FinalAverageRpm { get; set; }
+
+    /// <summary>
     /// Creates a new operation in the Running state.
     /// </summary>
     public static CleanseAnalysisOperation Create(int totalRecords = 0) => new()
@@ -121,6 +126,9 @@ public class CleanseAnalysisOperation
         IssuesFound = issuesFound;
         IssuesResolved = issuesResolved;
         DurationMs = durationMs;
+
+        var durationMinutes = durationMs / 60_000.0;
+        FinalAverageRpm = durationMinutes > 0 ? Math.Round(recordsAnalyzed / durationMinutes, 2) : 0;
     }
 
     /// <summary>

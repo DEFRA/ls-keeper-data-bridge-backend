@@ -25,4 +25,5 @@ internal class CleanseAnalysisOperationDocument
     [BsonElement("duration_ms")] public long? DurationMs { get; set; }
     [BsonElement("report_object_key")] public string? ReportObjectKey { get; set; }
     [BsonElement("report_url")] public string? ReportUrl { get; set; }
+    [BsonElement("final_average_rpm")] public double? FinalAverageRpm { get; set; }
 }

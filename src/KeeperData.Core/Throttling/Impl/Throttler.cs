@@ -8,6 +8,8 @@ namespace KeeperData.Core.Throttling.Impl;
 public sealed class Throttler(IThrottlePolicyProvider provider, IThrottleDelay delay) : IThrottler
 {
     public ThrottlePolicySettings Settings => provider.Current;
+    public string ActivePolicyName => provider.ActivePolicyName;
+    public string ActivePolicySlug => provider.ActivePolicySlug;
 
     public Task DelayAsync(int milliseconds, CancellationToken ct)
         => delay.DelayAsync(milliseconds, ct);

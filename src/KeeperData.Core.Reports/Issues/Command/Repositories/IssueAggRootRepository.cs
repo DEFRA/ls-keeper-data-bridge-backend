@@ -5,6 +5,7 @@ using KeeperData.Core.Reports.Internal.Documents;
 using KeeperData.Core.Reports.Internal.Mappers;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
+using KeeperData.Core.Throttling;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 
@@ -14,12 +15,11 @@ namespace KeeperData.Core.Reports.Issues.Command.Repositories;
 /// MongoDB repository for Issue aggregate root persistence.
 /// </summary>
 [ExcludeFromCodeCoverage(Justification = "MongoDB repository - covered by integration tests.")]
-public class IssueAggRootRepository(IssueCollection issueCollection, ILogger<IssueAggRootRepository> logger) : IIssueAggRootRepository
+public class IssueAggRootRepository(IssueCollection issueCollection,
+    IThrottler throttler,
+    ILogger<IssueAggRootRepository> logger) : IIssueAggRootRepository
 {
     private readonly IMongoCollection<IssueDocument> _collection = issueCollection.Collection;
-
-    private const int DeactivateBatchSize = 500;
-    private const int DeactivateThrottleDelayMs = 200;
 
     public async Task<Issue?> GetByIdAsync(string id, CancellationToken ct = default)
     {
@@ -48,11 +48,13 @@ public class IssueAggRootRepository(IssueCollection issueCollection, ILogger<Iss
 
         while (!ct.IsCancellationRequested)
         {
+            var settings = throttler.Settings.IssueDeactivation;
+
             // Find a batch of stale document IDs (lightweight read, _id only)
             var staleIds = await _collection
                 .Find(staleFilter)
                 .Project(d => d.Id)
-                .Limit(DeactivateBatchSize)
+                .Limit(settings.BatchSize)
                 .ToListAsync(ct);
 
             if (staleIds.Count == 0)
@@ -69,12 +71,12 @@ public class IssueAggRootRepository(IssueCollection issueCollection, ILogger<Iss
             var result = await _collection.UpdateManyAsync(batchFilter, update, cancellationToken: ct);
             totalDeactivated += (int)result.ModifiedCount;
 
-            if (staleIds.Count < DeactivateBatchSize)
+            if (staleIds.Count < settings.BatchSize)
             {
                 break;
             }
 
-            await Task.Delay(DeactivateThrottleDelayMs, ct);
+            await throttler.DelayAsync(settings.ThrottleDelayMs, ct);
         }
 
         stopwatch.Stop();

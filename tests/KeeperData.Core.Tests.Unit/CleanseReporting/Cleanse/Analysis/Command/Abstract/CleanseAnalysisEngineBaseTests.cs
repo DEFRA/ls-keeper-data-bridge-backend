@@ -6,6 +6,7 @@ using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
+using KeeperData.Core.Tests.Unit.Throttling;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -17,7 +18,7 @@ public class CleanseAnalysisEngineBaseTests
     /// Concrete test subclass to expose protected static members.
     /// </summary>
     private sealed class TestableEngine(ICtsSamQueryService ds, IIssueCommandService ics)
-        : CleanseAnalysisEngineBase(ds, ics, NullLogger.Instance)
+        : CleanseAnalysisEngineBase(ds, ics, new FakeThrottler(), NullLogger.Instance)
     {
         public readonly List<(string Id, string OperationId)> CtsRecords = [];
         public readonly List<(string Id, string OperationId)> SamRecords = [];
@@ -39,9 +40,6 @@ public class CleanseAnalysisEngineBaseTests
         // Expose protected statics for testing
         public static new bool IsCtsCphHoldingRecordActive(IDictionary<string, object?> record)
             => CleanseAnalysisEngineBase.IsCtsCphHoldingRecordActive(record);
-
-        public static new bool ShouldUpdateProgress(int recordsAnalyzed)
-            => CleanseAnalysisEngineBase.ShouldUpdateProgress(recordsAnalyzed);
 
         public static new LidFullIdentifier? ParseLidFullIdentifier(IDictionary<string, object?> record)
             => CleanseAnalysisEngineBase.ParseLidFullIdentifier(record);
@@ -98,22 +96,6 @@ public class CleanseAnalysisEngineBaseTests
         };
 
         TestableEngine.IsCtsCphHoldingRecordActive(record).Should().BeTrue();
-    }
-
-    #endregion
-
-    #region ShouldUpdateProgress
-
-    [Theory]
-    [InlineData(0, true)]
-    [InlineData(100, true)]
-    [InlineData(200, true)]
-    [InlineData(99, false)]
-    [InlineData(1, false)]
-    [InlineData(50, false)]
-    public void ShouldUpdateProgress_ShouldReturnTrueEvery100Records(int recordsAnalyzed, bool expected)
-    {
-        TestableEngine.ShouldUpdateProgress(recordsAnalyzed).Should().Be(expected);
     }
 
     #endregion

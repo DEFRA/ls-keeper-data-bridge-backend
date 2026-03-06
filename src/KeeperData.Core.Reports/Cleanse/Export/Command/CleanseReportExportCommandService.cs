@@ -10,6 +10,7 @@ using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Issues.Query.Abstract;
 using KeeperData.Core.Reports.Issues.Query.Dtos;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Throttling;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -28,11 +29,10 @@ public class CleanseReportExportCommandService(
     ICleanseReportNotificationService notificationService,
     ICleanseOperationCommandService cleanseOperationCommands,
     ICleanseAnalysisOperationsQueries cleanseAnalysisOperationsQueries,
+    IThrottler throttler,
     ILogger<CleanseReportExportCommandService> logger) : ICleanseReportExportCommandService
 {
     private const string CsvFileName = "cleanse-report.csv";
-    private const int StreamBatchSize = 1000;
-    private const int ThrottlingDelayMs = 100; 
 
     /// <summary>
     /// Rule priority order for CSV export grouping.
@@ -209,6 +209,9 @@ public class CleanseReportExportCommandService(
     {
         var recordCount = 0;
 
+        // Read batch size once to start the cursor; the cursor's batch size is fixed for its lifetime.
+        var initialBatchSize = throttler.Settings.CleanseExport.StreamBatchSize;
+
         await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
         await using var writer = new StreamWriter(fileStream);
         await using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
@@ -220,20 +223,20 @@ public class CleanseReportExportCommandService(
         await csv.NextRecordAsync();
 
         // Stream records from MongoDB ordered by rule priority then CPH
-        await foreach (var issue in issueQueries.StreamActiveIssuesByRulePriorityAsync(RulePriorityOrder, StreamBatchSize, ct))
+        await foreach (var issue in issueQueries.StreamActiveIssuesByRulePriorityAsync(RulePriorityOrder, initialBatchSize, ct))
         {
             csv.WriteRecord(issue);
             await csv.NextRecordAsync();
             recordCount++;
 
-            // Periodic flush to avoid buffering too much in StreamWriter
-            if (recordCount % 10000 == 0)
+            // Periodic flush and throttle to avoid buffering and DB pressure — re-read settings each time
+            var exportSettings = throttler.Settings.CleanseExport;
+            if (recordCount % exportSettings.StreamBatchSize == 0)
             {
                 await csv.FlushAsync();
                 logger.LogDebug("Streamed {RecordCount} records to CSV...", recordCount);
+                await throttler.DelayAsync(exportSettings.ThrottlingDelayMs, ct);
             }
-
-            await Task.Delay(ThrottlingDelayMs, ct);
         }
 
         await csv.FlushAsync();

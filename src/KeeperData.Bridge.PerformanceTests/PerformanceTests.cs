@@ -375,6 +375,13 @@ public class PerformanceTests : IAsyncLifetime
         services.AddScoped<IImportReportingService, ImportReportingService>();
         services.AddTransient<CsvRowCounter>();
         services.AddTransient<IExternalCatalogueServiceFactory, ExternalCatalogueServiceFactory>();
+
+        // Throttle policy (performance tests use defaults — no need for DB-backed policies)
+        services.AddSingleton<KeeperData.Core.Throttling.Abstract.IThrottlePolicyProvider>(
+            new KeeperData.Core.Throttling.Impl.ThrottlePolicyProvider());
+        services.AddSingleton<KeeperData.Core.Throttling.IThrottleDelay, KeeperData.Core.Throttling.ThrottleDelay>();
+        services.AddSingleton<KeeperData.Core.Throttling.IThrottler, KeeperData.Core.Throttling.Impl.Throttler>();
+
         services.AddScoped<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddScoped<IIngestionPipeline, IngestionPipeline>();
         services.AddScoped<IImportOrchestrator, ImportOrchestrator>();

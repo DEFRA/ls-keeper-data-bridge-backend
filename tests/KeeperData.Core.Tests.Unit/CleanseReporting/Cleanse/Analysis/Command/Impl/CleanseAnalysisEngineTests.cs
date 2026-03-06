@@ -8,6 +8,7 @@ using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
 using KeeperData.Core.Reports.Issues.Command.Requests;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
+using KeeperData.Core.Tests.Unit.Throttling;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -23,7 +24,8 @@ public class CleanseAnalysisEngineTests
 
     public CleanseAnalysisEngineTests()
     {
-        _sut = new CleanseAnalysisEngine(_dataServiceMock.Object, _issueServiceMock.Object, NullLogger<CleanseAnalysisEngine>.Instance);
+        _sut = new CleanseAnalysisEngine(_dataServiceMock.Object, _issueServiceMock.Object,
+            new FakeThrottler(), NullLogger<CleanseAnalysisEngine>.Instance);
         _issueServiceMock.Setup(s => s.RecordIssueAsync(It.IsAny<RecordIssueCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(IssueRecordResult.Created);
     }

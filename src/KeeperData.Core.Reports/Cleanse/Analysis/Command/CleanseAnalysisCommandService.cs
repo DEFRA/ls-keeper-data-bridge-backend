@@ -34,12 +34,7 @@ public class CleanseAnalysisCommandService(
     private static readonly TimeSpan LockDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan LockRenewalInterval = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// Starts a cleanse analysis operation in the background using a long-running thread.
-    /// Returns immediately after acquiring the lock and starting the background task.
-    /// </summary>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The operation if started, or null if the lock could not be acquired.</returns>
+    /// <inheritdoc/>
     public async Task<CleanseAnalysisOperationDto?> StartAnalysisAsync(CancellationToken ct = default)
     {
         var lockHandle = await AcquireLockAsync(ct);
@@ -74,12 +69,7 @@ public class CleanseAnalysisCommandService(
         return operation;
     }
 
-    /// <summary>
-    /// Runs a cleanse analysis operation synchronously on the caller thread.
-    /// Exceptions are propagated to the caller. Useful for testing.
-    /// </summary>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The completed operation, or null if the lock could not be acquired.</returns>
+    /// <inheritdoc/>
     public async Task<CleanseAnalysisOperationDto?> RunAnalysisAsync(CancellationToken ct = default)
     {
         var lockHandle = await AcquireLockAsync(ct);
@@ -90,7 +80,21 @@ public class CleanseAnalysisCommandService(
         await RunAnalysisWithLockAsync(operation, lockHandle, ct);
         return await operationQueries.GetOperationAsync(operation.Id, ct);
     }
-    
+
+    /// <inheritdoc/>
+    public async Task<bool> CancelAnalysisAsync(CancellationToken ct = default)
+    {
+        var currentOperation = await operationQueries.GetCurrentOperationAsync(ct);
+        if (currentOperation is null)
+            return false;
+
+        await operationCommandService.RequestCancellationAsync(
+            new CancelOperationCommand(currentOperation.Id), ct);
+
+        logger.LogInformation("Cancellation requested for operationId={OperationId}", currentOperation.Id);
+        return true;
+    }
+
     private async Task RunAnalysisWithLockAsync(CleanseAnalysisOperationDto operation, IDistributedLockHandle lockHandle, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -106,6 +110,7 @@ public class CleanseAnalysisCommandService(
                 ProgressPercentage: 0,
                 StatusDescription: "Running analysis",
                 RecordsAnalyzed: aggregateMetrics.RecordsAnalyzed,
+                TotalRecords: 0,
                 IssuesFound: aggregateMetrics.IssuesFound,
                 IssuesResolved: aggregateMetrics.IssuesResolved), ct);
 
@@ -113,12 +118,19 @@ public class CleanseAnalysisCommandService(
                 operation.Id,
                 async (recordsAnalyzed, totalRecords, issuesFound, issuesResolved) =>
                 {
+                    // Poll for cancellation from the database
+                    if (await operationCommandService.IsCancellationRequestedAsync(operation.Id, ct))
+                    {
+                        throw new OperationCanceledException("Cancellation requested by user.");
+                    }
+
                     var percentage = totalRecords > 0 ? (double)recordsAnalyzed / totalRecords * 100 : 0;
                     await operationCommandService.UpdateProgressAsync(new UpdateProgressCommand(
                         operation.Id,
                         percentage,
                         $"Analyzed {recordsAnalyzed} of {totalRecords} records",
                         aggregateMetrics.RecordsAnalyzed + recordsAnalyzed,
+                        totalRecords,
                         aggregateMetrics.IssuesFound + issuesFound,
                         aggregateMetrics.IssuesResolved + issuesResolved), ct);
                 },
@@ -143,13 +155,20 @@ public class CleanseAnalysisCommandService(
             // Export report to CSV, zip, and upload to S3
             await cleanseReportExportCommandService.ExportReportAsync(operation.Id, ct);
         }
+        catch (OperationCanceledException)
+        {
+            stopwatch.Stop();
+            logger.LogInformation("Cleanse analysis cancelled (operationId={OperationId}), recording cancellation", operation.Id);
+            await operationCommandService.CancelOperationAsync(
+                new CancelOperationCommand(operation.Id), stopwatch.ElapsedMilliseconds, CancellationToken.None);
+        }
         catch (Exception ex)
         {
             stopwatch.Stop();
             await operationCommandService.FailOperationAsync(new FailOperationCommand(
                 operation.Id,
                 ex.Message,
-                stopwatch.ElapsedMilliseconds), ct);
+                stopwatch.ElapsedMilliseconds), CancellationToken.None);
         }
         finally
         {
@@ -160,7 +179,7 @@ public class CleanseAnalysisCommandService(
         }
     }
 
-    private async Task StartLockRenewalAsync(IDistributedLockHandle lockHandle, CancellationToken ct)
+    private static async Task StartLockRenewalAsync(IDistributedLockHandle lockHandle, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -169,9 +188,6 @@ public class CleanseAnalysisCommandService(
                 break;
         }
     }
-
-
-    
 
     #region Helpers
     private async Task<IDistributedLockHandle?> AcquireLockAsync(CancellationToken ct)
@@ -185,5 +201,4 @@ public class CleanseAnalysisCommandService(
     }
 
     #endregion
-
 }

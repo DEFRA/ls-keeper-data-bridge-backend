@@ -43,11 +43,17 @@ public sealed class CleanseRunStatsService(IThrottler throttler, TimeProvider ti
         }
 
         DateTime? projectedEnd = null;
+        double? estimatedRemainingSeconds = null;
         var remainingRecords = totalRecords - recordsAnalyzed;
-        if (averageRpm > 0 && remainingRecords > 0)
+
+        // Use window RPM for projection so throttle policy changes are reflected quickly.
+        // Fall back to average RPM if no window data is available yet.
+        var projectionRpm = currentRpm > 0 ? currentRpm : averageRpm;
+        if (projectionRpm > 0 && remainingRecords > 0)
         {
-            var remainingMinutes = remainingRecords / averageRpm;
+            var remainingMinutes = remainingRecords / projectionRpm;
             projectedEnd = now.AddMinutes(remainingMinutes);
+            estimatedRemainingSeconds = Math.Round(remainingMinutes * 60, 1);
         }
 
         return new CleanseRunStatsDto
@@ -55,6 +61,7 @@ public sealed class CleanseRunStatsService(IThrottler throttler, TimeProvider ti
             CurrentRpm = currentRpm,
             AverageRpm = averageRpm,
             ProjectedEndUtc = projectedEnd,
+            EstimatedDurationRemainingSeconds = estimatedRemainingSeconds,
             ThrottlePolicyName = throttler.ActivePolicyName,
             ThrottlePolicySlug = throttler.ActivePolicySlug,
             PumpBatchSize = settings.PumpBatchSize,

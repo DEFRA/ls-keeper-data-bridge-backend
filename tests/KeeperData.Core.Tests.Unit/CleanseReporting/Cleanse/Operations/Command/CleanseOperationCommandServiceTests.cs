@@ -34,10 +34,11 @@ public class CleanseOperationCommandServiceTests
         _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
 
         await _sut.UpdateProgressAsync(
-            new UpdateProgressCommand(operation.Id, 50.0, "Halfway", 100, 5, 0), CancellationToken.None);
+            new UpdateProgressCommand(operation.Id, 50.0, "Halfway", 100, 500, 5, 0), CancellationToken.None);
 
         operation.ProgressPercentage.Should().Be(50.0);
         operation.RecordsAnalyzed.Should().Be(100);
+        operation.TotalRecords.Should().Be(500);
         operation.IssuesFound.Should().Be(5);
         _repoMock.Verify(r => r.UpdateAsync(operation, It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -106,7 +107,79 @@ public class CleanseOperationCommandServiceTests
         _repoMock.Setup(r => r.GetByIdAsync("missing", It.IsAny<CancellationToken>())).ReturnsAsync((CleanseAnalysisOperation?)null);
 
         var act = () => _sut.UpdateProgressAsync(
-            new UpdateProgressCommand("missing", 0, "", 0, 0, 0), CancellationToken.None);
+            new UpdateProgressCommand("missing", 0, "", 0, 0, 0, 0), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
+    }
+
+    [Fact]
+    public async Task RequestCancellationAsync_ShouldSetFlagAndPersist()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        await _sut.RequestCancellationAsync(
+            new CancelOperationCommand(operation.Id), CancellationToken.None);
+
+        operation.CancellationRequested.Should().BeTrue();
+        _repoMock.Verify(r => r.UpdateAsync(operation, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CancelOperationAsync_ShouldMarkCancelledAndPersist()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        await _sut.CancelOperationAsync(
+            new CancelOperationCommand(operation.Id), 5000, CancellationToken.None);
+
+        operation.Status.Should().Be(CleanseAnalysisStatus.Cancelled);
+        operation.DurationMs.Should().Be(5000);
+        operation.CancelledAtUtc.Should().NotBeNull();
+        _repoMock.Verify(r => r.UpdateAsync(operation, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task IsCancellationRequestedAsync_WhenNotRequested_ShouldReturnFalse()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        var result = await _sut.IsCancellationRequestedAsync(operation.Id, CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsCancellationRequestedAsync_WhenRequested_ShouldReturnTrue()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        operation.RequestCancellation();
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        var result = await _sut.IsCancellationRequestedAsync(operation.Id, CancellationToken.None);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsCancellationRequestedAsync_WhenNotFound_ShouldReturnFalse()
+    {
+        _repoMock.Setup(r => r.GetByIdAsync("missing", It.IsAny<CancellationToken>())).ReturnsAsync((CleanseAnalysisOperation?)null);
+
+        var result = await _sut.IsCancellationRequestedAsync("missing", CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RequestCancellationAsync_WhenNotFound_ShouldThrow()
+    {
+        _repoMock.Setup(r => r.GetByIdAsync("missing", It.IsAny<CancellationToken>())).ReturnsAsync((CleanseAnalysisOperation?)null);
+
+        var act = () => _sut.RequestCancellationAsync(
+            new CancelOperationCommand("missing"), CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
     }

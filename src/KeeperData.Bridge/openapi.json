@@ -1,0 +1,2622 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "KeeperData Bridge API",
+    "description": "API for the KeeperData Bridge service – manages data imports, cleanse analysis, external catalogue operations, OData-style queries, and throttle policies.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current host"
+    }
+  ],
+  "paths": {
+    "/api/cleanse/start-analysis": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Starts a new cleanse analysis operation",
+        "description": "The analysis runs in the background and progress can be tracked via the returned operation ID.",
+        "operationId": "Cleanse_StartAnalysis",
+        "responses": {
+          "202": {
+            "description": "Analysis started successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StartAnalysisResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "A cleanse analysis is already running",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/cancel-analysis": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Requests cancellation of the currently running cleanse analysis",
+        "description": "Automatically discovers the current running (or already-cancelling) operation — no operation ID is required. The cancellation flag is written to the database and the operation status transitions to `Cancelling`. The background pump polls this flag at each progress checkpoint (every `progressUpdateInterval` records as configured in the active throttle policy). At the next checkpoint the pump detects the flag, stops processing, and transitions the status to `Cancelled`. **Latency:** depends on the active throttle policy's `pumpBatchSize`, `pumpDelayMs`, and `progressUpdateInterval` — typically a few seconds to under a minute. **Idempotency:** calling this endpoint multiple times while the operation is in `Running` or `Cancelling` state is safe and returns 200. Once the operation has fully transitioned to `Cancelled`, subsequent calls return 404 because no in-progress operation exists. **Status visibility:** after calling this endpoint, polling `GET /api/cleanse/runs` or `GET /api/cleanse/run/{operationId}` will show status `Cancelling` (with live stats still populated) until the pump completes, at which point the status becomes `Cancelled` with `cancelledAtUtc` populated.",
+        "operationId": "Cleanse_CancelAnalysis",
+        "responses": {
+          "200": {
+            "description": "Cancellation requested successfully. The operation is now in `Cancelling` state.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CancelAnalysisResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "No running or cancelling cleanse analysis operation found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/delete-data": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Deletes all cleanse report data (detected issues)",
+        "operationId": "Cleanse_DeleteData",
+        "responses": {
+          "200": {
+            "description": "Data deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeleteDataResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/delete-metadata": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Deletes all cleanse analysis metadata (operation history)",
+        "operationId": "Cleanse_DeleteMetadata",
+        "responses": {
+          "200": {
+            "description": "Metadata deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeleteDataResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/runs": {
+      "get": {
+        "tags": ["Cleanse"],
+        "summary": "Gets a paginated list of analysis run summaries",
+        "description": "Returns analysis run summaries in reverse chronological order.",
+        "operationId": "Cleanse_GetRuns",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "description": "Number of records to skip (default: 0)",
+            "schema": { "type": "integer", "default": 0, "minimum": 0 }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "description": "Maximum number of records to return (default: 10, max: 100)",
+            "schema": { "type": "integer", "default": 10, "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of analysis run summaries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AnalysisRunsResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/run/{operationId}": {
+      "get": {
+        "tags": ["Cleanse"],
+        "summary": "Gets full details of a specific analysis run",
+        "operationId": "Cleanse_GetRun",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "description": "The operation ID of the analysis run",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full details of the analysis run",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CleanseAnalysisOperationDto" }
+              }
+            }
+          },
+          "404": {
+            "description": "Analysis run not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/issues": {
+      "get": {
+        "tags": ["Cleanse"],
+        "summary": "Gets a paginated, filterable, and sortable list of cleanse issues",
+        "operationId": "Cleanse_GetIssues",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "description": "Number of records to skip (default: 0)",
+            "schema": { "type": "integer", "default": 0, "minimum": 0 }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "description": "Maximum number of records to return (default: 10, max: 100)",
+            "schema": { "type": "integer", "default": 10, "minimum": 1, "maximum": 100 }
+          },
+          {
+            "name": "ctsLidFullIdentifier",
+            "in": "query",
+            "description": "Filter by CTS LID full identifier (contains, case-insensitive)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "cph",
+            "in": "query",
+            "description": "Filter by CPH (contains, case-insensitive)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "issueCode",
+            "in": "query",
+            "description": "Filter by exact issue code",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ruleCode",
+            "in": "query",
+            "description": "Filter by exact rule code",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "errorCode",
+            "in": "query",
+            "description": "Filter by exact error code",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "isActive",
+            "in": "query",
+            "description": "Filter by active status",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "isIgnored",
+            "in": "query",
+            "description": "Filter by ignored status",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "resolutionStatus",
+            "in": "query",
+            "description": "Filter by resolution status (None, Todo, InProgress, Resolved)",
+            "schema": { "type": "string", "enum": ["None", "Todo", "InProgress", "Resolved"] }
+          },
+          {
+            "name": "assignedTo",
+            "in": "query",
+            "description": "Filter by assigned user",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "isUnassigned",
+            "in": "query",
+            "description": "Filter to unassigned issues only",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "createdAfterUtc",
+            "in": "query",
+            "description": "Filter issues created after this UTC time",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "createdBeforeUtc",
+            "in": "query",
+            "description": "Filter issues created before this UTC time",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "updatedAfterUtc",
+            "in": "query",
+            "description": "Filter issues updated after this UTC time",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "updatedBeforeUtc",
+            "in": "query",
+            "description": "Filter issues updated before this UTC time",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "description": "Field to sort by (default: LastUpdatedAtUtc)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "sortDescending",
+            "in": "query",
+            "description": "Sort in descending order (default: true)",
+            "schema": { "type": "boolean", "default": true }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of cleanse issues",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssuesResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/run/{operationId}/regenerate-url": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Regenerates the presigned URL for an operation's report",
+        "description": "Use this when the original presigned URL has expired.",
+        "operationId": "Cleanse_RegenerateReportUrl",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "description": "The operation ID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "URL regenerated successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegenerateUrlResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Operation not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/test-notification": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Sends a test notification email to verify GOV.UK Notify configuration",
+        "description": "The test email is sent to test@example.com using the configured template.",
+        "operationId": "Cleanse_SendTestNotification",
+        "responses": {
+          "200": {
+            "description": "Test notification sent successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TestNotificationResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/issues/{issueId}/ignore": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Flags an issue as ignored",
+        "operationId": "Cleanse_IgnoreIssue",
+        "parameters": [
+          {
+            "name": "issueId",
+            "in": "path",
+            "required": true,
+            "description": "The issue ID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PerformedByRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Issue ignored successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssueCommandResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Issue not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/issues/{issueId}/unignore": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Removes the ignored flag from an issue",
+        "operationId": "Cleanse_UnignoreIssue",
+        "parameters": [
+          {
+            "name": "issueId",
+            "in": "path",
+            "required": true,
+            "description": "The issue ID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PerformedByRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Issue unignored successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssueCommandResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Issue not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/issues/{issueId}/resolution-status": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Updates the resolution workflow status of an issue",
+        "operationId": "Cleanse_UpdateResolutionStatus",
+        "parameters": [
+          {
+            "name": "issueId",
+            "in": "path",
+            "required": true,
+            "description": "The issue ID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateResolutionStatusRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resolution status updated successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssueCommandResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid resolution status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Issue not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/issues/{issueId}/assign": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Assigns an issue to a user",
+        "operationId": "Cleanse_AssignIssue",
+        "parameters": [
+          {
+            "name": "issueId",
+            "in": "path",
+            "required": true,
+            "description": "The issue ID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AssignIssueRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Issue assigned successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssueCommandResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Issue not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/issues/{issueId}/unassign": {
+      "post": {
+        "tags": ["Cleanse"],
+        "summary": "Clears the assigned user from an issue",
+        "operationId": "Cleanse_UnassignIssue",
+        "parameters": [
+          {
+            "name": "issueId",
+            "in": "path",
+            "required": true,
+            "description": "The issue ID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PerformedByRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Issue unassigned successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssueCommandResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Issue not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cleanse/issues/{issueId}/history": {
+      "get": {
+        "tags": ["Cleanse"],
+        "summary": "Gets a paginated list of history entries for a specific issue",
+        "operationId": "Cleanse_GetIssueHistory",
+        "parameters": [
+          {
+            "name": "issueId",
+            "in": "path",
+            "required": true,
+            "description": "The issue ID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "description": "Number of records to skip (default: 0)",
+            "schema": { "type": "integer", "default": 0, "minimum": 0 }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "description": "Maximum number of records to return (default: 50, max: 100)",
+            "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of issue history entries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IssueHistoryResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/start": {
+      "post": {
+        "tags": ["Import"],
+        "summary": "Starts a bulk file import process asynchronously",
+        "description": "Returns immediately with an import ID once the lock has been acquired. The import continues running in the background.",
+        "operationId": "Import_StartBulkImport",
+        "parameters": [
+          {
+            "name": "sourceType",
+            "in": "query",
+            "description": "The source type for the import ('internal' or 'external', default: 'external')",
+            "schema": { "type": "string", "enum": ["internal", "external"], "default": "external" }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Import started successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StartBulkImportResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid source type",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "Import is already running",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import": {
+      "get": {
+        "tags": ["Import"],
+        "summary": "Gets a paginated list of import summaries",
+        "description": "Returns import summaries in reverse chronological order (most recent first).",
+        "operationId": "Import_GetImportSummaries",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "description": "Number of records to skip for pagination (default: 0)",
+            "schema": { "type": "integer", "default": 0, "minimum": 0 }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "description": "Number of records to return (default: 10, max: 100)",
+            "schema": { "type": "integer", "default": 10, "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of import summaries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ImportSummariesResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/{importId}": {
+      "get": {
+        "tags": ["Import"],
+        "summary": "Gets the import report for a specific import ID",
+        "description": "Includes overall import status, acquisition phase details, and ingestion phase details.",
+        "operationId": "Import_GetImportReport",
+        "parameters": [
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "description": "The import ID to retrieve the report for",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Import report retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ImportReport" }
+              }
+            }
+          },
+          "404": {
+            "description": "Import report not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/{importId}/files": {
+      "get": {
+        "tags": ["Import"],
+        "summary": "Gets the file processing reports for all files in a specific import",
+        "description": "Includes details about acquisition and ingestion for each file.",
+        "operationId": "Import_GetFileReports",
+        "parameters": [
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "description": "The import ID to retrieve the file reports for",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File reports retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FileReportsResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Import not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/lineage/{collectionName}/{recordId}": {
+      "get": {
+        "tags": ["Import"],
+        "summary": "Gets the paginated lineage events for a specific record",
+        "description": "Shows the complete history of changes to a record across all imports. The recordId is a SHA256 hash generated by RecordIdGenerator from the composite key parts, making it URL-safe.",
+        "operationId": "Import_GetRecordLineageEvents",
+        "parameters": [
+          {
+            "name": "collectionName",
+            "in": "path",
+            "required": true,
+            "description": "The collection name (e.g., 'sam_cph_holdings')",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "recordId",
+            "in": "path",
+            "required": true,
+            "description": "The URL-safe record ID (SHA256 hash generated from primary key parts)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "description": "Number of events to skip for pagination (default: 0)",
+            "schema": { "type": "integer", "default": 0, "minimum": 0 }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "description": "Number of events to return (default: 10, max: 100)",
+            "schema": { "type": "integer", "default": 10, "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated lineage events",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedLineageEvents" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Record lineage not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/collections/{collectionName}": {
+      "delete": {
+        "tags": ["Import"],
+        "summary": "Deletes a specific MongoDB collection by name",
+        "description": "The collection name must be defined in DataSetDefinitions.",
+        "operationId": "Import_DeleteCollection",
+        "parameters": [
+          {
+            "name": "collectionName",
+            "in": "path",
+            "required": true,
+            "description": "The name of the collection to delete",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeleteCollectionResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found in definitions",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/collections": {
+      "delete": {
+        "tags": ["Import"],
+        "summary": "Deletes all MongoDB collections defined in DataSetDefinitions",
+        "operationId": "Import_DeleteAllCollections",
+        "responses": {
+          "200": {
+            "description": "All collections deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeleteCollectionsResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/reporting-collections/{collectionName}": {
+      "delete": {
+        "tags": ["Import"],
+        "summary": "Deletes a specific reporting/lineage MongoDB collection by name",
+        "description": "Valid collections: import_reports, import_files, record_lineage, record_lineage_events.",
+        "operationId": "Import_DeleteReportingCollection",
+        "parameters": [
+          {
+            "name": "collectionName",
+            "in": "path",
+            "required": true,
+            "description": "The name of the reporting collection to delete",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reporting collection deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeleteCollectionResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not valid",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/reporting-collections": {
+      "delete": {
+        "tags": ["Import"],
+        "summary": "Deletes all reporting/lineage MongoDB collections",
+        "description": "Includes: import_reports, import_files, record_lineage, record_lineage_events. These collections will be automatically recreated when the next import runs.",
+        "operationId": "Import_DeleteAllReportingCollections",
+        "responses": {
+          "200": {
+            "description": "All reporting collections deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeleteCollectionsResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/generate-record-id": {
+      "post": {
+        "tags": ["Import"],
+        "summary": "Generates a URL-safe record ID from composite key parts using SHA256 hashing",
+        "description": "Helps clients construct the recordId needed for lineage queries.",
+        "operationId": "Import_GenerateRecordId",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GenerateRecordIdRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Record ID generated successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GenerateRecordIdResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid key parts",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import/internal-storage": {
+      "delete": {
+        "tags": ["Import"],
+        "summary": "Deletes all objects from the internal target storage",
+        "description": "Clears down all files that were ingested into the target internal storage under the configured top-level folder prefix.",
+        "operationId": "Import_ClearDownInternalStorage",
+        "parameters": [
+          {
+            "name": "sourceType",
+            "in": "query",
+            "description": "The source type for the storage (default: 'internal')",
+            "schema": { "type": "string", "enum": ["internal", "external"], "default": "internal" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Storage cleared successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ClearDownStorageResponse" }
+              }
+            }
+          },
+          "499": {
+            "description": "Client closed request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/externalcatalogue/files": {
+      "get": {
+        "tags": ["ExternalCatalogue"],
+        "summary": "Gets a plain text report of available files for a specified source type",
+        "operationId": "ExternalCatalogue_GetFilesReport",
+        "parameters": [
+          {
+            "name": "sourceType",
+            "in": "query",
+            "required": true,
+            "description": "The source type ('internal' or 'external')",
+            "schema": { "type": "string", "enum": ["internal", "external"] }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": true,
+            "description": "Number of days to look back for files",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plain text report of available files",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or missing source type"
+          }
+        }
+      }
+    },
+    "/api/externalcatalogue/upload": {
+      "post": {
+        "tags": ["ExternalCatalogue"],
+        "summary": "Uploads a file to internal S3 storage",
+        "description": "The filename must conform to one of the dataset definition patterns.",
+        "operationId": "ExternalCatalogue_UploadFile",
+        "parameters": [
+          {
+            "name": "objectKey",
+            "in": "query",
+            "required": true,
+            "description": "The filename (object key) for the file in S3 – should not contain path separators",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The CSV file to upload"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UploadFileResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error (invalid file, object key, or filename pattern)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ValidationProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/externalcatalogue/upload-raw": {
+      "post": {
+        "tags": ["ExternalCatalogue"],
+        "summary": "Uploads raw file content to internal S3 storage",
+        "description": "Alternative endpoint for testing with raw file content. The filename must conform to one of the dataset definition patterns.",
+        "operationId": "ExternalCatalogue_UploadRawFile",
+        "parameters": [
+          {
+            "name": "objectKey",
+            "in": "query",
+            "required": true,
+            "description": "The filename (object key) for the file in S3 – should not contain path separators",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/csv": {
+              "schema": { "type": "string", "format": "binary" }
+            },
+            "application/csv": {
+              "schema": { "type": "string", "format": "binary" }
+            },
+            "text/comma-separated-values": {
+              "schema": { "type": "string", "format": "binary" }
+            },
+            "text/plain": {
+              "schema": { "type": "string", "format": "binary" }
+            },
+            "application/octet-stream": {
+              "schema": { "type": "string", "format": "binary" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UploadFileResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ValidationProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/query/{collectionName}": {
+      "get": {
+        "tags": ["Query"],
+        "summary": "Query a MongoDB collection with OData-style parameters",
+        "operationId": "Query_Query",
+        "parameters": [
+          {
+            "name": "collectionName",
+            "in": "path",
+            "required": true,
+            "description": "Name of the collection to query (e.g., 'sam_cph_holdings')",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "description": "OData $filter expression (e.g., \"CPH eq 'ABC123' and IsDeleted eq false\")",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "description": "OData $orderby expression (e.g., \"UpdatedAtUtc desc\")",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "description": "OData $select expression (e.g., \"CPH,UpdatedAtUtc,IsDeleted\")",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "$skip",
+            "in": "query",
+            "description": "Number of records to skip for pagination",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "description": "Number of records to return (max 1000, default 100)",
+            "schema": { "type": "integer", "default": 100, "maximum": 1000 }
+          },
+          {
+            "name": "$count",
+            "in": "query",
+            "description": "Whether to include total count in response (default: true)",
+            "schema": { "type": "boolean", "default": true }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Query executed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Query results with data and pagination metadata"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "parameter": { "type": "string", "nullable": true },
+                    "collectionName": { "type": "string" },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found"
+          },
+          "499": {
+            "description": "Client closed request"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/throttle-policies": {
+      "get": {
+        "tags": ["ThrottlePolicies"],
+        "summary": "Gets all throttle policies",
+        "operationId": "ThrottlePolicies_GetAll",
+        "responses": {
+          "200": {
+            "description": "List of all throttle policies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ThrottlePolicy" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["ThrottlePolicies"],
+        "summary": "Creates a new throttle policy",
+        "operationId": "ThrottlePolicies_Create",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateThrottlePolicyCommand" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Throttle policy created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ThrottlePolicy" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (duplicate slug)"
+          }
+        }
+      }
+    },
+    "/api/throttle-policies/active": {
+      "get": {
+        "tags": ["ThrottlePolicies"],
+        "summary": "Gets the currently active throttle policy",
+        "operationId": "ThrottlePolicies_GetActive",
+        "responses": {
+          "200": {
+            "description": "Active throttle policy",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ThrottlePolicy" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/throttle-policies/{slug}": {
+      "get": {
+        "tags": ["ThrottlePolicies"],
+        "summary": "Gets a throttle policy by slug",
+        "operationId": "ThrottlePolicies_GetBySlug",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "description": "The slug identifier of the throttle policy",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Throttle policy found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ThrottlePolicy" }
+              }
+            }
+          },
+          "404": {
+            "description": "Throttle policy not found"
+          }
+        }
+      },
+      "put": {
+        "tags": ["ThrottlePolicies"],
+        "summary": "Updates an existing throttle policy",
+        "operationId": "ThrottlePolicies_Update",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "description": "The slug identifier of the throttle policy to update",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateThrottlePolicyCommand" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Throttle policy updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ThrottlePolicy" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Throttle policy not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["ThrottlePolicies"],
+        "summary": "Deletes a throttle policy",
+        "operationId": "ThrottlePolicies_Delete",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "description": "The slug identifier of the throttle policy to delete",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Throttle policy deleted"
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Throttle policy not found"
+          },
+          "409": {
+            "description": "Cannot delete active policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/throttle-policies/{slug}/activate": {
+      "post": {
+        "tags": ["ThrottlePolicies"],
+        "summary": "Activates a throttle policy",
+        "operationId": "ThrottlePolicies_Activate",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "description": "The slug identifier of the throttle policy to activate",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Throttle policy activated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ThrottlePolicy" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Throttle policy not found"
+          }
+        }
+      }
+    },
+    "/api/throttle-policies/deactivate": {
+      "post": {
+        "tags": ["ThrottlePolicies"],
+        "summary": "Deactivates all throttle policies",
+        "description": "Normal fallback becomes active.",
+        "operationId": "ThrottlePolicies_DeactivateAll",
+        "responses": {
+          "204": {
+            "description": "All throttle policies deactivated"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Standard error response.",
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The error message."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the error."
+          }
+        }
+      },
+      "StartAnalysisResponse": {
+        "type": "object",
+        "description": "Response when a cleanse analysis is successfully started.",
+        "required": ["operationId", "status", "message"],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "description": "Unique identifier for the started analysis operation."
+          },
+          "status": {
+            "type": "string",
+            "description": "Current status of the operation."
+          },
+          "message": {
+            "type": "string",
+            "description": "Success message."
+          },
+          "startedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the analysis was started."
+          }
+        }
+      },
+      "CancelAnalysisResponse": {
+        "type": "object",
+        "description": "Response when a cleanse analysis cancellation is successfully requested.",
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Result message."
+          },
+          "requestedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the cancellation was requested."
+          }
+        }
+      },
+      "CleanseRunStatsDto": {
+        "type": "object",
+        "description": "Live performance statistics for a running cleanse analysis operation.",
+        "properties": {
+          "currentRpm": {
+            "type": "number",
+            "format": "double",
+            "description": "Current records per minute rate based on the latest sliding window."
+          },
+          "averageRpm": {
+            "type": "number",
+            "format": "double",
+            "description": "Average records per minute over the entire process lifetime."
+          },
+          "projectedEndUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Projected UTC end time based on window RPM and remaining records. Null if not calculable."
+          },
+          "estimatedDurationRemainingSeconds": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "description": "Estimated remaining duration in seconds based on window RPM. Null if not calculable."
+          },
+          "throttlePolicyName": {
+            "type": "string",
+            "description": "Name of the currently active throttle policy."
+          },
+          "throttlePolicySlug": {
+            "type": "string",
+            "description": "Slug of the currently active throttle policy."
+          },
+          "pumpBatchSize": {
+            "type": "integer",
+            "description": "Current pump batch size from the active throttle policy."
+          },
+          "pumpDelayMs": {
+            "type": "integer",
+            "description": "Current pump delay in milliseconds from the active throttle policy."
+          }
+        }
+      },
+      "DeleteDataResponse": {
+        "type": "object",
+        "description": "Response when cleanse data is deleted.",
+        "required": ["success", "collectionName", "message"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the deletion was successful."
+          },
+          "collectionName": {
+            "type": "string",
+            "description": "Name of the affected collection."
+          },
+          "deletedCount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of documents deleted."
+          },
+          "message": {
+            "type": "string",
+            "description": "Result message."
+          },
+          "deletedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the deletion was performed."
+          }
+        }
+      },
+      "AnalysisRunsResponse": {
+        "type": "object",
+        "description": "Response for paginated analysis runs.",
+        "required": ["runs"],
+        "properties": {
+          "skip": {
+            "type": "integer",
+            "description": "Number of records skipped."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records requested."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Actual number of runs returned."
+          },
+          "runs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CleanseAnalysisOperationSummaryDto" },
+            "description": "List of analysis run summaries."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the response."
+          }
+        }
+      },
+      "CleanseAnalysisOperationSummaryDto": {
+        "type": "object",
+        "description": "Summary of a cleanse analysis operation.",
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string", "description": "Operation status.", "enum": ["NotStarted", "Running", "Completed", "Failed", "Cancelling", "Cancelled"] },
+          "startedAtUtc": { "type": "string", "format": "date-time" },
+          "completedAtUtc": { "type": "string", "format": "date-time", "nullable": true },
+          "progressPercentage": { "type": "number", "format": "double", "description": "Progress percentage (0-100)." },
+          "recordsAnalyzed": { "type": "integer", "description": "Number of records analyzed so far." },
+          "totalRecords": { "type": "integer", "description": "Total number of records to analyze." },
+          "issuesFound": { "type": "integer", "description": "Number of issues found." },
+          "issuesResolved": { "type": "integer", "description": "Number of issues resolved." },
+          "durationMs": { "type": "integer", "format": "int64", "nullable": true, "description": "Total duration in milliseconds when complete." },
+          "reportObjectKey": { "type": "string", "nullable": true, "description": "S3 object key for the generated report." },
+          "reportUrl": { "type": "string", "nullable": true, "description": "Presigned URL to download the report." },
+          "finalAverageRpm": { "type": "number", "format": "double", "nullable": true, "description": "Final average records per minute when completed." },
+          "cancelledAtUtc": { "type": "string", "format": "date-time", "nullable": true, "description": "UTC timestamp when the operation was cancelled." },
+          "stats": { "$ref": "#/components/schemas/CleanseRunStatsDto", "nullable": true, "description": "Live performance statistics. Only populated for running or cancelling operations." }
+        }
+      },
+      "CleanseAnalysisOperationDto": {
+        "type": "object",
+        "description": "Full details of a cleanse analysis operation.",
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string", "description": "Operation status: NotStarted, Running, Completed, Failed, Cancelling, or Cancelled. After cancel-analysis is called, the status transitions Running → Cancelling → Cancelled.", "enum": ["NotStarted", "Running", "Completed", "Failed", "Cancelling", "Cancelled"] },
+          "startedAtUtc": { "type": "string", "format": "date-time" },
+          "completedAtUtc": { "type": "string", "format": "date-time", "nullable": true },
+          "progressPercentage": { "type": "number", "format": "double", "description": "Progress percentage (0-100)." },
+          "statusDescription": { "type": "string", "description": "Human-readable status description." },
+          "recordsAnalyzed": { "type": "integer", "description": "Number of records analyzed so far." },
+          "totalRecords": { "type": "integer", "description": "Total number of records to analyze." },
+          "issuesFound": { "type": "integer", "description": "Number of issues found." },
+          "issuesResolved": { "type": "integer", "description": "Number of issues resolved." },
+          "error": { "type": "string", "nullable": true, "description": "Error message if the operation failed." },
+          "durationMs": { "type": "integer", "format": "int64", "nullable": true, "description": "Total duration in milliseconds when complete." },
+          "reportObjectKey": { "type": "string", "nullable": true, "description": "S3 object key for the generated report." },
+          "reportUrl": { "type": "string", "nullable": true, "description": "Presigned URL to download the report." },
+          "finalAverageRpm": { "type": "number", "format": "double", "nullable": true, "description": "Final average records per minute when completed or cancelled." },
+          "cancelledAtUtc": { "type": "string", "format": "date-time", "nullable": true, "description": "UTC timestamp when the operation was cancelled." },
+          "stats": { "$ref": "#/components/schemas/CleanseRunStatsDto", "nullable": true, "description": "Live performance statistics. Only populated for running or cancelling operations." }
+        }
+      },
+      "IssuesResponse": {
+        "type": "object",
+        "description": "Response for paginated cleanse issues.",
+        "required": ["issues"],
+        "properties": {
+          "skip": {
+            "type": "integer",
+            "description": "Number of records skipped."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records requested."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Actual number of issues returned."
+          },
+          "totalCount": {
+            "type": "integer",
+            "description": "Total count of matching issues."
+          },
+          "issues": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IssueDto" },
+            "description": "List of cleanse issues."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the response."
+          }
+        }
+      },
+      "IssueDto": {
+        "type": "object",
+        "description": "A cleanse issue.",
+        "properties": {
+          "id": { "type": "string" },
+          "issueCode": { "type": "string" },
+          "ruleCode": { "type": "string" },
+          "errorCode": { "type": "string" },
+          "ctsLidFullIdentifier": { "type": "string" },
+          "cph": { "type": "string" },
+          "isActive": { "type": "boolean" },
+          "isIgnored": { "type": "boolean" },
+          "resolutionStatus": { "type": "string" },
+          "assignedTo": { "type": "string", "nullable": true },
+          "createdAtUtc": { "type": "string", "format": "date-time" },
+          "lastUpdatedAtUtc": { "type": "string", "format": "date-time" }
+        }
+      },
+      "RegenerateUrlResponse": {
+        "type": "object",
+        "description": "Response when a report URL is regenerated.",
+        "required": ["operationId", "objectKey", "reportUrl"],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "description": "The operation ID."
+          },
+          "objectKey": {
+            "type": "string",
+            "description": "The S3 object key."
+          },
+          "reportUrl": {
+            "type": "string",
+            "description": "The new presigned URL."
+          },
+          "regeneratedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the URL was regenerated."
+          }
+        }
+      },
+      "TestNotificationResponse": {
+        "type": "object",
+        "description": "Response for test notification request.",
+        "required": ["success", "recipient", "message"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the test notification was sent successfully."
+          },
+          "recipient": {
+            "type": "string",
+            "description": "Recipient email address."
+          },
+          "notificationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Notification ID from GOV.UK Notify."
+          },
+          "message": {
+            "type": "string",
+            "description": "Result message."
+          },
+          "sentAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the notification was sent."
+          }
+        }
+      },
+      "PerformedByRequest": {
+        "type": "object",
+        "description": "Request body containing only the performing user. Used by ignore, unignore, and unassign operations.",
+        "required": ["performedBy"],
+        "properties": {
+          "performedBy": {
+            "type": "string",
+            "description": "Identifier of the user performing the action."
+          }
+        }
+      },
+      "UpdateResolutionStatusRequest": {
+        "type": "object",
+        "description": "Request body for updating the resolution status of an issue.",
+        "required": ["status", "performedBy"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "New resolution status (None, Todo, InProgress, Resolved).",
+            "enum": ["None", "Todo", "InProgress", "Resolved"]
+          },
+          "performedBy": {
+            "type": "string",
+            "description": "Identifier of the user performing the action."
+          }
+        }
+      },
+      "AssignIssueRequest": {
+        "type": "object",
+        "description": "Request body for assigning an issue to a user.",
+        "required": ["assignedTo", "performedBy"],
+        "properties": {
+          "assignedTo": {
+            "type": "string",
+            "description": "Identifier of the user to assign the issue to."
+          },
+          "performedBy": {
+            "type": "string",
+            "description": "Identifier of the user performing the action."
+          }
+        }
+      },
+      "IssueCommandResponse": {
+        "type": "object",
+        "description": "Response for issue management commands.",
+        "required": ["issueId", "message"],
+        "properties": {
+          "issueId": {
+            "type": "string",
+            "description": "The issue ID."
+          },
+          "message": {
+            "type": "string",
+            "description": "Result message."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the response."
+          }
+        }
+      },
+      "IssueHistoryResponse": {
+        "type": "object",
+        "description": "Response for paginated issue history entries.",
+        "required": ["issueId", "entries"],
+        "properties": {
+          "issueId": {
+            "type": "string",
+            "description": "The issue ID."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records skipped."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records requested."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Actual number of entries returned."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A history/lineage entry for an issue."
+            },
+            "description": "List of history entries."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the response."
+          }
+        }
+      },
+      "StartBulkImportResponse": {
+        "type": "object",
+        "description": "Response when a bulk import is successfully started.",
+        "required": ["importId", "sourceType", "message"],
+        "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique identifier for the started import."
+          },
+          "sourceType": {
+            "type": "string",
+            "description": "Source type of the import ('internal' or 'external')."
+          },
+          "message": {
+            "type": "string",
+            "description": "Success message."
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the import was started."
+          }
+        }
+      },
+      "ImportSummariesResponse": {
+        "type": "object",
+        "description": "Response for a paginated list of import summaries.",
+        "required": ["imports"],
+        "properties": {
+          "skip": {
+            "type": "integer",
+            "description": "Number of records skipped."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of records requested."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Actual number of import summaries returned."
+          },
+          "imports": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ImportSummary" },
+            "description": "List of import summaries."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the response."
+          }
+        }
+      },
+      "ImportSummary": {
+        "type": "object",
+        "description": "Summary of an import operation.",
+        "required": ["importId", "status"],
+        "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique identifier for the import."
+          },
+          "status": {
+            "type": "string",
+            "description": "Current status of the import (Started, Completed, or Failed).",
+            "enum": ["Started", "Completed", "Failed"]
+          },
+          "startedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the import started."
+          },
+          "completedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "UTC timestamp when the import completed, or null if still in progress."
+          },
+          "filesProcessed": {
+            "type": "integer",
+            "description": "Total number of files processed during ingestion."
+          },
+          "recordsCreated": {
+            "type": "integer",
+            "description": "Total number of records created."
+          },
+          "recordsUpdated": {
+            "type": "integer",
+            "description": "Total number of records updated."
+          },
+          "recordsDeleted": {
+            "type": "integer",
+            "description": "Total number of records deleted."
+          }
+        }
+      },
+      "ImportReport": {
+        "type": "object",
+        "description": "Comprehensive report of an import operation.",
+        "required": ["importId", "sourceType", "status"],
+        "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique identifier for the import."
+          },
+          "sourceType": {
+            "type": "string",
+            "description": "Source type of the import ('internal' or 'external')."
+          },
+          "status": {
+            "type": "string",
+            "description": "Overall status of the import.",
+            "enum": ["Started", "Completed", "Failed"]
+          },
+          "startedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the import started."
+          },
+          "completedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "UTC timestamp when the import completed."
+          },
+          "acquisitionPhase": {
+            "type": "object",
+            "nullable": true,
+            "description": "Report for the acquisition phase."
+          },
+          "ingestionPhase": {
+            "type": "object",
+            "nullable": true,
+            "description": "Report for the ingestion phase."
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Error message if the import failed."
+          }
+        }
+      },
+      "FileReportsResponse": {
+        "type": "object",
+        "description": "Response containing file processing reports for a specific import.",
+        "required": ["importId", "files"],
+        "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Import ID these file reports belong to."
+          },
+          "totalFiles": {
+            "type": "integer",
+            "description": "Total number of files in this import."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "File processing report."
+            },
+            "description": "List of file processing reports."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the response."
+          }
+        }
+      },
+      "PaginatedLineageEvents": {
+        "type": "object",
+        "description": "Paginated list of lineage events for a record.",
+        "required": ["recordId", "collectionName", "currentStatus", "events"],
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "description": "Unique identifier of the record."
+          },
+          "collectionName": {
+            "type": "string",
+            "description": "Name of the collection containing the record."
+          },
+          "currentStatus": {
+            "type": "string",
+            "description": "Current status of the record (e.g., 'Active', 'Deleted')."
+          },
+          "totalEvents": {
+            "type": "integer",
+            "description": "Total number of events for this record."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of events skipped."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Maximum number of events to return."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Actual number of events returned in this page."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A lineage event for a record."
+            },
+            "description": "List of lineage events."
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the record was created."
+          },
+          "lastModifiedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the record was last modified."
+          },
+          "createdByImport": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Import ID that created this record."
+          },
+          "lastModifiedByImport": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Import ID that last modified this record."
+          }
+        }
+      },
+      "DeleteCollectionResponse": {
+        "type": "object",
+        "description": "Response when a specific MongoDB collection is successfully deleted.",
+        "required": ["collectionName", "success", "message"],
+        "properties": {
+          "collectionName": {
+            "type": "string",
+            "description": "Name of the deleted collection."
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Whether the deletion was successful."
+          },
+          "message": {
+            "type": "string",
+            "description": "Success message."
+          },
+          "deletedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the collection was deleted."
+          }
+        }
+      },
+      "DeleteCollectionsResponse": {
+        "type": "object",
+        "description": "Response when multiple MongoDB collections are successfully deleted.",
+        "required": ["deletedCollections", "totalCount", "success", "message"],
+        "properties": {
+          "deletedCollections": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of collection names that were deleted."
+          },
+          "totalCount": {
+            "type": "integer",
+            "description": "Total number of collections deleted."
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Whether the deletion operation was successful."
+          },
+          "message": {
+            "type": "string",
+            "description": "Success message."
+          },
+          "deletedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the collections were deleted."
+          }
+        }
+      },
+      "GenerateRecordIdRequest": {
+        "type": "object",
+        "description": "Request to generate a record ID from composite key parts.",
+        "required": ["keyParts"],
+        "properties": {
+          "keyParts": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Individual parts of the composite key (in order). Each part will be joined and hashed to create the record ID.",
+            "example": ["NORTH", "F001"]
+          }
+        }
+      },
+      "GenerateRecordIdResponse": {
+        "type": "object",
+        "description": "Response containing the generated record ID.",
+        "required": ["recordId", "keyParts"],
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "description": "Generated URL-safe record ID (SHA256 hash, 43 characters). Can be used to query lineage events."
+          },
+          "keyParts": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Key parts used to generate the record ID."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the ID was generated."
+          }
+        }
+      },
+      "ClearDownStorageResponse": {
+        "type": "object",
+        "description": "Response from clearing down internal storage.",
+        "required": ["deletedKeys", "totalDeleted", "success", "message"],
+        "properties": {
+          "deletedKeys": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of object keys that were deleted."
+          },
+          "totalDeleted": {
+            "type": "integer",
+            "description": "Total number of objects deleted."
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Whether the operation was successful."
+          },
+          "message": {
+            "type": "string",
+            "description": "Success message."
+          },
+          "deletedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the clear down operation completed."
+          }
+        }
+      },
+      "UploadFileResponse": {
+        "type": "object",
+        "description": "Response from uploading a file.",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Success message."
+          },
+          "objectKey": {
+            "type": "string",
+            "description": "The S3 object key."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Size of the uploaded file in bytes."
+          },
+          "contentType": {
+            "type": "string",
+            "description": "Content type of the uploaded file."
+          }
+        }
+      },
+      "ValidationProblemDetails": {
+        "type": "object",
+        "description": "RFC 7807 Problem Details with validation errors.",
+        "properties": {
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "integer" },
+          "detail": { "type": "string" },
+          "instance": { "type": "string" },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      },
+      "ThrottlePolicy": {
+        "type": "object",
+        "description": "A throttle policy configuration.",
+        "required": ["slug", "name", "settings"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "URL-friendly identifier for the policy."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name of the policy."
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the policy is currently active."
+          },
+          "isReadOnly": {
+            "type": "boolean",
+            "description": "Whether the policy is read-only (cannot be modified)."
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ThrottlePolicySettings"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the policy was created."
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the policy was last updated."
+          }
+        }
+      },
+      "ThrottlePolicySettings": {
+        "type": "object",
+        "description": "Settings for a throttle policy.",
+        "properties": {
+          "ingestion": {
+            "type": "object",
+            "description": "Ingestion throttle settings."
+          },
+          "cleanseAnalysis": {
+            "type": "object",
+            "description": "Cleanse analysis throttle settings."
+          },
+          "cleanseExport": {
+            "type": "object",
+            "description": "Cleanse export throttle settings."
+          },
+          "issueDeactivation": {
+            "type": "object",
+            "description": "Issue deactivation throttle settings."
+          },
+          "issueQuery": {
+            "type": "object",
+            "description": "Issue query throttle settings."
+          }
+        }
+      },
+      "CreateThrottlePolicyCommand": {
+        "type": "object",
+        "description": "Command to create a new throttle policy.",
+        "required": ["name", "settings"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Display name for the policy."
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ThrottlePolicySettings"
+          }
+        }
+      },
+      "UpdateThrottlePolicyCommand": {
+        "type": "object",
+        "description": "Command to update an existing throttle policy.",
+        "required": ["settings"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional new display name."
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ThrottlePolicySettings"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key authentication."
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Cleanse",
+      "description": "Cleanse analysis and issue management operations."
+    },
+    {
+      "name": "Import",
+      "description": "Data import, lineage, collection management, and storage operations."
+    },
+    {
+      "name": "ExternalCatalogue",
+      "description": "External catalogue file listing and upload operations."
+    },
+    {
+      "name": "Query",
+      "description": "OData-style dynamic querying of MongoDB collections."
+    },
+    {
+      "name": "ThrottlePolicies",
+      "description": "Throttle policy CRUD and activation management."
+    }
+  ]
+}

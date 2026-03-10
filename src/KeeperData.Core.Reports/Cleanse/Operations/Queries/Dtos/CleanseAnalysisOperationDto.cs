@@ -88,6 +88,12 @@ public class CleanseAnalysisOperationDto
     public double? FinalAverageRpm { get; set; }
 
     /// <summary>
+    /// Gets or sets the UTC timestamp when the operation was cancelled.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? CancelledAtUtc { get; set; }
+
+    /// <summary>
     /// Gets or sets live performance statistics. Only populated for running operations.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

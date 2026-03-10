@@ -69,6 +69,23 @@ public class CleanseRunStatsServiceTests
 
         stats.Should().NotBeNull();
         stats!.ProjectedEndUtc.Should().BeNull();
+        stats.EstimatedDurationRemainingSeconds.Should().BeNull();
+    }
+
+    [Fact]
+    public void CalculateStats_WithWindowData_ShouldUseWindowRpmForProjection()
+    {
+        _sut.RecordSnapshot("op-1", 100);
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        _sut.RecordSnapshot("op-1", 200);
+
+        var stats = _sut.CalculateStats("op-1", recordsAnalyzed: 200, totalRecords: 1000,
+            startedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+
+        stats.Should().NotBeNull();
+        stats!.ProjectedEndUtc.Should().NotBeNull();
+        stats.EstimatedDurationRemainingSeconds.Should().NotBeNull();
+        stats.EstimatedDurationRemainingSeconds.Should().BeGreaterThan(0);
     }
 
     [Fact]

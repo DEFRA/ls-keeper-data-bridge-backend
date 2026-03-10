@@ -80,6 +80,16 @@ public class CleanseAnalysisOperation
     public string? ReportUrl { get; set; }
 
     /// <summary>
+    /// Gets or sets whether cancellation has been requested for this operation.
+    /// </summary>
+    public bool CancellationRequested { get; set; }
+
+    /// <summary>
+    /// Gets or sets the UTC timestamp when the operation was cancelled.
+    /// </summary>
+    public DateTime? CancelledAtUtc { get; set; }
+
+    /// <summary>
     /// Gets or sets the final average records per minute when the operation completed.
     /// </summary>
     public double? FinalAverageRpm { get; set; }
@@ -103,14 +113,42 @@ public class CleanseAnalysisOperation
         double progressPercentage,
         string statusDescription,
         int recordsAnalyzed,
+        int totalRecords,
         int issuesFound,
         int issuesResolved)
     {
         ProgressPercentage = progressPercentage;
         StatusDescription = statusDescription;
         RecordsAnalyzed = recordsAnalyzed;
+        TotalRecords = totalRecords;
         IssuesFound = issuesFound;
         IssuesResolved = issuesResolved;
+    }
+
+    /// <summary>
+    /// Requests cancellation of this operation. Sets the flag that the pump polls
+    /// and transitions the status to Cancelling so API consumers can see the pending state.
+    /// </summary>
+    public void RequestCancellation()
+    {
+        CancellationRequested = true;
+        Status = CleanseAnalysisStatus.Cancelling;
+        StatusDescription = "Cancellation requested, waiting for current batch to complete";
+    }
+
+    /// <summary>
+    /// Marks this operation as cancelled.
+    /// </summary>
+    public void Cancel(long durationMs)
+    {
+        Status = CleanseAnalysisStatus.Cancelled;
+        CancelledAtUtc = DateTime.UtcNow;
+        CompletedAtUtc = DateTime.UtcNow;
+        StatusDescription = "Analysis cancelled by user";
+        DurationMs = durationMs;
+
+        var durationMinutes = durationMs / 60_000.0;
+        FinalAverageRpm = durationMinutes > 0 ? Math.Round(RecordsAnalyzed / durationMinutes, 2) : 0;
     }
 
     /// <summary>

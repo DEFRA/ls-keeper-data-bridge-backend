@@ -26,4 +26,6 @@ internal class CleanseAnalysisOperationDocument
     [BsonElement("report_object_key")] public string? ReportObjectKey { get; set; }
     [BsonElement("report_url")] public string? ReportUrl { get; set; }
     [BsonElement("final_average_rpm")] public double? FinalAverageRpm { get; set; }
+    [BsonElement("cancellation_requested")] public bool CancellationRequested { get; set; }
+    [BsonElement("cancelled_at_utc")] public DateTime? CancelledAtUtc { get; set; }
 }

@@ -28,7 +28,9 @@ internal static class CleanseAnalysisOperationDocumentMapper
         DurationMs = operation.DurationMs,
         ReportObjectKey = operation.ReportObjectKey,
         ReportUrl = operation.ReportUrl,
-        FinalAverageRpm = operation.FinalAverageRpm
+        FinalAverageRpm = operation.FinalAverageRpm,
+        CancellationRequested = operation.CancellationRequested,
+        CancelledAtUtc = operation.CancelledAtUtc
     };
 
     public static CleanseAnalysisOperation ToAggregateRoot(this CleanseAnalysisOperationDocument doc) => new()
@@ -47,7 +49,9 @@ internal static class CleanseAnalysisOperationDocumentMapper
         DurationMs = doc.DurationMs,
         ReportObjectKey = doc.ReportObjectKey,
         ReportUrl = doc.ReportUrl,
-        FinalAverageRpm = doc.FinalAverageRpm
+        FinalAverageRpm = doc.FinalAverageRpm,
+        CancellationRequested = doc.CancellationRequested,
+        CancelledAtUtc = doc.CancelledAtUtc
     };
 
     public static CleanseAnalysisOperationDto ToDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -66,7 +70,8 @@ internal static class CleanseAnalysisOperationDocumentMapper
         DurationMs = doc.DurationMs,
         ReportObjectKey = doc.ReportObjectKey,
         ReportUrl = doc.ReportUrl,
-        FinalAverageRpm = doc.FinalAverageRpm
+        FinalAverageRpm = doc.FinalAverageRpm,
+        CancelledAtUtc = doc.CancelledAtUtc
     };
 
     public static CleanseAnalysisOperationSummaryDto ToSummaryDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -77,11 +82,13 @@ internal static class CleanseAnalysisOperationDocumentMapper
         CompletedAtUtc = doc.CompletedAtUtc,
         ProgressPercentage = doc.ProgressPercentage,
         RecordsAnalyzed = doc.RecordsAnalyzed,
+        TotalRecords = doc.TotalRecords,
         IssuesFound = doc.IssuesFound,
         IssuesResolved = doc.IssuesResolved,
         DurationMs = doc.DurationMs,
         ReportObjectKey = doc.ReportObjectKey,
         ReportUrl = doc.ReportUrl,
-        FinalAverageRpm = doc.FinalAverageRpm
+        FinalAverageRpm = doc.FinalAverageRpm,
+        CancelledAtUtc = doc.CancelledAtUtc
     };
 }

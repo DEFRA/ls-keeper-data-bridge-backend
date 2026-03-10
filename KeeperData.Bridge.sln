@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 18
-VisualStudioVersion = 18.0.11201.2
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37012.4 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeeperData.Bridge", "src\KeeperData.Bridge\KeeperData.Bridge.csproj", "{7D935959-D3BE-4EDC-BAEC-541C72741633}"
 EndProject
@@ -45,6 +45,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeeperData.Bridge.PerformanceTests", "src\KeeperData.Bridge.PerformanceTests\KeeperData.Bridge.PerformanceTests.csproj", "{B4FCD69D-D7BB-4028-903D-31A009191703}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeeperData.Core.Reports", "src\KeeperData.Core.Reports\KeeperData.Core.Reports.csproj", "{6C8D44A1-41DA-4D91-8414-9115991EE473}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeeperData.SamAPI", "src\KeeperData.SamAPI\KeeperData.SamAPI.csproj", "{8A510A14-6379-4E23-B20A-6448D3601735}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -224,6 +226,18 @@ Global
 		{6C8D44A1-41DA-4D91-8414-9115991EE473}.Release|x64.Build.0 = Release|Any CPU
 		{6C8D44A1-41DA-4D91-8414-9115991EE473}.Release|x86.ActiveCfg = Release|Any CPU
 		{6C8D44A1-41DA-4D91-8414-9115991EE473}.Release|x86.Build.0 = Release|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Debug|x64.Build.0 = Debug|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Debug|x86.Build.0 = Debug|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Release|x64.ActiveCfg = Release|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Release|x64.Build.0 = Release|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Release|x86.ActiveCfg = Release|Any CPU
+		{8A510A14-6379-4E23-B20A-6448D3601735}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

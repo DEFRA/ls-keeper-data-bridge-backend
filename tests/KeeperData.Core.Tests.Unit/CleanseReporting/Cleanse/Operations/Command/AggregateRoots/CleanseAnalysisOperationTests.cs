@@ -31,11 +31,12 @@ public class CleanseAnalysisOperationTests
     {
         var op = CleanseAnalysisOperation.Create();
 
-        op.UpdateProgress(75.0, "Processing", 150, 8, 1);
+        op.UpdateProgress(75.0, "Processing", 150, 200, 8, 1);
 
         op.ProgressPercentage.Should().Be(75.0);
         op.StatusDescription.Should().Be("Processing");
         op.RecordsAnalyzed.Should().Be(150);
+        op.TotalRecords.Should().Be(200);
         op.IssuesFound.Should().Be(8);
         op.IssuesResolved.Should().Be(1);
     }
@@ -92,5 +93,53 @@ public class CleanseAnalysisOperationTests
 
         op.ReportUrl.Should().Be("https://new");
         op.ReportObjectKey.Should().Be("report.zip");
+    }
+
+    [Fact]
+    public void RequestCancellation_ShouldSetFlagAndCancellingStatus()
+    {
+        var op = CleanseAnalysisOperation.Create();
+
+        op.RequestCancellation();
+
+        op.CancellationRequested.Should().BeTrue();
+        op.Status.Should().Be(CleanseAnalysisStatus.Cancelling);
+        op.StatusDescription.Should().Contain("Cancellation requested");
+    }
+
+    [Fact]
+    public void Cancel_ShouldSetCancelledStateAndTimestamp()
+    {
+        var op = CleanseAnalysisOperation.Create();
+        op.UpdateProgress(50.0, "Running", 100, 200, 5, 1);
+
+        op.Cancel(30000);
+
+        op.Status.Should().Be(CleanseAnalysisStatus.Cancelled);
+        op.StatusDescription.Should().Be("Analysis cancelled by user");
+        op.CancelledAtUtc.Should().NotBeNull();
+        op.CompletedAtUtc.Should().NotBeNull();
+        op.DurationMs.Should().Be(30000);
+    }
+
+    [Fact]
+    public void Cancel_ShouldCalculateFinalAverageRpm()
+    {
+        var op = CleanseAnalysisOperation.Create();
+        op.UpdateProgress(50.0, "Running", 600, 1200, 5, 1);
+
+        op.Cancel(60000); // 1 minute
+
+        op.FinalAverageRpm.Should().Be(600.0);
+    }
+
+    [Fact]
+    public void UpdateProgress_ShouldSetTotalRecords()
+    {
+        var op = CleanseAnalysisOperation.Create();
+
+        op.UpdateProgress(10.0, "Counting", 100, 1000, 0, 0);
+
+        op.TotalRecords.Should().Be(1000);
     }
 }

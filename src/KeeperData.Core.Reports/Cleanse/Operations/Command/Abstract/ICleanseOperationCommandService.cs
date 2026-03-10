@@ -42,4 +42,19 @@ public interface ICleanseOperationCommandService
     /// </summary>
     /// <returns>The number of records deleted.</returns>
     Task<long> DeleteMetadataAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Requests cancellation of a running operation by setting the cancellation flag.
+    /// </summary>
+    Task RequestCancellationAsync(CancelOperationCommand command, CancellationToken ct = default);
+
+    /// <summary>
+    /// Marks an operation as cancelled.
+    /// </summary>
+    Task CancelOperationAsync(CancelOperationCommand command, long durationMs, CancellationToken ct = default);
+
+    /// <summary>
+    /// Checks whether cancellation has been requested for an operation.
+    /// </summary>
+    Task<bool> IsCancellationRequestedAsync(string operationId, CancellationToken ct = default);
 }

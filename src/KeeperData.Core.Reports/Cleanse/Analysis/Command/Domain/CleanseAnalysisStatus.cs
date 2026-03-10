@@ -26,6 +26,12 @@ public enum CleanseAnalysisStatus
     Failed,
 
     /// <summary>
+    /// Cancellation has been requested but the operation has not yet stopped.
+    /// The pump will detect this at the next progress checkpoint and transition to Cancelled.
+    /// </summary>
+    Cancelling,
+
+    /// <summary>
     /// The operation was cancelled.
     /// </summary>
     Cancelled

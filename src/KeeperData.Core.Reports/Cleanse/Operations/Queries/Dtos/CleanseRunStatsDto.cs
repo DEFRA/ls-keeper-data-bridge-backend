@@ -20,11 +20,18 @@ public class CleanseRunStatsDto
     public double AverageRpm { get; set; }
 
     /// <summary>
-    /// Gets or sets the projected UTC end time based on the average RPM and remaining records.
-    /// Null if projection is not possible (e.g. no records analyzed yet).
+    /// Gets or sets the projected UTC end time based on the current window RPM and remaining records.
+    /// Null if projection is not possible (e.g. no records analyzed yet or no window data).
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DateTime? ProjectedEndUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the estimated remaining duration in seconds based on the current window RPM.
+    /// Null if estimation is not possible.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? EstimatedDurationRemainingSeconds { get; set; }
 
     /// <summary>
     /// Gets or sets the name of the currently active throttle policy.

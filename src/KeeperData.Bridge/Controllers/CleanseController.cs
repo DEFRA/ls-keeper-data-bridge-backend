@@ -56,6 +56,41 @@ public class CleanseController(
     }
 
     /// <summary>
+    /// Requests cancellation of the currently running cleanse analysis operation.
+    /// The operation will stop at the next progress checkpoint and record its state as cancelled.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>200 if cancellation was requested, 404 if no running operation exists</returns>
+    [HttpPost("cancel-analysis")]
+    [ProducesResponseType(typeof(CancelAnalysisResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
+    public async Task<IActionResult> CancelAnalysis(CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Received request to cancel cleanse analysis at {RequestTime}", DateTime.UtcNow);
+
+        var cancelled = await cleanseFacade.Commands.CleanseAnalysisCommandService.CancelAnalysisAsync(cancellationToken);
+
+        if (!cancelled)
+        {
+            logger.LogWarning("No running cleanse analysis found to cancel");
+            return NotFound(new ErrorResponse
+            {
+                Message = "No running cleanse analysis operation found.",
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        logger.LogInformation("Cancellation requested for running cleanse analysis");
+
+        return Ok(new CancelAnalysisResponse
+        {
+            Message = "Cancellation requested. The operation will stop at the next progress checkpoint.",
+            RequestedAtUtc = DateTime.UtcNow
+        });
+    }
+
+    /// <summary>
     /// Deletes all cleanse report data (detected issues).
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -671,6 +706,23 @@ public record StartAnalysisResponse
     /// Gets the UTC timestamp when the analysis was started.
     /// </summary>
     public DateTime StartedAtUtc { get; init; }
+}
+
+/// <summary>
+/// Response when a cleanse analysis cancellation is successfully requested.
+/// </summary>
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
+public record CancelAnalysisResponse
+{
+    /// <summary>
+    /// Gets the result message.
+    /// </summary>
+    public required string Message { get; init; }
+
+    /// <summary>
+    /// Gets the UTC timestamp when the cancellation was requested.
+    /// </summary>
+    public DateTime RequestedAtUtc { get; init; }
 }
 
 /// <summary>

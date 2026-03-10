@@ -23,6 +23,7 @@ public class CleanseOperationCommandService(ICleanseAnalysisOperationAggRootRepo
             command.ProgressPercentage,
             command.StatusDescription,
             command.RecordsAnalyzed,
+            command.TotalRecords,
             command.IssuesFound,
             command.IssuesResolved);
 
@@ -71,4 +72,28 @@ public class CleanseOperationCommandService(ICleanseAnalysisOperationAggRootRepo
 
     public async Task<long> DeleteMetadataAsync(CancellationToken ct)
         => await repository.DeleteAllAsync(ct);
+
+    public async Task RequestCancellationAsync(CancelOperationCommand command, CancellationToken ct = default)
+    {
+        var operation = await repository.GetByIdAsync(command.OperationId, ct)
+            ?? throw new InvalidOperationException($"Operation '{command.OperationId}' not found.");
+
+        operation.RequestCancellation();
+        await repository.UpdateAsync(operation, ct);
+    }
+
+    public async Task CancelOperationAsync(CancelOperationCommand command, long durationMs, CancellationToken ct = default)
+    {
+        var operation = await repository.GetByIdAsync(command.OperationId, ct)
+            ?? throw new InvalidOperationException($"Operation '{command.OperationId}' not found.");
+
+        operation.Cancel(durationMs);
+        await repository.UpdateAsync(operation, ct);
+    }
+
+    public async Task<bool> IsCancellationRequestedAsync(string operationId, CancellationToken ct = default)
+    {
+        var operation = await repository.GetByIdAsync(operationId, ct);
+        return operation?.CancellationRequested ?? false;
+    }
 }

@@ -22,4 +22,11 @@ public interface ICleanseAnalysisCommandService
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The completed operation, or null if the lock could not be acquired.</returns>
     Task<CleanseAnalysisOperationDto?> RunAnalysisAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Requests cancellation of the currently running analysis operation.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>True if a running operation was found and cancellation was requested, false otherwise.</returns>
+    Task<bool> CancelAnalysisAsync(CancellationToken ct = default);
 }

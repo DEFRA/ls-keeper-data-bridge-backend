@@ -44,7 +44,9 @@ public class CleanseAnalysisOperationsQueries(
 
     public async Task<CleanseAnalysisOperationDto?> GetCurrentOperationAsync(CancellationToken ct = default)
     {
-        var filter = Builders<CleanseAnalysisOperationDocument>.Filter.Eq(d => d.Status, CleanseAnalysisStatus.Running.ToString());
+        var filter = Builders<CleanseAnalysisOperationDocument>.Filter.In(
+            d => d.Status,
+            new[] { CleanseAnalysisStatus.Running.ToString(), CleanseAnalysisStatus.Cancelling.ToString() });
         var document = await _collection.Find(filter).FirstOrDefaultAsync(ct);
         var dto = document?.ToDto();
         EnrichWithStats(dto);
@@ -53,7 +55,7 @@ public class CleanseAnalysisOperationsQueries(
 
     private void EnrichWithStats(CleanseAnalysisOperationDto? dto)
     {
-        if (dto is null || dto.Status != CleanseAnalysisStatus.Running)
+        if (dto is null || (dto.Status != CleanseAnalysisStatus.Running && dto.Status != CleanseAnalysisStatus.Cancelling))
             return;
 
         dto.Stats = runStatsService.CalculateStats(dto.Id, dto.RecordsAnalyzed, dto.TotalRecords, dto.StartedAtUtc);
@@ -61,10 +63,11 @@ public class CleanseAnalysisOperationsQueries(
 
     private void EnrichSummaryWithStats(CleanseAnalysisOperationSummaryDto summary)
     {
-        if (summary.Status != CleanseAnalysisStatus.Running.ToString())
+        if (summary.Status != CleanseAnalysisStatus.Running.ToString() &&
+            summary.Status != CleanseAnalysisStatus.Cancelling.ToString())
             return;
 
-        summary.Stats = runStatsService.CalculateStats(summary.Id, summary.RecordsAnalyzed, 0, summary.StartedAtUtc);
+        summary.Stats = runStatsService.CalculateStats(summary.Id, summary.RecordsAnalyzed, summary.TotalRecords, summary.StartedAtUtc);
     }
 }
 

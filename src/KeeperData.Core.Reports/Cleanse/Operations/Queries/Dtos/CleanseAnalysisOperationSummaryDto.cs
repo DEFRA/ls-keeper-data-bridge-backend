@@ -40,6 +40,11 @@ public class CleanseAnalysisOperationSummaryDto
     public int RecordsAnalyzed { get; set; }
 
     /// <summary>
+    /// Gets or sets the total number of records to analyze.
+    /// </summary>
+    public int TotalRecords { get; set; }
+
+    /// <summary>
     /// Gets or sets the number of issues found.
     /// </summary>
     public int IssuesFound { get; set; }
@@ -70,6 +75,12 @@ public class CleanseAnalysisOperationSummaryDto
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? FinalAverageRpm { get; set; }
+
+    /// <summary>
+    /// Gets or sets the UTC timestamp when the operation was cancelled.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? CancelledAtUtc { get; set; }
 
     /// <summary>
     /// Gets or sets live performance statistics. Only populated for running operations.

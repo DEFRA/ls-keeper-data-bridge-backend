@@ -16,5 +16,21 @@ namespace KeeperData.SamAPI.Tests.Integration
 
             Assert.NotNull(result);
         }
+
+        [Fact]
+        public async Task GetHoldings_ReturnsData()
+        {
+            var result = await samApi.GetHoldingAsync("15", "270", "1919");
+
+            Assert.NotNull(result);
+        }
+
+        [Fact]
+        public async Task FindHoldings_ReturnsData()
+        {
+            var result = await samApi.FindHoldingsAsync(["15/270/1919"], 1, 5);
+
+            Assert.NotNull(result);
+        }
     }
 }

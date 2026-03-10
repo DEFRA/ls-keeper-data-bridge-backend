@@ -18,14 +18,18 @@ namespace KeeperData.SamAPI
             this.tokenClient = tokenClient;
         }
 
-        public async Task<FindCustomersResponse?> FindCustomersAsync(IEnumerable<string> ids, CancellationToken ct = default)
+        public async Task<FindCustomersResponse?> FindCustomersAsync(
+            IEnumerable<string> ids,
+            int page = 1,
+            int pageSize = 50,
+            CancellationToken ct = default)
         {
             var token = await tokenClient.GetAccessTokenAsync(ct);
 
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var response = await http.PostAsJsonAsync(
-                "alpha/customers/find",
+                $"customers/find?page={page}&pageSize={pageSize}",
                 new { ids },
                 ct);
 

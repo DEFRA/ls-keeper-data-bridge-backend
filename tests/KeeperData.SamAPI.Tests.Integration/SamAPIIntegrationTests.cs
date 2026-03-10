@@ -19,6 +19,7 @@ namespace KeeperData.SamAPI.Tests.Integration
             var result = await fixture.SamApi.FindCustomersAsync(new[] { "C123456" });
 
             testOutputHelper.WriteLine($"Found {result?.Data.Count} customers.");
+            testOutputHelper.WriteLine($"{result?.Data.First().FirstName} {result?.Data.First().LastName}");
         }
 
         [Fact]
@@ -44,7 +45,7 @@ namespace KeeperData.SamAPI.Tests.Integration
 
             var firstLocation = response?.Data.FirstOrDefault();
             
-            testOutputHelper.WriteLine($"Found {response?.Data.Count} locations. First location type: {firstLocation?.Type} and osMapReference {firstLocation.OsMapReference}");
+            testOutputHelper.WriteLine($"Found {response?.Data.Count} locations. First location type: {firstLocation?.Type} and osMapReference {firstLocation?.OsMapReference}");
         }
     }
 }

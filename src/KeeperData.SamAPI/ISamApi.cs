@@ -7,7 +7,9 @@ namespace KeeperData.SamAPI
     public interface ISamApi
     {
         Task<FindCustomersResponse?> FindCustomersAsync(
-            IEnumerable<string> ids, 
+            IEnumerable<string> ids,
+            int page = 1,
+            int pageSize = 50,
             CancellationToken ct = default);
 
         Task<GetHoldingResponse?> GetHoldingAsync(

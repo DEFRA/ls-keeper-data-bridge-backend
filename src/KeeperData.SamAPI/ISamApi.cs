@@ -1,5 +1,6 @@
 using KeeperData.SamAPI.Customers;
 using KeeperData.SamAPI.Holdings;
+using KeeperData.SamAPI.Locations;
 
 namespace KeeperData.SamAPI
 {
@@ -20,5 +21,11 @@ namespace KeeperData.SamAPI
             int page = 1,
             int pageSize = 50,
             CancellationToken ct = default);
+
+        Task<FindLocationsResponse?> FindLocationsAsync(
+           IEnumerable<string> ids,
+           int page = 1,
+           int pageSize = 50,
+           CancellationToken ct = default);
     }
 }

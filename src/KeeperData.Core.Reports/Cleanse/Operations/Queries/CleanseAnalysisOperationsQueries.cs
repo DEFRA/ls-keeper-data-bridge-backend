@@ -58,6 +58,17 @@ public class CleanseAnalysisOperationsQueries(
         if (dto is null || (dto.Status != CleanseAnalysisStatus.Running && dto.Status != CleanseAnalysisStatus.Cancelling))
             return;
 
+        // Enrich per-phase stats for the currently running phase
+        if (dto.Phases is not null)
+        {
+            foreach (var phase in dto.Phases.Where(p => p.Status == "Running" && p.StartedAtUtc.HasValue))
+            {
+                phase.Stats = runStatsService.CalculatePhaseStats(
+                    dto.Id, phase.Name, phase.RecordsProcessed, phase.TotalRecords, phase.StartedAtUtc!.Value);
+            }
+        }
+
+        // Top-level Stats: use current phase's sliding window data for RPM, operation-wide elapsed time for average
         dto.Stats = runStatsService.CalculateStats(dto.Id, dto.RecordsAnalyzed, dto.TotalRecords, dto.StartedAtUtc);
     }
 

@@ -52,13 +52,13 @@ public class CleanseReportExportCommandService(
         RuleIds.SAM_CATTLE_RELATED_CPHs      // Rule 3
     ];
 
-    public async Task ExportReportAsync(string operationId, CancellationToken ct)
+    public async Task ExportReportAsync(string operationId, Func<int, int, string, Task>? onProgress, CancellationToken ct)
     {
         try
         {
             logger.LogInformation("Starting report export for operation {OperationId}", operationId);
 
-            var exportResult = await ExportAndUploadAsync(operationId, ct);
+            var exportResult = await ExportAndUploadAsync(operationId, onProgress, ct);
 
             if (exportResult.Success && !string.IsNullOrEmpty(exportResult.ReportUrl) && !string.IsNullOrEmpty(exportResult.ObjectKey))
             {
@@ -140,7 +140,7 @@ public class CleanseReportExportCommandService(
     }
 
     /// <inheritdoc />
-    private async Task<CleanseReportExportResult> ExportAndUploadAsync(string operationId, CancellationToken ct = default)
+    private async Task<CleanseReportExportResult> ExportAndUploadAsync(string operationId, Func<int, int, string, Task>? onProgress, CancellationToken ct = default)
     {
         var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
         var zipFileName = $"cleanse-report_{timestamp}.zip";
@@ -154,17 +154,28 @@ public class CleanseReportExportCommandService(
                 "Starting cleanse report export for operation {OperationId}, timestamp {Timestamp}",
                 operationId, timestamp);
 
+            // Get total count for progress reporting
+            var totalRecords = (int)await issueQueries.GetActiveIssuesCountAsync(ct);
+
             // Step 1: Stream issues from MongoDB directly to CSV file
             tempCsvPath = Path.GetRandomFileName();
-            var recordCount = await StreamIssuesToCsvAsync(tempCsvPath, ct);
+            var recordCount = await StreamIssuesToCsvAsync(tempCsvPath, totalRecords, onProgress, ct);
             logger.LogInformation("Streamed {RecordCount} issues to CSV file at {TempPath}", recordCount, tempCsvPath);
 
             // Step 2: Create zip file
+            if (onProgress is not null)
+            {
+                await onProgress(totalRecords, totalRecords, "Compressing report");
+            }
             tempZipPath = Path.GetRandomFileName();
             CreateZipFile(tempCsvPath, tempZipPath, CsvFileName);
             logger.LogInformation("Created zip file at {ZipPath}", tempZipPath);
 
             // Step 3: Upload to S3 (using the cleanse reports blob service which has the correct prefix)
+            if (onProgress is not null)
+            {
+                await onProgress(totalRecords, totalRecords, "Uploading report to S3");
+            }
             var blobService = blobStorageServiceFactory.GetCleanseReportsBlobService();
             var zipContent = await File.ReadAllBytesAsync(tempZipPath, ct);
             await blobService.UploadAsync(zipFileName, zipContent, "application/zip", cancellationToken: ct);
@@ -205,7 +216,7 @@ public class CleanseReportExportCommandService(
     /// Issues are grouped by rule priority order, sorted by CPH within each group.
     /// Memory footprint is O(batch_size) instead of O(total_records).
     /// </summary>
-    private async Task<int> StreamIssuesToCsvAsync(string filePath, CancellationToken ct)
+    private async Task<int> StreamIssuesToCsvAsync(string filePath, int totalRecords, Func<int, int, string, Task>? onProgress, CancellationToken ct)
     {
         var recordCount = 0;
 
@@ -235,6 +246,12 @@ public class CleanseReportExportCommandService(
             {
                 await csv.FlushAsync();
                 logger.LogDebug("Streamed {RecordCount} records to CSV...", recordCount);
+
+                if (onProgress is not null)
+                {
+                    await onProgress(recordCount, totalRecords, $"Streaming issues to CSV: {recordCount} of {totalRecords}");
+                }
+
                 await throttler.DelayAsync(exportSettings.ThrottlingDelayMs, ct);
             }
         }

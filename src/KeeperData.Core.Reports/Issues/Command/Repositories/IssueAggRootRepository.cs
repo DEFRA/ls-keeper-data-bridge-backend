@@ -35,7 +35,7 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
         await _collection.ReplaceOneAsync(filter, item.ToDocument(), options, ct);
     }
 
-    public async Task<int> DeactivateStaleAsync(string currentOperationId, CancellationToken ct = default)
+    public async Task<int> DeactivateStaleAsync(string currentOperationId, Func<int, int, Task>? onBatchProcessed, CancellationToken ct = default)
     {
         logger.LogInformation("Deactivating stale issues: starting (OperationId={OperationId})", currentOperationId);
         var stopwatch = Stopwatch.StartNew();
@@ -44,6 +44,7 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
             Builders<IssueDocument>.Filter.Eq(d => d.IsActive, true),
             Builders<IssueDocument>.Filter.Ne(d => d.OperationId, currentOperationId));
 
+        var totalStale = (int)await _collection.CountDocumentsAsync(staleFilter, cancellationToken: ct);
         var totalDeactivated = 0;
 
         while (!ct.IsCancellationRequested)
@@ -70,6 +71,11 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
 
             var result = await _collection.UpdateManyAsync(batchFilter, update, cancellationToken: ct);
             totalDeactivated += (int)result.ModifiedCount;
+
+            if (onBatchProcessed is not null)
+            {
+                await onBatchProcessed(totalDeactivated, totalStale);
+            }
 
             if (staleIds.Count < settings.BatchSize)
             {

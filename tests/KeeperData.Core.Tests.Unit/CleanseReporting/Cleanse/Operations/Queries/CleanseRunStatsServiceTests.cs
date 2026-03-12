@@ -203,4 +203,124 @@ public class CleanseRunStatsServiceTests
     }
 
     #endregion
+
+    #region Phase-keyed snapshots and stats
+
+    [Fact]
+    public void RecordSnapshot_WithPhaseName_ShouldAccumulatePerPhase()
+    {
+        _sut.RecordSnapshot("op-1", "Analysis", 100);
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        _sut.RecordSnapshot("op-1", "Analysis", 200);
+
+        var stats = _sut.CalculatePhaseStats("op-1", "Analysis",
+            recordsProcessed: 200, totalRecords: 1000,
+            phaseStartedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+
+        stats.Should().NotBeNull();
+        stats!.CurrentRpm.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void CalculatePhaseStats_WithNoSnapshots_ShouldReturnZeroCurrentRpm()
+    {
+        var stats = _sut.CalculatePhaseStats("op-1", "Deactivation",
+            recordsProcessed: 50, totalRecords: 100,
+            phaseStartedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+
+        stats.Should().NotBeNull();
+        stats!.CurrentRpm.Should().Be(0);
+        stats.AverageRpm.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void CalculatePhaseStats_ShouldReturnThrottleSettingsForPhase()
+    {
+        var deactivationStats = _sut.CalculatePhaseStats("op-1", "Deactivation",
+            recordsProcessed: 50, totalRecords: 100,
+            phaseStartedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+
+        deactivationStats.Should().NotBeNull();
+        deactivationStats!.BatchSize.Should().Be(_throttler.Settings.IssueDeactivation.BatchSize);
+        deactivationStats.BatchDelayMs.Should().Be(_throttler.Settings.IssueDeactivation.ThrottleDelayMs);
+    }
+
+    [Fact]
+    public void CalculatePhaseStats_ForExport_ShouldReturnExportThrottleSettings()
+    {
+        var exportStats = _sut.CalculatePhaseStats("op-1", "Export",
+            recordsProcessed: 100, totalRecords: 500,
+            phaseStartedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+
+        exportStats.Should().NotBeNull();
+        exportStats!.BatchSize.Should().Be(_throttler.Settings.CleanseExport.StreamBatchSize);
+        exportStats.BatchDelayMs.Should().Be(_throttler.Settings.CleanseExport.ThrottlingDelayMs);
+    }
+
+    [Fact]
+    public void CalculatePhaseStats_WhenAllProcessed_ShouldReturnNullProjection()
+    {
+        var stats = _sut.CalculatePhaseStats("op-1", "Analysis",
+            recordsProcessed: 1000, totalRecords: 1000,
+            phaseStartedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-5));
+
+        stats.Should().NotBeNull();
+        stats!.ProjectedEndUtc.Should().BeNull();
+        stats.EstimatedRemainingSeconds.Should().BeNull();
+    }
+
+    [Fact]
+    public void ClearSnapshots_ShouldRemoveAllPhaseKeysForOperation()
+    {
+        _sut.RecordSnapshot("op-1", "Analysis", 100);
+        _sut.RecordSnapshot("op-1", "Deactivation", 50);
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        _sut.RecordSnapshot("op-1", "Analysis", 200);
+        _sut.RecordSnapshot("op-1", "Deactivation", 100);
+
+        _sut.ClearSnapshots("op-1");
+
+        var analysisStats = _sut.CalculatePhaseStats("op-1", "Analysis",
+            recordsProcessed: 200, totalRecords: 1000,
+            phaseStartedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+        analysisStats!.CurrentRpm.Should().Be(0, "snapshots were cleared");
+
+        var deactivationStats = _sut.CalculatePhaseStats("op-1", "Deactivation",
+            recordsProcessed: 100, totalRecords: 200,
+            phaseStartedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+        deactivationStats!.CurrentRpm.Should().Be(0, "snapshots were cleared");
+    }
+
+    [Fact]
+    public void ClearSnapshots_ShouldNotAffectOtherOperationPhases()
+    {
+        _sut.RecordSnapshot("op-1", "Analysis", 100);
+        _sut.RecordSnapshot("op-2", "Analysis", 100);
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        _sut.RecordSnapshot("op-2", "Analysis", 200);
+
+        _sut.ClearSnapshots("op-1");
+
+        var stats = _sut.CalculatePhaseStats("op-2", "Analysis",
+            recordsProcessed: 200, totalRecords: 1000,
+            phaseStartedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+        stats!.CurrentRpm.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void LegacyRecordSnapshot_ShouldDelegateToAnalysisPhase()
+    {
+        // The legacy overload should work via the phase-keyed system
+        _sut.RecordSnapshot("op-1", 100);
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        _sut.RecordSnapshot("op-1", 200);
+
+        var phaseStats = _sut.CalculatePhaseStats("op-1", "Analysis",
+            recordsProcessed: 200, totalRecords: 1000,
+            phaseStartedAtUtc: _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1));
+
+        phaseStats!.CurrentRpm.Should().BeGreaterThan(0);
+    }
+
+    #endregion
 }

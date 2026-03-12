@@ -83,6 +83,12 @@ public class CleanseAnalysisOperationSummaryDto
     public DateTime? CancelledAtUtc { get; set; }
 
     /// <summary>
+    /// Gets or sets the name of the currently executing phase.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CurrentPhase { get; set; }
+
+    /// <summary>
     /// Gets or sets live performance statistics. Only populated for running operations.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

@@ -28,4 +28,23 @@ internal class CleanseAnalysisOperationDocument
     [BsonElement("final_average_rpm")] public double? FinalAverageRpm { get; set; }
     [BsonElement("cancellation_requested")] public bool CancellationRequested { get; set; }
     [BsonElement("cancelled_at_utc")] public DateTime? CancelledAtUtc { get; set; }
+    [BsonElement("current_phase")] public string? CurrentPhase { get; set; }
+    [BsonElement("phases")] public List<OperationPhaseProgressDocument> Phases { get; set; } = [];
+}
+
+/// <summary>
+/// Embedded sub-document for per-phase progress tracking.
+/// </summary>
+[ExcludeFromCodeCoverage(Justification = "Internal persistence document - covered by integration tests.")]
+internal class OperationPhaseProgressDocument
+{
+    [BsonElement("name")] public string Name { get; set; } = string.Empty;
+    [BsonElement("status")] public string Status { get; set; } = "NotStarted";
+    [BsonElement("percentage")] public double Percentage { get; set; }
+    [BsonElement("description")] public string Description { get; set; } = string.Empty;
+    [BsonElement("records_processed")] public int RecordsProcessed { get; set; }
+    [BsonElement("total_records")] public int TotalRecords { get; set; }
+    [BsonElement("started_at_utc")] public DateTime? StartedAtUtc { get; set; }
+    [BsonElement("completed_at_utc")] public DateTime? CompletedAtUtc { get; set; }
+    [BsonElement("duration_ms")] public long? DurationMs { get; set; }
 }

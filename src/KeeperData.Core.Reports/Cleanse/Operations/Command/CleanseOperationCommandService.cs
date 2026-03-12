@@ -96,4 +96,31 @@ public class CleanseOperationCommandService(ICleanseAnalysisOperationAggRootRepo
         var operation = await repository.GetByIdAsync(operationId, ct);
         return operation?.CancellationRequested ?? false;
     }
+
+    public async Task StartPhaseAsync(StartPhaseCommand command, CancellationToken ct = default)
+    {
+        var operation = await repository.GetByIdAsync(command.OperationId, ct)
+            ?? throw new InvalidOperationException($"Operation '{command.OperationId}' not found.");
+
+        operation.StartPhase(command.Phase, command.TotalRecords);
+        await repository.UpdateAsync(operation, ct);
+    }
+
+    public async Task UpdatePhaseProgressAsync(UpdatePhaseProgressCommand command, CancellationToken ct = default)
+    {
+        var operation = await repository.GetByIdAsync(command.OperationId, ct)
+            ?? throw new InvalidOperationException($"Operation '{command.OperationId}' not found.");
+
+        operation.UpdatePhaseProgress(command.Phase, command.RecordsProcessed, command.TotalRecords, command.Description);
+        await repository.UpdateAsync(operation, ct);
+    }
+
+    public async Task CompletePhaseAsync(CompletePhaseCommand command, CancellationToken ct = default)
+    {
+        var operation = await repository.GetByIdAsync(command.OperationId, ct)
+            ?? throw new InvalidOperationException($"Operation '{command.OperationId}' not found.");
+
+        operation.CompletePhase(command.Phase);
+        await repository.UpdateAsync(operation, ct);
+    }
 }

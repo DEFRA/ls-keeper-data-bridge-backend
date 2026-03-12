@@ -44,8 +44,8 @@ public class IssueCommandService(IIssueAggRootRepository repo, IIssueHistoryAggR
         return wasInactive ? IssueRecordResult.Reactivated : IssueRecordResult.NoChange;
     }
 
-    public async Task<int> DeactivateStaleIssuesAsync(DeactivateStaleIssuesCommand command, CancellationToken ct)
-        => await repo.DeactivateStaleAsync(command.OperationId, ct);
+    public async Task<int> DeactivateStaleIssuesAsync(DeactivateStaleIssuesCommand command, Func<int, int, Task>? onBatchProcessed, CancellationToken ct)
+        => await repo.DeactivateStaleAsync(command.OperationId, onBatchProcessed, ct);
 
     public async Task IgnoreIssueAsync(IgnoreIssueCommand command, CancellationToken ct)
     {

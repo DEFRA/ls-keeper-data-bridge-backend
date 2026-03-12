@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries.Dtos;
 using KeeperData.Core.Throttling;
@@ -11,43 +12,70 @@ namespace KeeperData.Core.Reports.Cleanse.Operations.Queries;
 /// </summary>
 public sealed class CleanseRunStatsService(IThrottler throttler, TimeProvider timeProvider) : ICleanseRunStatsService
 {
-    private readonly record struct Snapshot(DateTime TimestampUtc, int RecordsAnalyzed);
+    private readonly record struct Snapshot(DateTime TimestampUtc, int RecordsProcessed);
 
     private readonly ConcurrentDictionary<string, ConcurrentQueue<Snapshot>> _snapshots = new();
 
     /// <inheritdoc/>
     public void RecordSnapshot(string operationId, int recordsAnalyzed)
     {
-        var queue = _snapshots.GetOrAdd(operationId, _ => new ConcurrentQueue<Snapshot>());
-        queue.Enqueue(new Snapshot(timeProvider.GetUtcNow().UtcDateTime, recordsAnalyzed));
+        RecordSnapshot(operationId, OperationPhase.Analysis.ToString(), recordsAnalyzed);
+    }
 
-        PruneOldSnapshots(queue, throttler.Settings.CleanseAnalysis.RpmWindowSeconds);
+    /// <inheritdoc/>
+    public void RecordSnapshot(string operationId, string phaseName, int recordsProcessed)
+    {
+        var key = BuildKey(operationId, phaseName);
+        var windowSeconds = GetRpmWindowSeconds(phaseName);
+        var queue = _snapshots.GetOrAdd(key, _ => new ConcurrentQueue<Snapshot>());
+        queue.Enqueue(new Snapshot(timeProvider.GetUtcNow().UtcDateTime, recordsProcessed));
+        PruneOldSnapshots(queue, windowSeconds);
     }
 
     /// <inheritdoc/>
     public CleanseRunStatsDto? CalculateStats(string operationId, int recordsAnalyzed, int totalRecords, DateTime startedAtUtc)
     {
+        var phaseStats = CalculatePhaseStats(operationId, OperationPhase.Analysis.ToString(), recordsAnalyzed, totalRecords, startedAtUtc);
+        if (phaseStats is null)
+            return null;
+
         var settings = throttler.Settings.CleanseAnalysis;
+        return new CleanseRunStatsDto
+        {
+            CurrentRpm = phaseStats.CurrentRpm,
+            AverageRpm = phaseStats.AverageRpm,
+            ProjectedEndUtc = phaseStats.ProjectedEndUtc,
+            EstimatedDurationRemainingSeconds = phaseStats.EstimatedRemainingSeconds,
+            ThrottlePolicyName = phaseStats.ThrottlePolicyName,
+            ThrottlePolicySlug = phaseStats.ThrottlePolicySlug,
+            PumpBatchSize = settings.PumpBatchSize,
+            PumpDelayMs = settings.PumpDelayMs
+        };
+    }
+
+    /// <inheritdoc/>
+    public PhaseStats? CalculatePhaseStats(string operationId, string phaseName, int recordsProcessed, int totalRecords, DateTime phaseStartedAtUtc)
+    {
+        var key = BuildKey(operationId, phaseName);
+        var windowSeconds = GetRpmWindowSeconds(phaseName);
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var elapsedMinutes = (now - startedAtUtc).TotalMinutes;
+        var elapsedMinutes = (now - phaseStartedAtUtc).TotalMinutes;
 
         var averageRpm = elapsedMinutes > 0
-            ? Math.Round(recordsAnalyzed / elapsedMinutes, 2)
+            ? Math.Round(recordsProcessed / elapsedMinutes, 2)
             : 0;
 
         double currentRpm = 0;
-        if (_snapshots.TryGetValue(operationId, out var queue))
+        if (_snapshots.TryGetValue(key, out var queue))
         {
-            PruneOldSnapshots(queue, settings.RpmWindowSeconds);
+            PruneOldSnapshots(queue, windowSeconds);
             currentRpm = CalculateWindowRpm(queue);
         }
 
         DateTime? projectedEnd = null;
         double? estimatedRemainingSeconds = null;
-        var remainingRecords = totalRecords - recordsAnalyzed;
+        var remainingRecords = totalRecords - recordsProcessed;
 
-        // Use window RPM for projection so throttle policy changes are reflected quickly.
-        // Fall back to average RPM if no window data is available yet.
         var projectionRpm = currentRpm > 0 ? currentRpm : averageRpm;
         if (projectionRpm > 0 && remainingRecords > 0)
         {
@@ -56,24 +84,49 @@ public sealed class CleanseRunStatsService(IThrottler throttler, TimeProvider ti
             estimatedRemainingSeconds = Math.Round(remainingMinutes * 60, 1);
         }
 
-        return new CleanseRunStatsDto
+        var (batchSize, batchDelayMs) = GetThrottleSettings(phaseName);
+
+        return new PhaseStats
         {
             CurrentRpm = currentRpm,
             AverageRpm = averageRpm,
             ProjectedEndUtc = projectedEnd,
-            EstimatedDurationRemainingSeconds = estimatedRemainingSeconds,
+            EstimatedRemainingSeconds = estimatedRemainingSeconds,
             ThrottlePolicyName = throttler.ActivePolicyName,
             ThrottlePolicySlug = throttler.ActivePolicySlug,
-            PumpBatchSize = settings.PumpBatchSize,
-            PumpDelayMs = settings.PumpDelayMs
+            BatchSize = batchSize,
+            BatchDelayMs = batchDelayMs
         };
     }
 
     /// <inheritdoc/>
     public void ClearSnapshots(string operationId)
     {
+        // Remove all phase-keyed entries for this operation
+        var keysToRemove = _snapshots.Keys.Where(k => k.StartsWith($"{operationId}:", StringComparison.Ordinal)).ToList();
+        foreach (var key in keysToRemove)
+        {
+            _snapshots.TryRemove(key, out _);
+        }
+        // Also remove legacy non-phased key
         _snapshots.TryRemove(operationId, out _);
     }
+
+    private static string BuildKey(string operationId, string phaseName) => $"{operationId}:{phaseName}";
+
+    private int GetRpmWindowSeconds(string phaseName) => phaseName switch
+    {
+        nameof(OperationPhase.Deactivation) => throttler.Settings.IssueDeactivation.RpmWindowSeconds,
+        nameof(OperationPhase.Export) => throttler.Settings.CleanseExport.RpmWindowSeconds,
+        _ => throttler.Settings.CleanseAnalysis.RpmWindowSeconds
+    };
+
+    private (int BatchSize, int BatchDelayMs) GetThrottleSettings(string phaseName) => phaseName switch
+    {
+        nameof(OperationPhase.Deactivation) => (throttler.Settings.IssueDeactivation.BatchSize, throttler.Settings.IssueDeactivation.ThrottleDelayMs),
+        nameof(OperationPhase.Export) => (throttler.Settings.CleanseExport.StreamBatchSize, throttler.Settings.CleanseExport.ThrottlingDelayMs),
+        _ => (throttler.Settings.CleanseAnalysis.PumpBatchSize, throttler.Settings.CleanseAnalysis.PumpDelayMs)
+    };
 
     private static double CalculateWindowRpm(ConcurrentQueue<Snapshot> queue)
     {
@@ -88,7 +141,7 @@ public sealed class CleanseRunStatsService(IThrottler throttler, TimeProvider ti
         if (windowMinutes <= 0)
             return 0;
 
-        var recordsDelta = newest.RecordsAnalyzed - oldest.RecordsAnalyzed;
+        var recordsDelta = newest.RecordsProcessed - oldest.RecordsProcessed;
         return Math.Round(recordsDelta / windowMinutes, 2);
     }
 

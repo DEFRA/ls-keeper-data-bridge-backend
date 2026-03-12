@@ -142,4 +142,124 @@ public class CleanseAnalysisOperationTests
 
         op.TotalRecords.Should().Be(1000);
     }
+
+    #region Phase tracking
+
+    [Fact]
+    public void Create_ShouldInitialiseThreeNotStartedPhases()
+    {
+        var op = CleanseAnalysisOperation.Create();
+
+        op.Phases.Should().HaveCount(3);
+        op.Phases.Should().AllSatisfy(p => p.Status.Should().Be("NotStarted"));
+        op.Phases.Select(p => p.Name).Should().ContainInOrder("Analysis", "Deactivation", "Export");
+    }
+
+    [Fact]
+    public void StartPhase_ShouldSetRunningStatusAndCurrentPhase()
+    {
+        var op = CleanseAnalysisOperation.Create();
+
+        op.StartPhase(OperationPhase.Analysis, 1000);
+
+        var phase = op.Phases.Single(p => p.Name == "Analysis");
+        phase.Status.Should().Be("Running");
+        phase.TotalRecords.Should().Be(1000);
+        phase.StartedAtUtc.Should().NotBeNull();
+        op.CurrentPhase.Should().Be("Analysis");
+    }
+
+    [Fact]
+    public void UpdatePhaseProgress_ShouldUpdateCountersAndPercentage()
+    {
+        var op = CleanseAnalysisOperation.Create();
+        op.StartPhase(OperationPhase.Analysis, 1000);
+
+        op.UpdatePhaseProgress(OperationPhase.Analysis, 500, 1000, "Halfway");
+
+        var phase = op.Phases.Single(p => p.Name == "Analysis");
+        phase.RecordsProcessed.Should().Be(500);
+        phase.Percentage.Should().Be(50.0);
+        phase.Description.Should().Be("Halfway");
+        op.StatusDescription.Should().Be("Halfway");
+    }
+
+    [Fact]
+    public void UpdatePhaseProgress_ShouldRecalculateAggregatePercentage()
+    {
+        var op = CleanseAnalysisOperation.Create();
+        op.StartPhase(OperationPhase.Analysis, 1000);
+
+        op.UpdatePhaseProgress(OperationPhase.Analysis, 500, 1000, "Halfway");
+
+        // Analysis weight = 0.80, 50% of 80 = 40
+        op.ProgressPercentage.Should().Be(40.0);
+    }
+
+    [Fact]
+    public void CompletePhase_ShouldSetCompletedStatusAndDuration()
+    {
+        var op = CleanseAnalysisOperation.Create();
+        op.StartPhase(OperationPhase.Analysis, 1000);
+
+        op.CompletePhase(OperationPhase.Analysis);
+
+        var phase = op.Phases.Single(p => p.Name == "Analysis");
+        phase.Status.Should().Be("Completed");
+        phase.Percentage.Should().Be(100.0);
+        phase.CompletedAtUtc.Should().NotBeNull();
+        phase.DurationMs.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void CompletePhase_ShouldRecalculateAggregate()
+    {
+        var op = CleanseAnalysisOperation.Create();
+        op.StartPhase(OperationPhase.Analysis, 1000);
+        op.CompletePhase(OperationPhase.Analysis);
+
+        // Analysis=100% * 0.80 = 80, others=0
+        op.ProgressPercentage.Should().Be(80.0);
+    }
+
+    [Fact]
+    public void CompleteAllPhases_ShouldReach100Percent()
+    {
+        var op = CleanseAnalysisOperation.Create();
+
+        op.StartPhase(OperationPhase.Analysis, 100);
+        op.CompletePhase(OperationPhase.Analysis);
+        op.StartPhase(OperationPhase.Deactivation, 50);
+        op.CompletePhase(OperationPhase.Deactivation);
+        op.StartPhase(OperationPhase.Export, 30);
+        op.CompletePhase(OperationPhase.Export);
+
+        op.ProgressPercentage.Should().Be(100.0);
+    }
+
+    [Fact]
+    public void StartPhase_WithUnknownPhase_ShouldThrow()
+    {
+        var op = CleanseAnalysisOperation.Create();
+        // Remove all phases to simulate a missing phase
+        op.Phases.Clear();
+
+        var act = () => op.StartPhase(OperationPhase.Analysis, 100);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*not found*");
+    }
+
+    [Fact]
+    public void UpdatePhaseProgress_WithZeroTotal_ShouldSetZeroPercentage()
+    {
+        var op = CleanseAnalysisOperation.Create();
+        op.StartPhase(OperationPhase.Deactivation, 0);
+
+        op.UpdatePhaseProgress(OperationPhase.Deactivation, 0, 0, "No stale issues");
+
+        var phase = op.Phases.Single(p => p.Name == "Deactivation");
+        phase.Percentage.Should().Be(0);
+    }
+
+    #endregion
 }

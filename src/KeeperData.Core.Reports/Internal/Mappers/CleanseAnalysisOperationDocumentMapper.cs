@@ -30,7 +30,9 @@ internal static class CleanseAnalysisOperationDocumentMapper
         ReportUrl = operation.ReportUrl,
         FinalAverageRpm = operation.FinalAverageRpm,
         CancellationRequested = operation.CancellationRequested,
-        CancelledAtUtc = operation.CancelledAtUtc
+        CancelledAtUtc = operation.CancelledAtUtc,
+        CurrentPhase = operation.CurrentPhase,
+        Phases = operation.Phases.Select(ToPhaseDocument).ToList()
     };
 
     public static CleanseAnalysisOperation ToAggregateRoot(this CleanseAnalysisOperationDocument doc) => new()
@@ -51,7 +53,9 @@ internal static class CleanseAnalysisOperationDocumentMapper
         ReportUrl = doc.ReportUrl,
         FinalAverageRpm = doc.FinalAverageRpm,
         CancellationRequested = doc.CancellationRequested,
-        CancelledAtUtc = doc.CancelledAtUtc
+        CancelledAtUtc = doc.CancelledAtUtc,
+        CurrentPhase = doc.CurrentPhase,
+        Phases = doc.Phases.Select(ToPhaseProgress).ToList()
     };
 
     public static CleanseAnalysisOperationDto ToDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -71,7 +75,9 @@ internal static class CleanseAnalysisOperationDocumentMapper
         ReportObjectKey = doc.ReportObjectKey,
         ReportUrl = doc.ReportUrl,
         FinalAverageRpm = doc.FinalAverageRpm,
-        CancelledAtUtc = doc.CancelledAtUtc
+        CancelledAtUtc = doc.CancelledAtUtc,
+        CurrentPhase = doc.CurrentPhase,
+        Phases = doc.Phases.Count > 0 ? doc.Phases.Select(ToPhaseProgress).ToList() : null
     };
 
     public static CleanseAnalysisOperationSummaryDto ToSummaryDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -89,6 +95,33 @@ internal static class CleanseAnalysisOperationDocumentMapper
         ReportObjectKey = doc.ReportObjectKey,
         ReportUrl = doc.ReportUrl,
         FinalAverageRpm = doc.FinalAverageRpm,
-        CancelledAtUtc = doc.CancelledAtUtc
+        CancelledAtUtc = doc.CancelledAtUtc,
+        CurrentPhase = doc.CurrentPhase
+    };
+
+    private static OperationPhaseProgressDocument ToPhaseDocument(OperationPhaseProgress p) => new()
+    {
+        Name = p.Name,
+        Status = p.Status,
+        Percentage = p.Percentage,
+        Description = p.Description,
+        RecordsProcessed = p.RecordsProcessed,
+        TotalRecords = p.TotalRecords,
+        StartedAtUtc = p.StartedAtUtc,
+        CompletedAtUtc = p.CompletedAtUtc,
+        DurationMs = p.DurationMs
+    };
+
+    private static OperationPhaseProgress ToPhaseProgress(OperationPhaseProgressDocument d) => new()
+    {
+        Name = d.Name,
+        Status = d.Status,
+        Percentage = d.Percentage,
+        Description = d.Description,
+        RecordsProcessed = d.RecordsProcessed,
+        TotalRecords = d.TotalRecords,
+        StartedAtUtc = d.StartedAtUtc,
+        CompletedAtUtc = d.CompletedAtUtc,
+        DurationMs = d.DurationMs
     };
 }

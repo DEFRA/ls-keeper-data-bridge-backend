@@ -21,6 +21,13 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
         return await _collection.CountDocumentsAsync(filter, cancellationToken: ct);
     }
 
+    public async Task<long> GetActiveIssuesCountAsync(DateTime updatedSince, CancellationToken ct = default)
+    {
+        var filter = Builders<IssueDocument>.Filter.Eq(d => d.IsActive, true)
+                   & Builders<IssueDocument>.Filter.Gte(d => d.LastUpdatedAtUtc, updatedSince);
+        return await _collection.CountDocumentsAsync(filter, cancellationToken: ct);
+    }
+
     public async Task<IssueDto?> GetByIdAsync(string id, CancellationToken ct = default)
     {
         var filter = Builders<IssueDocument>.Filter.Eq(d => d.Id, id);
@@ -71,6 +78,36 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
             ct.ThrowIfCancellationRequested();
 
             var filter = activeFilter & Builders<IssueDocument>.Filter.Eq(d => d.IssueCode, issueCode);
+            var options = new FindOptions<IssueDocument> { BatchSize = batchSize, Sort = sort };
+
+            using var cursor = await _collection.FindAsync(filter, options, ct);
+
+            while (await cursor.MoveNextAsync(ct))
+            {
+                foreach (var document in cursor.Current)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    yield return document.ToDto();
+                }
+            }
+        }
+    }
+
+    public async IAsyncEnumerable<IssueDto> StreamActiveIssuesByRulePriorityAsync(
+        IReadOnlyList<string> rulePriorityOrder,
+        DateTime updatedSince,
+        int batchSize = 1000,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var baseFilter = Builders<IssueDocument>.Filter.Eq(d => d.IsActive, true)
+                       & Builders<IssueDocument>.Filter.Gte(d => d.LastUpdatedAtUtc, updatedSince);
+        var sort = Builders<IssueDocument>.Sort.Ascending(d => d.Cph);
+
+        foreach (var issueCode in rulePriorityOrder)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var filter = baseFilter & Builders<IssueDocument>.Filter.Eq(d => d.IssueCode, issueCode);
             var options = new FindOptions<IssueDocument> { BatchSize = batchSize, Sort = sort };
 
             using var cursor = await _collection.FindAsync(filter, options, ct);

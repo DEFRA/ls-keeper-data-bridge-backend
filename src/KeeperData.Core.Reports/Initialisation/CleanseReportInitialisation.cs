@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using KeeperData.Core.Reports.Cleanse.Export.Index;
 using KeeperData.Core.Reports.Cleanse.Operations.Index;
 using KeeperData.Core.Reports.Issues.Index;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,7 @@ public class CleanseReportInitialisation(
     IIssueIndexManager issueIndexManager,
     IIssueHistoryIndexManager issueHistoryIndexManager,
     ICleanseOperationsIndexManager cleanseOperationsIndexManager,
+    ICleanseExportOperationsIndexManager cleanseExportOperationsIndexManager,
     ILogger<CleanseReportInitialisation> logger) : ICleanseReportInitialisation
 {
     public async Task InitialiseAsync(CancellationToken ct = default)
@@ -23,6 +25,7 @@ public class CleanseReportInitialisation(
         await issueIndexManager.EnsureIndexesAsync(ct);
         await issueHistoryIndexManager.EnsureIndexesAsync(ct);
         await cleanseOperationsIndexManager.EnsureIndexesAsync(ct);
+        await cleanseExportOperationsIndexManager.EnsureIndexesAsync(ct);
 
         logger.LogInformation("Cleanse reports module initialised successfully");
     }

@@ -4,6 +4,7 @@ using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Results;
+using KeeperData.Core.Reports.Cleanse.Export.Metadata.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.Requests;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
@@ -23,12 +24,14 @@ namespace KeeperData.Core.Reports.Cleanse.Export.Command;
 /// Streams data from MongoDB to minimize memory usage.
 /// </summary>
 [ExcludeFromCodeCoverage(Justification = "Export service with S3 and streaming dependencies - covered by integration tests.")]
+[SuppressMessage("SonarQube", "S107", Justification = "DI export service requires multiple dependencies")]
 public class CleanseReportExportCommandService(
     IIssueQueries issueQueries,
     IBlobStorageServiceFactory blobStorageServiceFactory,
     ICleanseReportNotificationService notificationService,
     ICleanseOperationCommandService cleanseOperationCommands,
     ICleanseAnalysisOperationsQueries cleanseAnalysisOperationsQueries,
+    IExportMetadataRepository exportMetadataRepository,
     IThrottler throttler,
     ILogger<CleanseReportExportCommandService> logger) : ICleanseReportExportCommandService
 {
@@ -52,13 +55,13 @@ public class CleanseReportExportCommandService(
         RuleIds.SAM_CATTLE_RELATED_CPHs      // Rule 3
     ];
 
-    public async Task ExportReportAsync(string operationId, Func<int, int, string, Task>? onProgress, CancellationToken ct)
+    public async Task<bool> ExportReportAsync(string operationId, ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct)
     {
         try
         {
-            logger.LogInformation("Starting report export for operation {OperationId}", operationId);
+            logger.LogInformation("Starting report export for operation {OperationId} (since={Since})", operationId, options.Since);
 
-            var exportResult = await ExportAndUploadAsync(operationId, onProgress, ct);
+            var exportResult = await ExportAndUploadAsync(options, onProgress, ct);
 
             if (exportResult.Success && !string.IsNullOrEmpty(exportResult.ReportUrl) && !string.IsNullOrEmpty(exportResult.ObjectKey))
             {
@@ -67,21 +70,42 @@ public class CleanseReportExportCommandService(
                     "Cleanse report exported successfully for operation {OperationId}. Report URL: {ReportUrl}",
                     operationId, exportResult.ReportUrl);
 
-                // Send email notification with the report URL
-                await SendNotificationAsync(operationId, exportResult.ReportUrl, ct);
+                if (options.SendNotification)
+                {
+                    await SendNotificationAsync(operationId, exportResult.ReportUrl, ct);
+                }
+
+                return true;
             }
-            else
-            {
-                logger.LogWarning(
-                    "Failed to export cleanse report for operation {OperationId}: {Error}",
-                    operationId, exportResult.Error ?? "Unknown error");
-            }
+
+            logger.LogWarning(
+                "Failed to export cleanse report for operation {OperationId}: {Error}",
+                operationId, exportResult.Error ?? "Unknown error");
+            return false;
         }
         catch (Exception ex)
         {
-            // Log but don't fail the operation - the analysis completed successfully
             logger.LogError(ex, "Exception during report export for operation {OperationId}", operationId);
+            return false;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<CleanseReportExportResult> ExportToStorageAsync(ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct)
+    {
+        return await ExportAndUploadAsync(options, onProgress, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<DateTime?> GetLastExportedAtUtcAsync(CancellationToken ct = default)
+    {
+        return await exportMetadataRepository.GetLastExportedAtUtcAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task RecordSuccessfulExportAsync(CancellationToken ct = default)
+    {
+        await exportMetadataRepository.SetLastExportedAtUtcAsync(DateTime.UtcNow, ct);
     }
 
     public async Task<RegenerateReportUrlResult> RegenerateReportUrlAsync(string operationId, CancellationToken ct = default)
@@ -140,7 +164,7 @@ public class CleanseReportExportCommandService(
     }
 
     /// <inheritdoc />
-    private async Task<CleanseReportExportResult> ExportAndUploadAsync(string operationId, Func<int, int, string, Task>? onProgress, CancellationToken ct = default)
+    private async Task<CleanseReportExportResult> ExportAndUploadAsync(ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct = default)
     {
         var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
         var zipFileName = $"cleanse-report_{timestamp}.zip";
@@ -151,15 +175,17 @@ public class CleanseReportExportCommandService(
         try
         {
             logger.LogInformation(
-                "Starting cleanse report export for operation {OperationId}, timestamp {Timestamp}",
-                operationId, timestamp);
+                "Starting cleanse report export, timestamp {Timestamp}, since={Since}",
+                timestamp, options.Since);
 
-            // Get total count for progress reporting
-            var totalRecords = (int)await issueQueries.GetActiveIssuesCountAsync(ct);
+            // Get total count for progress reporting (filtered if incremental)
+            var totalRecords = options.Since.HasValue
+                ? (int)await issueQueries.GetActiveIssuesCountAsync(options.Since.Value, ct)
+                : (int)await issueQueries.GetActiveIssuesCountAsync(ct);
 
             // Step 1: Stream issues from MongoDB directly to CSV file
             tempCsvPath = Path.GetRandomFileName();
-            var recordCount = await StreamIssuesToCsvAsync(tempCsvPath, totalRecords, onProgress, ct);
+            var recordCount = await StreamIssuesToCsvAsync(tempCsvPath, totalRecords, options.Since, onProgress, ct);
             logger.LogInformation("Streamed {RecordCount} issues to CSV file at {TempPath}", recordCount, tempCsvPath);
 
             // Step 2: Create zip file
@@ -184,8 +210,7 @@ public class CleanseReportExportCommandService(
             // Step 4: Generate presigned URL (using the zip file name as the key - blob service handles the prefix)
             var presignedUrl = blobService.GeneratePresignedUrl(zipFileName);
             logger.LogInformation(
-                "Generated presigned URL for cleanse report (operation {OperationId}): {ReportUrl}",
-                operationId, presignedUrl);
+                "Generated presigned URL for cleanse report: {ReportUrl}", presignedUrl);
 
             return new CleanseReportExportResult
             {
@@ -196,7 +221,7 @@ public class CleanseReportExportCommandService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to export cleanse report for operation {OperationId}", operationId);
+            logger.LogError(ex, "Failed to export cleanse report");
             return new CleanseReportExportResult
             {
                 Success = false,
@@ -216,7 +241,7 @@ public class CleanseReportExportCommandService(
     /// Issues are grouped by rule priority order, sorted by CPH within each group.
     /// Memory footprint is O(batch_size) instead of O(total_records).
     /// </summary>
-    private async Task<int> StreamIssuesToCsvAsync(string filePath, int totalRecords, Func<int, int, string, Task>? onProgress, CancellationToken ct)
+    private async Task<int> StreamIssuesToCsvAsync(string filePath, int totalRecords, DateTime? since, Func<int, int, string, Task>? onProgress, CancellationToken ct)
     {
         var recordCount = 0;
 
@@ -233,8 +258,12 @@ public class CleanseReportExportCommandService(
         csv.WriteHeader<IssueDto>();
         await csv.NextRecordAsync();
 
-        // Stream records from MongoDB ordered by rule priority then CPH
-        await foreach (var issue in issueQueries.StreamActiveIssuesByRulePriorityAsync(RulePriorityOrder, initialBatchSize, ct))
+        // Stream records from MongoDB ordered by rule priority then CPH (optionally filtered by date)
+        var issues = since.HasValue
+            ? issueQueries.StreamActiveIssuesByRulePriorityAsync(RulePriorityOrder, since.Value, initialBatchSize, ct)
+            : issueQueries.StreamActiveIssuesByRulePriorityAsync(RulePriorityOrder, initialBatchSize, ct);
+
+        await foreach (var issue in issues)
         {
             csv.WriteRecord(issue);
             await csv.NextRecordAsync();

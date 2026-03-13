@@ -51,6 +51,8 @@ public class IssueIndexManager : IIssueIndexManager
             _logger.LogInformation("Creating issue collection indexes...");
 
             await CreateExportSortIndexAsync(cancellationToken);
+            await CreateIncrementalExportIndexAsync(cancellationToken);
+            await CreateActiveUpdatedAtIndexAsync(cancellationToken);
             await CreateActiveIssueCodeIndexAsync(cancellationToken);
             await CreateDeactivateStaleIndexAsync(cancellationToken);
             await CreateCphIndexAsync(cancellationToken);
@@ -96,6 +98,52 @@ public class IssueIndexManager : IIssueIndexManager
 
         await _collection.Indexes.CreateOneAsync(indexModel, cancellationToken: cancellationToken);
         _logger.LogDebug("Created export sort index on (is_active, issue_code, cph)");
+    }
+
+    /// <summary>
+    /// Compound index for incremental export streaming: filter active issues by issue_code and last_updated_at, sorted by CPH.
+    /// Query pattern: WHERE is_active = true AND issue_code = X AND last_updated_at &gt;= @since ORDER BY cph ASC
+    /// </summary>
+    private async Task CreateIncrementalExportIndexAsync(CancellationToken cancellationToken)
+    {
+        var indexKeys = Builders<IssueDocument>.IndexKeys
+            .Ascending(d => d.IsActive)
+            .Ascending(d => d.IssueCode)
+            .Ascending(d => d.LastUpdatedAtUtc)
+            .Ascending(d => d.Cph);
+
+        var indexModel = new CreateIndexModel<IssueDocument>(
+            indexKeys,
+            new CreateIndexOptions
+            {
+                Name = "idx_issues_active_issuecode_updatedat_cph",
+                Background = true
+            });
+
+        await _collection.Indexes.CreateOneAsync(indexModel, cancellationToken: cancellationToken);
+        _logger.LogDebug("Created incremental export index on (is_active, issue_code, last_updated_at, cph)");
+    }
+
+    /// <summary>
+    /// Compound index for incremental count: active issues filtered by last_updated_at.
+    /// Query pattern: WHERE is_active = true AND last_updated_at &gt;= @since
+    /// </summary>
+    private async Task CreateActiveUpdatedAtIndexAsync(CancellationToken cancellationToken)
+    {
+        var indexKeys = Builders<IssueDocument>.IndexKeys
+            .Ascending(d => d.IsActive)
+            .Ascending(d => d.LastUpdatedAtUtc);
+
+        var indexModel = new CreateIndexModel<IssueDocument>(
+            indexKeys,
+            new CreateIndexOptions
+            {
+                Name = "idx_issues_active_updatedat",
+                Background = true
+            });
+
+        await _collection.Indexes.CreateOneAsync(indexModel, cancellationToken: cancellationToken);
+        _logger.LogDebug("Created incremental count index on (is_active, last_updated_at)");
     }
 
     /// <summary>

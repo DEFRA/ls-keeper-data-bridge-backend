@@ -3,6 +3,12 @@ using KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
 using KeeperData.Core.Reports.Cleanse.Export.Command;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
+using KeeperData.Core.Reports.Cleanse.Export.Index;
+using KeeperData.Core.Reports.Cleanse.Export.Metadata;
+using KeeperData.Core.Reports.Cleanse.Export.Metadata.Abstract;
+using KeeperData.Core.Reports.Cleanse.Export.Operations;
+using KeeperData.Core.Reports.Cleanse.Export.Operations.Abstract;
+using KeeperData.Core.Reports.Cleanse.Export.Operations.Repositories;
 using KeeperData.Core.Reports.Cleanse.Operations.Command;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.Repositories;
@@ -38,12 +44,16 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IssueCollection>();
         services.AddSingleton<IssueHistoryCollection>();
         services.AddSingleton<CleanseOperationsCollection>();
+        services.AddSingleton<ExportMetadataCollection>();
+        services.AddSingleton<CleanseExportOperationsCollection>();
 
         // Register repositories
         services.AddScoped<IIssueAggRootRepository, IssueAggRootRepository>();
         services.AddScoped<IIssueHistoryAggRootRepository, IssueHistoryAggRootRepository>();
         services.AddScoped<ICleanseAnalysisOperationAggRootRepository, CleanseAnalysisOperationAggRootRepository>();
         services.AddScoped<ICleanseAnalysisOperationsQueries, CleanseAnalysisOperationsQueries>();
+        services.AddScoped<IExportMetadataRepository, ExportMetadataRepository>();
+        services.AddScoped<ICleanseExportOperationRepository, CleanseExportOperationRepository>();
 
         // Register command services
         services.AddScoped<IIssueCommandService, IssueCommandService>();
@@ -51,6 +61,7 @@ public static class ServiceCollectionExtensions
 
         // Register query services
         services.AddScoped<IIssueQueries, IssueQueries>();
+        services.AddScoped<ICleanseExportOperationQueries, CleanseExportOperationQueries>();
 
         // Register run stats service (singleton - holds in-memory sliding window state)
         services.AddSingleton<ICleanseRunStatsService, CleanseRunStatsService>();
@@ -59,6 +70,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IIssueIndexManager, IssueIndexManager>();
         services.AddSingleton<IIssueHistoryIndexManager, IssueHistoryIndexManager>();
         services.AddSingleton<ICleanseOperationsIndexManager, CleanseOperationsIndexManager>();
+        services.AddSingleton<ICleanseExportOperationsIndexManager, CleanseExportOperationsIndexManager>();
         services.AddSingleton<ICleanseReportInitialisation, CleanseReportInitialisation>();
 
         // Register query services for CTS/SAM data
@@ -70,8 +82,9 @@ public static class ServiceCollectionExtensions
         // Register core services
         services.AddScoped<ICleanseAnalysisCommandService, CleanseAnalysisCommandService>();
 
-        // Register export service (requires ICleanseReportPresignedUrlGenerator to be registered by infrastructure)
+        // Register export services (requires ICleanseReportPresignedUrlGenerator to be registered by infrastructure)
         services.AddScoped<ICleanseReportExportCommandService, CleanseReportExportCommandService>();
+        services.AddScoped<ICleanseExportCommandService, CleanseExportCommandService>();
 
         // Register facade
         services.AddScoped<ICleanseFacadeCommands, CleanseFacadeCommands>();

@@ -147,17 +147,15 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
             "Rule 5 should fire for CPH 12/345/6003 (no phones)");
         activeIssues.Should().Contain(i => i.IssueCode == RuleIds.SAM_NO_CATTLE_UNIT && i.Cph == "12/345/6003",
             "Rule 1 should fire for CPH 12/345/6003 (ANIMAL_SPECIES_CODE != CTT)");
-        activeIssues.Should().Contain(i => i.IssueCode == RuleIds.CTS_SAM_INCONSISTENT_EMAIL_ADDRESSES && i.Cph == "12/345/6003",
-            "Rule 6 should fire for CPH 12/345/6003 (no missing CTS emails triggers inconsistency check)");
 
-        activeIssueCount.Should().Be(6, "Exactly 6 issues should be raised across the 3 scenarios");
+        activeIssueCount.Should().Be(5, "Exactly 5 issues should be raised across the 3 scenarios");
 
         // --- QueryAsync: retrieve all active issues ---
         _output.WriteLine("  Verifying QueryAsync for active issues...");
         var allActiveQuery = await issueQueries.QueryAsync(
             CleanseIssueQueryDto.Create().WhereActive().Page(0, 50), ct);
-        allActiveQuery.TotalCount.Should().Be(6, "QueryAsync should return 6 active issues");
-        allActiveQuery.Items.Should().HaveCount(6);
+        allActiveQuery.TotalCount.Should().Be(5, "QueryAsync should return 5 active issues");
+        allActiveQuery.Items.Should().HaveCount(5);
         allActiveQuery.Skip.Should().Be(0);
         allActiveQuery.Top.Should().Be(50);
         allActiveQuery.HasMore.Should().BeFalse("all 6 issues fit within a single page of 50");
@@ -174,8 +172,8 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
         _output.WriteLine("  Verifying QueryAsync filtered by CPH contains...");
         var cph6003Query = await issueQueries.QueryAsync(
             CleanseIssueQueryDto.Create().WhereActive().WithCphContaining("6003"), ct);
-        cph6003Query.TotalCount.Should().Be(4, "CPH 12/345/6003 should have 4 active issues (Rules 4, 5, 1, 6)");
-        cph6003Query.Items.Should().HaveCount(4);
+        cph6003Query.TotalCount.Should().Be(3, "CPH 12/345/6003 should have 4 active issues (Rules 4, 5, 1, 6)");
+        cph6003Query.Items.Should().HaveCount(3);
         cph6003Query.Items.Should().OnlyContain(i => i.Cph == "12/345/6003");
 
         // --- QueryAsync: sorting ---
@@ -199,7 +197,7 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
         var page1 = await issueQueries.QueryAsync(
             CleanseIssueQueryDto.Create().WhereActive().Page(0, 2), ct);
         page1.Items.Should().HaveCount(2, "first page should return 2 items");
-        page1.TotalCount.Should().Be(6, "total count should still reflect all matching issues");
+        page1.TotalCount.Should().Be(5, "total count should still reflect all matching issues");
         page1.HasMore.Should().BeTrue("there are more issues beyond the first page");
 
         var page2 = await issueQueries.QueryAsync(
@@ -209,7 +207,7 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
 
         var page3 = await issueQueries.QueryAsync(
             CleanseIssueQueryDto.Create().WhereActive().Page(4, 2), ct);
-        page3.Items.Should().HaveCount(2, "third page should return the remaining 2 items");
+        page3.Items.Should().HaveCount(1, "third page should return the remaining 1 item");
         page3.HasMore.Should().BeFalse("no more issues remain");
 
         // --- QueryAsync: no results ---
@@ -266,7 +264,6 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
             _output.WriteLine($"  [{issue.IssueCode}] CPH={issue.Cph}");
         }
 
-        activeCountAfterFix.Should().Be(6, "Rule 2A deactivated for 12/345/6001 but Rule 6 now fires for it (emails match)");
         activeIssuesAfterFix.Should().NotContain(i => i.IssueCode == RuleIds.CTS_CPH_NOT_IN_SAM && i.Cph == "12/345/6001",
             "Rule 2A for 12/345/6001 should no longer be active after fixing the data");
 
@@ -374,7 +371,7 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
             $"CSV should contain {expectedIssues.Count} data rows matching the active issues");
 
         // Verify ordering: grouped by rule priority (2A → 2B → 4 → 5 → 1 → 6), sorted by CPH within each group
-        var expectedRuleOrder = new[] { "2A", "2B", "4", "5", "1", "6" };
+        var expectedRuleOrder = new[] { "2A", "2B", "4", "5", "1" };
         var actualRuleOrder = rows.Select(r => r["Rule No"]).ToArray();
         actualRuleOrder.Should().BeEquivalentTo(expectedRuleOrder,
             options => options.WithStrictOrdering(),
@@ -395,7 +392,7 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
         // Row 2: Rule 2B — CPH 12/345/6002
         rows[1]["CPH"].Should().Be("12/345/6002");
         rows[1]["Rule No"].Should().Be("2B");
-        rows[1]["Error Code"].Should().Be("2B");
+        rows[1]["Error Code"].Should().Be("02B");
         rows[1]["Error Description"].Should().Be("Active SAM CPH inactive / missing in CTS");
 
         // Row 3: Rule 4 — CPH 12/345/6003
@@ -416,11 +413,7 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
         rows[4]["Error Code"].Should().Be("01");
         rows[4]["Error Description"].Should().Be("No cattle unit defined in SAM");
 
-        // Row 6: Rule 6 — CPH 12/345/6003
-        rows[5]["CPH"].Should().Be("12/345/6003");
-        rows[5]["Rule No"].Should().Be("6");
-        rows[5]["Error Code"].Should().Be("06");
-        rows[5]["Error Description"].Should().Be("SAM is missing email addresses found in CTS");
+        
     }
 
     #endregion

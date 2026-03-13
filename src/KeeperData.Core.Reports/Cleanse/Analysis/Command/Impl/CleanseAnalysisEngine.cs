@@ -179,7 +179,7 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
     {
         var cph = Cph.TryParse(id);
 
-        if (cph is not null)
+        if (cph is not null && IsValidCountyCode(cph))
         {
             await ProcessSamPrimaryRecordInternalAsync(cph, operationId, metrics, ct);
         }
@@ -215,7 +215,13 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
     /// County Code must be between 1 and 51 (inclusive) to be valid
     /// </summary>
     protected static bool IsValidCountyCode(LidFullIdentifier lidFullIdentifier)
-        => lidFullIdentifier.Cph.CountyCode.ToInteger() is >= 1 and <= 51;
+        => IsValidCountyCode(lidFullIdentifier.Cph);
+
+    /// <summary>
+    /// County Code must be between 1 and 51 (inclusive) to be valid
+    /// </summary>
+    protected static bool IsValidCountyCode(Cph cph)
+        => cph.CountyCode.ToInteger() is >= 1 and <= 51;
 
     protected string GenerateThumbprint(string primaryRecordId, string ruleId)
         => _recordIdGenerator.GenerateId($"{primaryRecordId}:{ruleId}");

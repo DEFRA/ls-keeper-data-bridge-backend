@@ -408,7 +408,7 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
         rows[3]["CPH"].Should().Be("12/345/6003");
         rows[3]["Rule No"].Should().Be("5");
         rows[3]["Error Code"].Should().Be("05");
-        rows[3]["Error Description"].Should().Be("No telephone numbers in CTS or Sam");
+        rows[3]["Error Description"].Should().Be("No telephone numbers in CTS and Sam");
 
         // Row 5: Rule 1 — CPH 12/345/6003
         rows[4]["CPH"].Should().Be("12/345/6003");

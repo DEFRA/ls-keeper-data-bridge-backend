@@ -10,6 +10,11 @@ public interface IIssueQueries
     Task<long> GetActiveIssuesCountAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Gets the total count of active issues updated at or after the specified UTC timestamp.
+    /// </summary>
+    Task<long> GetActiveIssuesCountAsync(DateTime updatedSince, CancellationToken ct = default);
+
+    /// <summary>
     /// Gets a cleanse report item by its identifier.
     /// </summary>
     Task<IssueDto?> GetByIdAsync(string id, CancellationToken ct = default);
@@ -37,6 +42,17 @@ public interface IIssueQueries
     /// <returns>An async enumerable of active issues ordered by rule priority then CPH.</returns>
     IAsyncEnumerable<IssueDto> StreamActiveIssuesByRulePriorityAsync(
         IReadOnlyList<string> rulePriorityOrder, int batchSize = 1000, CancellationToken ct = default);
+
+    /// <summary>
+    /// Streams active issues updated at or after the specified UTC timestamp,
+    /// ordered by rule priority then by CPH within each group.
+    /// </summary>
+    /// <param name="rulePriorityOrder">Issue codes in priority order.</param>
+    /// <param name="updatedSince">Only include issues with LastUpdatedAtUtc &gt;= this value.</param>
+    /// <param name="batchSize">Number of items to fetch per batch.</param>
+    /// <param name="ct">Cancellation token.</param>
+    IAsyncEnumerable<IssueDto> StreamActiveIssuesByRulePriorityAsync(
+        IReadOnlyList<string> rulePriorityOrder, DateTime updatedSince, int batchSize = 1000, CancellationToken ct = default);
 
     Task<CleanseIssueQueryResultDto> QueryAsync(CleanseIssueQueryDto query, CancellationToken ct = default);
     Task<int> CountAsync(CleanseIssueQueryDto query, CancellationToken ct = default);

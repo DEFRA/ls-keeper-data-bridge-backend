@@ -222,8 +222,14 @@ public class CleanseAnalysisCommandService(
         await operationCommandService.StartPhaseAsync(
             new StartPhaseCommand(operation.Id, OperationPhase.Export, 0), ct);
 
-        await cleanseReportExportCommandService.ExportReportAsync(
+        var since = await cleanseReportExportCommandService.GetLastExportedAtUtcAsync(ct);
+        logger.LogInformation("Incremental export since={Since} (operationId={OperationId})", since, operation.Id);
+
+        var options = new Export.Command.Domain.ExportOptions { Since = since, SendNotification = true };
+
+        var exportSucceeded = await cleanseReportExportCommandService.ExportReportAsync(
             operation.Id,
+            options,
             async (recordsProcessed, totalRecords, stepDescription) =>
             {
                 runStatsService.RecordSnapshot(operation.Id, nameof(OperationPhase.Export), recordsProcessed);
@@ -236,6 +242,12 @@ public class CleanseAnalysisCommandService(
                     stepDescription), ct);
             },
             ct);
+
+        if (exportSucceeded)
+        {
+            await cleanseReportExportCommandService.RecordSuccessfulExportAsync(ct);
+            logger.LogInformation("Recorded successful incremental export timestamp (operationId={OperationId})", operation.Id);
+        }
 
         await operationCommandService.CompletePhaseAsync(
             new CompletePhaseCommand(operation.Id, OperationPhase.Export), ct);

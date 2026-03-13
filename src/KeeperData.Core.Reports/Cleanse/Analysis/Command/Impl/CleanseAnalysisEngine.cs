@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
 
 public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueCommandService issueCommandService,
-    IThrottler throttler, ICleanseRunStatsService runStatsService, ILogger<CleanseAnalysisEngine> logger) 
+    IThrottler throttler, ICleanseRunStatsService runStatsService, ILogger<CleanseAnalysisEngine> logger)
     : CleanseAnalysisEngineBase(dataService, issueCommandService, throttler, runStatsService, logger), ICleanseAnalysisEngine
 {
     private readonly RecordIdGenerator _recordIdGenerator = new();
@@ -68,14 +68,14 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
                 results.Add(RuleResult.Issue(RuleDescriptors.SamMissingEmailAddresses, ctsHolding.Id, samCphHolding.Cph,
                     x => x.EmailCTS = missingEmails));
             }
-        }
-        else // PRIORITY 7: RULE 6 - Email addresses inconsistent between CTS and SAM
-        {
-            results.Add(RuleResult.Issue(RuleDescriptors.CtsSamEmailAddressesInconsistent, ctsHolding.Id, samCphHolding.Cph, x =>
+            else // PRIORITY 7: RULE 6 - Email addresses inconsistent between CTS and SAM
             {
-                x.EmailCTS = missingEmails;
-                x.EmailSAM = string.Join("; ", samEmails);
-            }));
+                results.Add(RuleResult.Issue(RuleDescriptors.CtsSamEmailAddressesInconsistent, ctsHolding.Id, samCphHolding.Cph, x =>
+                            {
+                                x.EmailCTS = missingEmails;
+                                x.EmailSAM = string.Join("; ", samEmails);
+                            }));
+            }
         }
     }
 

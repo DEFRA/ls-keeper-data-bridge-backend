@@ -1,0 +1,2081 @@
+openapi: 3.0.3
+info:
+  title: Keeper Data Bridge API
+  description: |
+    REST API for the Keeper Data Bridge backend service.
+    Provides endpoints for data import, OData-style querying, cleanse analysis,
+    issue management, holdings lookup, and throttle policy management.
+  version: 1.0.0
+  contact:
+    name: DEFRA
+
+servers:
+  - url: /api
+    description: Base API path
+
+tags:
+  - name: Import
+    description: Bulk data import, reporting, lineage, collection management, and storage operations.
+  - name: Query
+    description: OData-style querying of MongoDB collections.
+  - name: Cleanse
+    description: Cleanse analysis operations, issue management, and report export.
+  - name: Holdings
+    description: CTS and SAM CPH holding lookups.
+  - name: Throttle Policies
+    description: Throttle policy CRUD and activation.
+  - name: External Catalogue
+    description: External file catalogue browsing and file uploads.
+
+paths:
+  # ═══════════════════════════════════════════════════════════════════
+  # Import
+  # ═══════════════════════════════════════════════════════════════════
+  /import/start:
+    post:
+      tags: [Import]
+      operationId: startBulkImport
+      summary: Start a bulk file import
+      description: |
+        Starts a bulk file import process asynchronously.
+        Returns immediately with an import ID once the lock has been acquired.
+        The import continues running in the background.
+      parameters:
+        - name: sourceType
+          in: query
+          description: "The source type for the import ('internal' or 'external')"
+          schema:
+            type: string
+            default: external
+            enum: [internal, external]
+      responses:
+        '202':
+          description: Import started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartBulkImportResponse'
+        '400':
+          description: Invalid sourceType parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Another import is already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /import:
+    get:
+      tags: [Import]
+      operationId: getImportSummaries
+      summary: Get paginated import summaries
+      description: Returns import summaries in reverse chronological order.
+      parameters:
+        - $ref: '#/components/parameters/Skip'
+        - $ref: '#/components/parameters/Top'
+      responses:
+        '200':
+          description: Paginated list of import summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportSummariesResponse'
+        '400':
+          description: Invalid pagination parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /import/{importId}:
+    get:
+      tags: [Import]
+      operationId: getImportReport
+      summary: Get an import report
+      description: Gets the full import report for a specific import ID.
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Import report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportReport'
+        '404':
+          description: Import not found
+
+  /import/{importId}/files:
+    get:
+      tags: [Import]
+      operationId: getFileReports
+      summary: Get file reports for an import
+      description: Returns file processing reports for all files in a specific import.
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: File reports
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileReportsResponse'
+        '404':
+          description: Import not found
+
+  /import/lineage/{collectionName}/{recordId}:
+    get:
+      tags: [Import]
+      operationId: getRecordLineageEvents
+      summary: Get record lineage events
+      description: |
+        Gets paginated lineage events for a specific record in chronological order.
+        The recordId is a URL-safe SHA256 hash generated from composite key parts.
+      parameters:
+        - name: collectionName
+          in: path
+          required: true
+          description: "The collection name (e.g., 'sam_cph_holdings')"
+          schema:
+            type: string
+        - name: recordId
+          in: path
+          required: true
+          description: URL-safe record ID (SHA256 hash)
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Skip'
+        - $ref: '#/components/parameters/Top'
+      responses:
+        '200':
+          description: Paginated lineage events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedLineageEvents'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Record lineage not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /import/generate-record-id:
+    post:
+      tags: [Import]
+      operationId: generateRecordId
+      summary: Generate a record ID from key parts
+      description: Generates a URL-safe record ID from composite key parts using SHA256 hashing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRecordIdRequest'
+      responses:
+        '200':
+          description: Generated record ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateRecordIdResponse'
+        '400':
+          description: Invalid key parts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /import/collections/{collectionName}:
+    delete:
+      tags: [Import]
+      operationId: deleteCollection
+      summary: Delete a MongoDB collection
+      description: Deletes a specific MongoDB collection by name. Must be defined in DataSetDefinitions.
+      parameters:
+        - name: collectionName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Collection deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteCollectionResponse'
+        '404':
+          description: Collection not found in definitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /import/collections:
+    delete:
+      tags: [Import]
+      operationId: deleteAllCollections
+      summary: Delete all MongoDB collections
+      description: Deletes all MongoDB collections defined in DataSetDefinitions.
+      responses:
+        '200':
+          description: Collections deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteCollectionsResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /import/reporting-collections/{collectionName}:
+    delete:
+      tags: [Import]
+      operationId: deleteReportingCollection
+      summary: Delete a reporting collection
+      description: |
+        Deletes a specific reporting/lineage collection.
+        Valid collections: import_reports, import_files, record_lineage, record_lineage_events.
+      parameters:
+        - name: collectionName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reporting collection deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteCollectionResponse'
+        '404':
+          description: Collection not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /import/reporting-collections:
+    delete:
+      tags: [Import]
+      operationId: deleteAllReportingCollections
+      summary: Delete all reporting collections
+      description: |
+        Deletes all reporting/lineage collections.
+        Includes: import_reports, import_files, record_lineage, record_lineage_events.
+      responses:
+        '200':
+          description: Reporting collections deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteCollectionsResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /import/internal-storage:
+    delete:
+      tags: [Import]
+      operationId: clearDownInternalStorage
+      summary: Clear down internal storage
+      description: Deletes all objects from internal target storage under the configured prefix.
+      parameters:
+        - name: sourceType
+          in: query
+          schema:
+            type: string
+            default: internal
+            enum: [internal, external]
+      responses:
+        '200':
+          description: Storage cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearDownStorageResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Query
+  # ═══════════════════════════════════════════════════════════════════
+  /query/{collectionName}:
+    get:
+      tags: [Query]
+      operationId: queryCollection
+      summary: Query a MongoDB collection
+      description: |
+        Query a MongoDB collection with OData-style parameters.
+
+        Examples:
+        - `GET /api/query/sam_cph_holdings?$filter=CPH eq 'ABC123'&$top=50`
+        - `GET /api/query/sam_cph_holdings?$filter=contains(CPH,'ABC') and IsDeleted eq false&$orderby=UpdatedAtUtc desc`
+        - `GET /api/query/sam_cph_holdings?$select=CPH,UpdatedAtUtc&$top=20`
+      parameters:
+        - name: collectionName
+          in: path
+          required: true
+          description: "Name of the collection (e.g., 'sam_cph_holdings')"
+          schema:
+            type: string
+        - name: $filter
+          in: query
+          description: "OData $filter expression"
+          schema:
+            type: string
+        - name: $orderby
+          in: query
+          description: "OData $orderby expression (e.g., 'UpdatedAtUtc desc')"
+          schema:
+            type: string
+        - name: $select
+          in: query
+          description: "OData $select expression (e.g., 'CPH,UpdatedAtUtc')"
+          schema:
+            type: string
+        - name: $skip
+          in: query
+          schema:
+            type: integer
+        - name: $top
+          in: query
+          description: Max 1000, default 100
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: $count
+          in: query
+          description: Include total count in response
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResult'
+        '400':
+          description: Invalid query parameters
+        '404':
+          description: Collection not found
+        '499':
+          description: Client closed request
+        '500':
+          description: Internal server error
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Cleanse — Operations
+  # ═══════════════════════════════════════════════════════════════════
+  /cleanse/start-analysis:
+    post:
+      tags: [Cleanse]
+      operationId: startAnalysis
+      summary: Start a cleanse analysis
+      description: |
+        Starts a new cleanse analysis operation in the background.
+        Progress can be tracked via GET /cleanse/run/{operationId}.
+      responses:
+        '202':
+          description: Analysis started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartAnalysisResponse'
+        '409':
+          description: An analysis is already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/cancel-analysis:
+    post:
+      tags: [Cleanse]
+      operationId: cancelAnalysis
+      summary: Cancel the running analysis
+      description: Requests cancellation of the currently running cleanse analysis operation.
+      responses:
+        '200':
+          description: Cancellation requested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelAnalysisResponse'
+        '404':
+          description: No running analysis found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/runs:
+    get:
+      tags: [Cleanse]
+      operationId: getAnalysisRuns
+      summary: Get paginated analysis run summaries
+      parameters:
+        - $ref: '#/components/parameters/Skip'
+        - name: top
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Analysis run summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisRunsResponse'
+        '400':
+          description: Invalid pagination parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/run/{operationId}:
+    get:
+      tags: [Cleanse]
+      operationId: getAnalysisRun
+      summary: Get full details of an analysis run
+      description: |
+        Returns the complete operation state including per-phase progress,
+        live RPM statistics, and projected completion times.
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Analysis run details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CleanseAnalysisOperationDto'
+        '404':
+          description: Operation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/run/{operationId}/regenerate-url:
+    post:
+      tags: [Cleanse]
+      operationId: regenerateReportUrl
+      summary: Regenerate a report presigned URL
+      description: Regenerates the presigned S3 URL for an operation's report when the original has expired.
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: URL regenerated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegenerateUrlResponse'
+        '400':
+          description: Operation has no report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Operation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/delete-data:
+    post:
+      tags: [Cleanse]
+      operationId: deleteCleanseData
+      summary: Delete all cleanse issues
+      responses:
+        '200':
+          description: Data deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteDataResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/delete-metadata:
+    post:
+      tags: [Cleanse]
+      operationId: deleteCleanseMetadata
+      summary: Delete all operation history
+      responses:
+        '200':
+          description: Metadata deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteDataResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/test-notification:
+    post:
+      tags: [Cleanse]
+      operationId: sendTestNotification
+      summary: Send a test notification email
+      description: Sends a test email via GOV.UK Notify to verify configuration.
+      responses:
+        '200':
+          description: Test notification sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestNotificationResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Notification failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Cleanse — Issues
+  # ═══════════════════════════════════════════════════════════════════
+  /cleanse/issues:
+    get:
+      tags: [Cleanse]
+      operationId: getIssues
+      summary: Get paginated, filterable cleanse issues
+      parameters:
+        - $ref: '#/components/parameters/Skip'
+        - $ref: '#/components/parameters/Top'
+        - name: ctsLidFullIdentifier
+          in: query
+          description: Filter by CTS LID (contains, case-insensitive)
+          schema:
+            type: string
+        - name: cph
+          in: query
+          description: Filter by CPH (contains, case-insensitive)
+          schema:
+            type: string
+        - name: issueCode
+          in: query
+          description: Filter by exact issue code
+          schema:
+            type: string
+        - name: ruleCode
+          in: query
+          description: Filter by exact rule code
+          schema:
+            type: string
+        - name: errorCode
+          in: query
+          description: Filter by exact error code
+          schema:
+            type: string
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+        - name: isIgnored
+          in: query
+          schema:
+            type: boolean
+        - name: resolutionStatus
+          in: query
+          description: "None, Todo, InProgress, Resolved"
+          schema:
+            type: string
+            enum: [None, Todo, InProgress, Resolved]
+        - name: assignedTo
+          in: query
+          schema:
+            type: string
+        - name: isUnassigned
+          in: query
+          schema:
+            type: boolean
+        - name: createdAfterUtc
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: createdBeforeUtc
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: updatedAfterUtc
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: updatedBeforeUtc
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: sortBy
+          in: query
+          description: Field to sort by (default LastUpdatedAtUtc)
+          schema:
+            type: string
+        - name: sortDescending
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Paginated issues
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuesResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/issues/{issueId}/ignore:
+    post:
+      tags: [Cleanse]
+      operationId: ignoreIssue
+      summary: Ignore an issue
+      parameters:
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PerformedByRequest'
+      responses:
+        '200':
+          description: Issue ignored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueCommandResponse'
+        '404':
+          description: Issue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/issues/{issueId}/unignore:
+    post:
+      tags: [Cleanse]
+      operationId: unignoreIssue
+      summary: Remove ignored flag from an issue
+      parameters:
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PerformedByRequest'
+      responses:
+        '200':
+          description: Issue unignored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueCommandResponse'
+        '404':
+          description: Issue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/issues/{issueId}/resolution-status:
+    post:
+      tags: [Cleanse]
+      operationId: updateResolutionStatus
+      summary: Update resolution status
+      parameters:
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateResolutionStatusRequest'
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueCommandResponse'
+        '400':
+          description: Invalid status value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Issue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/issues/{issueId}/assign:
+    post:
+      tags: [Cleanse]
+      operationId: assignIssue
+      summary: Assign an issue to a user
+      parameters:
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignIssueRequest'
+      responses:
+        '200':
+          description: Issue assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueCommandResponse'
+        '404':
+          description: Issue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/issues/{issueId}/unassign:
+    post:
+      tags: [Cleanse]
+      operationId: unassignIssue
+      summary: Unassign an issue
+      parameters:
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PerformedByRequest'
+      responses:
+        '200':
+          description: Issue unassigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueCommandResponse'
+        '404':
+          description: Issue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleanse/issues/{issueId}/history:
+    get:
+      tags: [Cleanse]
+      operationId: getIssueHistory
+      summary: Get issue history
+      description: Returns paginated history/lineage entries for a specific issue.
+      parameters:
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Skip'
+        - name: top
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Issue history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueHistoryResponse'
+        '400':
+          description: Invalid pagination parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Holdings
+  # ═══════════════════════════════════════════════════════════════════
+  /holdings/cts/{lidFullIdentifier}:
+    get:
+      tags: [Holdings]
+      operationId: getCtsCphHolding
+      summary: Get a CTS CPH holding by LID
+      description: "Looks up a CTS CPH holding by its LID full identifier (format: XX-CC/PPP/HHHH)."
+      parameters:
+        - name: lidFullIdentifier
+          in: path
+          required: true
+          description: "LID full identifier (e.g., 'AB-12/345/6789')"
+          schema:
+            type: string
+      responses:
+        '200':
+          description: CTS holding details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CtsCphHoldingResponse'
+        '400':
+          description: Invalid LID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Holding not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /holdings/sam/{cph}:
+    get:
+      tags: [Holdings]
+      operationId: getSamCphHolding
+      summary: Get a SAM CPH holding
+      description: "Looks up a SAM CPH holding by its CPH value (format: CC/PPP/HHHH)."
+      parameters:
+        - name: cph
+          in: path
+          required: true
+          description: "CPH value (e.g., '12/345/6789')"
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SAM holding details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SamCphHoldingResponse'
+        '400':
+          description: Invalid CPH format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Holding not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: Client closed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Throttle Policies
+  # ═══════════════════════════════════════════════════════════════════
+  /throttle-policies:
+    get:
+      tags: [Throttle Policies]
+      operationId: getAllThrottlePolicies
+      summary: Get all throttle policies
+      responses:
+        '200':
+          description: List of throttle policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ThrottlePolicy'
+    post:
+      tags: [Throttle Policies]
+      operationId: createThrottlePolicy
+      summary: Create a throttle policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateThrottlePolicyCommand'
+      responses:
+        '201':
+          description: Policy created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThrottlePolicy'
+        '400':
+          description: Validation error
+        '409':
+          description: Duplicate slug
+
+  /throttle-policies/active:
+    get:
+      tags: [Throttle Policies]
+      operationId: getActiveThrottlePolicy
+      summary: Get the active throttle policy
+      responses:
+        '200':
+          description: Active policy (or Normal fallback)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThrottlePolicy'
+
+  /throttle-policies/{slug}:
+    get:
+      tags: [Throttle Policies]
+      operationId: getThrottlePolicyBySlug
+      summary: Get a throttle policy by slug
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Throttle policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThrottlePolicy'
+        '404':
+          description: Policy not found
+    put:
+      tags: [Throttle Policies]
+      operationId: updateThrottlePolicy
+      summary: Update a throttle policy
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateThrottlePolicyCommand'
+      responses:
+        '200':
+          description: Policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThrottlePolicy'
+        '400':
+          description: Validation error
+        '404':
+          description: Policy not found
+    delete:
+      tags: [Throttle Policies]
+      operationId: deleteThrottlePolicy
+      summary: Delete a throttle policy
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Policy deleted
+        '400':
+          description: Cannot delete (e.g., Normal policy)
+        '404':
+          description: Policy not found
+        '409':
+          description: Cannot delete active policy
+
+  /throttle-policies/{slug}/activate:
+    post:
+      tags: [Throttle Policies]
+      operationId: activateThrottlePolicy
+      summary: Activate a throttle policy
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Policy activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThrottlePolicy'
+        '400':
+          description: Cannot activate (e.g., Normal policy)
+        '404':
+          description: Policy not found
+
+  /throttle-policies/deactivate:
+    post:
+      tags: [Throttle Policies]
+      operationId: deactivateAllThrottlePolicies
+      summary: Deactivate all policies
+      description: Reverts to Normal fallback policy.
+      responses:
+        '204':
+          description: All policies deactivated
+
+  # ═══════════════════════════════════════════════════════════════════
+  # External Catalogue
+  # ═══════════════════════════════════════════════════════════════════
+  /externalcatalogue/files:
+    get:
+      tags: [External Catalogue]
+      operationId: getFilesReport
+      summary: Get file catalogue report
+      description: Returns a plain text report of available files for the specified source type.
+      parameters:
+        - name: sourceType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [internal, external]
+        - name: days
+          in: query
+          required: true
+          description: Number of days to look back
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Plain text file report
+          content:
+            text/plain:
+              schema:
+                type: string
+        '400':
+          description: Invalid parameters
+
+  /externalcatalogue/upload:
+    post:
+      tags: [External Catalogue]
+      operationId: uploadFile
+      summary: Upload a CSV file
+      description: Uploads a file to internal S3 storage. Filename must match a dataset definition pattern.
+      parameters:
+        - name: objectKey
+          in: query
+          required: true
+          description: Filename (object key) — no path separators
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  objectKey:
+                    type: string
+                  size:
+                    type: integer
+                  contentType:
+                    type: string
+        '422':
+          description: Validation error
+
+  /externalcatalogue/upload-raw:
+    post:
+      tags: [External Catalogue]
+      operationId: uploadRawFile
+      summary: Upload raw CSV content
+      description: Uploads raw file content to internal S3 storage. Alternative for testing.
+      parameters:
+        - name: objectKey
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+              format: binary
+          application/csv:
+            schema:
+              type: string
+              format: binary
+          text/plain:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  objectKey:
+                    type: string
+                  size:
+                    type: integer
+                  contentType:
+                    type: string
+        '422':
+          description: Validation error
+
+# ═════════════════════════════════════════════════════════════════════
+# Components
+# ═════════════════════════════════════════════════════════════════════
+components:
+  parameters:
+    Skip:
+      name: skip
+      in: query
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+    Top:
+      name: top
+      in: query
+      schema:
+        type: integer
+        default: 10
+        minimum: 1
+        maximum: 100
+
+  schemas:
+    # ── Shared ────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    # ── Import ────────────────────────────────────────────────────
+    StartBulkImportResponse:
+      type: object
+      properties:
+        importId:
+          type: string
+          format: uuid
+        sourceType:
+          type: string
+        message:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+
+    ImportSummariesResponse:
+      type: object
+      properties:
+        skip:
+          type: integer
+        top:
+          type: integer
+        count:
+          type: integer
+        imports:
+          type: array
+          items:
+            type: object
+        timestamp:
+          type: string
+          format: date-time
+
+    ImportReport:
+      type: object
+      description: Full import report (structure varies).
+
+    FileReportsResponse:
+      type: object
+      properties:
+        importId:
+          type: string
+          format: uuid
+        totalFiles:
+          type: integer
+        files:
+          type: array
+          items:
+            type: object
+        timestamp:
+          type: string
+          format: date-time
+
+    PaginatedLineageEvents:
+      type: object
+      properties:
+        collectionName:
+          type: string
+        recordId:
+          type: string
+        skip:
+          type: integer
+        top:
+          type: integer
+        count:
+          type: integer
+        totalEvents:
+          type: integer
+        events:
+          type: array
+          items:
+            type: object
+
+    GenerateRecordIdRequest:
+      type: object
+      required: [keyParts]
+      properties:
+        keyParts:
+          type: array
+          items:
+            type: string
+          example: ["NORTH", "F001"]
+
+    GenerateRecordIdResponse:
+      type: object
+      properties:
+        recordId:
+          type: string
+          description: URL-safe SHA256 hash (43 characters)
+        keyParts:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    DeleteCollectionResponse:
+      type: object
+      properties:
+        collectionName:
+          type: string
+        success:
+          type: boolean
+        message:
+          type: string
+        deletedAtUtc:
+          type: string
+          format: date-time
+
+    DeleteCollectionsResponse:
+      type: object
+      properties:
+        deletedCollections:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+        success:
+          type: boolean
+        message:
+          type: string
+        deletedAtUtc:
+          type: string
+          format: date-time
+
+    ClearDownStorageResponse:
+      type: object
+      properties:
+        deletedKeys:
+          type: array
+          items:
+            type: string
+        totalDeleted:
+          type: integer
+        success:
+          type: boolean
+        message:
+          type: string
+        deletedAtUtc:
+          type: string
+          format: date-time
+
+    # ── Query ─────────────────────────────────────────────────────
+    QueryResult:
+      type: object
+      properties:
+        collectionName:
+          type: string
+        count:
+          type: integer
+        totalCount:
+          type: integer
+          nullable: true
+        data:
+          type: array
+          items:
+            type: object
+        executedAtUtc:
+          type: string
+          format: date-time
+
+    # ── Cleanse — Operations ──────────────────────────────────────
+    StartAnalysisResponse:
+      type: object
+      properties:
+        operationId:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+        startedAtUtc:
+          type: string
+          format: date-time
+
+    CancelAnalysisResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        requestedAtUtc:
+          type: string
+          format: date-time
+
+    AnalysisRunsResponse:
+      type: object
+      properties:
+        skip:
+          type: integer
+        top:
+          type: integer
+        count:
+          type: integer
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CleanseAnalysisOperationSummaryDto'
+        timestamp:
+          type: string
+          format: date-time
+
+    CleanseAnalysisOperationDto:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [Running, Completed, Failed, Cancelling, Cancelled]
+        startedAtUtc:
+          type: string
+          format: date-time
+        completedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        progressPercentage:
+          type: number
+          format: double
+          description: Weighted aggregate across all phases (0-100)
+        statusDescription:
+          type: string
+        recordsAnalyzed:
+          type: integer
+        totalRecords:
+          type: integer
+        issuesFound:
+          type: integer
+        issuesResolved:
+          type: integer
+        error:
+          type: string
+          nullable: true
+        durationMs:
+          type: integer
+          format: int64
+          nullable: true
+        reportObjectKey:
+          type: string
+          nullable: true
+        reportUrl:
+          type: string
+          nullable: true
+        finalAverageRpm:
+          type: number
+          format: double
+          nullable: true
+        cancelledAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        currentPhase:
+          type: string
+          nullable: true
+          description: "Currently executing phase: Analysis, Deactivation, or Export"
+        phases:
+          type: array
+          nullable: true
+          description: Per-phase progress breakdown
+          items:
+            $ref: '#/components/schemas/OperationPhaseProgress'
+        stats:
+          $ref: '#/components/schemas/CleanseRunStatsDto'
+
+    CleanseAnalysisOperationSummaryDto:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        startedAtUtc:
+          type: string
+          format: date-time
+        completedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        progressPercentage:
+          type: number
+          format: double
+        recordsAnalyzed:
+          type: integer
+        totalRecords:
+          type: integer
+        issuesFound:
+          type: integer
+        issuesResolved:
+          type: integer
+        durationMs:
+          type: integer
+          format: int64
+          nullable: true
+        reportObjectKey:
+          type: string
+          nullable: true
+        reportUrl:
+          type: string
+          nullable: true
+        finalAverageRpm:
+          type: number
+          format: double
+          nullable: true
+        cancelledAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        currentPhase:
+          type: string
+          nullable: true
+        stats:
+          $ref: '#/components/schemas/CleanseRunStatsDto'
+
+    OperationPhaseProgress:
+      type: object
+      description: Progress tracking for a single operation phase.
+      properties:
+        name:
+          type: string
+          description: "Phase name: Analysis, Deactivation, or Export"
+        status:
+          type: string
+          enum: [NotStarted, Running, Completed]
+        percentage:
+          type: number
+          format: double
+          description: 0-100 within this phase
+        description:
+          type: string
+        recordsProcessed:
+          type: integer
+        totalRecords:
+          type: integer
+        startedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        completedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        durationMs:
+          type: integer
+          format: int64
+          nullable: true
+          description: Phase duration, set on completion
+        stats:
+          $ref: '#/components/schemas/PhaseStats'
+
+    PhaseStats:
+      type: object
+      nullable: true
+      description: Live performance statistics for a running phase.
+      properties:
+        currentRpm:
+          type: number
+          format: double
+          description: Records/min over the sliding window
+        averageRpm:
+          type: number
+          format: double
+          description: Records/min over the entire phase lifetime
+        projectedEndUtc:
+          type: string
+          format: date-time
+          nullable: true
+        estimatedRemainingSeconds:
+          type: number
+          format: double
+          nullable: true
+        throttlePolicyName:
+          type: string
+        throttlePolicySlug:
+          type: string
+        batchSize:
+          type: integer
+        batchDelayMs:
+          type: integer
+
+    CleanseRunStatsDto:
+      type: object
+      nullable: true
+      description: Operation-level live performance statistics.
+      properties:
+        currentRpm:
+          type: number
+          format: double
+        averageRpm:
+          type: number
+          format: double
+        projectedEndUtc:
+          type: string
+          format: date-time
+          nullable: true
+        estimatedDurationRemainingSeconds:
+          type: number
+          format: double
+          nullable: true
+        throttlePolicyName:
+          type: string
+        throttlePolicySlug:
+          type: string
+        pumpBatchSize:
+          type: integer
+        pumpDelayMs:
+          type: integer
+
+    RegenerateUrlResponse:
+      type: object
+      properties:
+        operationId:
+          type: string
+        objectKey:
+          type: string
+        reportUrl:
+          type: string
+        regeneratedAtUtc:
+          type: string
+          format: date-time
+
+    DeleteDataResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        collectionName:
+          type: string
+        deletedCount:
+          type: integer
+          format: int64
+        message:
+          type: string
+        deletedAtUtc:
+          type: string
+          format: date-time
+
+    TestNotificationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        recipient:
+          type: string
+        notificationId:
+          type: string
+          nullable: true
+        message:
+          type: string
+        sentAtUtc:
+          type: string
+          format: date-time
+
+    # ── Cleanse — Issues ──────────────────────────────────────────
+    IssuesResponse:
+      type: object
+      properties:
+        skip:
+          type: integer
+        top:
+          type: integer
+        count:
+          type: integer
+        totalCount:
+          type: integer
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueDto'
+        timestamp:
+          type: string
+          format: date-time
+
+    IssueDto:
+      type: object
+      properties:
+        id:
+          type: string
+        issueCode:
+          type: string
+        ruleCode:
+          type: string
+        errorCode:
+          type: string
+        cph:
+          type: string
+        ctsLidFullIdentifier:
+          type: string
+          nullable: true
+        description:
+          type: string
+        isActive:
+          type: boolean
+        isIgnored:
+          type: boolean
+        resolutionStatus:
+          type: string
+        assignedTo:
+          type: string
+          nullable: true
+        operationId:
+          type: string
+        createdAtUtc:
+          type: string
+          format: date-time
+        lastUpdatedAtUtc:
+          type: string
+          format: date-time
+
+    IssueCommandResponse:
+      type: object
+      properties:
+        issueId:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    IssueHistoryResponse:
+      type: object
+      properties:
+        issueId:
+          type: string
+        skip:
+          type: integer
+        top:
+          type: integer
+        count:
+          type: integer
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueHistoryEntryDto'
+        timestamp:
+          type: string
+          format: date-time
+
+    IssueHistoryEntryDto:
+      type: object
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        performedBy:
+          type: string
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+
+    PerformedByRequest:
+      type: object
+      required: [performedBy]
+      properties:
+        performedBy:
+          type: string
+
+    UpdateResolutionStatusRequest:
+      type: object
+      required: [status, performedBy]
+      properties:
+        status:
+          type: string
+          description: "None, Todo, InProgress, Resolved"
+          enum: [None, Todo, InProgress, Resolved]
+        performedBy:
+          type: string
+
+    AssignIssueRequest:
+      type: object
+      required: [assignedTo, performedBy]
+      properties:
+        assignedTo:
+          type: string
+        performedBy:
+          type: string
+
+    # ── Holdings ──────────────────────────────────────────────────
+    CtsCphHoldingResponse:
+      type: object
+      properties:
+        lidFullIdentifier:
+          type: string
+        locationName:
+          type: string
+          nullable: true
+        holding:
+          type: object
+          additionalProperties: true
+        keepers:
+          $ref: '#/components/schemas/QueryResult'
+        timestamp:
+          type: string
+          format: date-time
+
+    SamCphHoldingResponse:
+      type: object
+      properties:
+        cph:
+          type: string
+        locationName:
+          type: string
+          nullable: true
+        holding:
+          type: object
+          additionalProperties: true
+        herd:
+          $ref: '#/components/schemas/QueryResult'
+        parties:
+          $ref: '#/components/schemas/QueryResult'
+        holders:
+          $ref: '#/components/schemas/QueryResult'
+        timestamp:
+          type: string
+          format: date-time
+
+    # ── Throttle Policies ─────────────────────────────────────────
+    ThrottlePolicy:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        isActive:
+          type: boolean
+        isReadOnly:
+          type: boolean
+        settings:
+          $ref: '#/components/schemas/ThrottlePolicySettings'
+
+    ThrottlePolicySettings:
+      type: object
+      properties:
+        ingestion:
+          type: object
+        cleanseAnalysis:
+          type: object
+          properties:
+            pumpBatchSize:
+              type: integer
+            pumpDelayMs:
+              type: integer
+            recordIssueDelayMs:
+              type: integer
+            progressUpdateInterval:
+              type: integer
+            rpmWindowSeconds:
+              type: integer
+        cleanseExport:
+          type: object
+          properties:
+            streamBatchSize:
+              type: integer
+            throttlingDelayMs:
+              type: integer
+            rpmWindowSeconds:
+              type: integer
+        issueDeactivation:
+          type: object
+          properties:
+            batchSize:
+              type: integer
+            throttleDelayMs:
+              type: integer
+            rpmWindowSeconds:
+              type: integer
+        issueQuery:
+          type: object
+
+    CreateThrottlePolicyCommand:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        settings:
+          $ref: '#/components/schemas/ThrottlePolicySettings'
+
+    UpdateThrottlePolicyCommand:
+      type: object
+      properties:
+        name:
+          type: string
+        settings:
+          $ref: '#/components/schemas/ThrottlePolicySettings'

@@ -17,6 +17,7 @@
     </None>
     <None Include="docker-compose.yml" />
     <None Include=".dockerignore" />
+    <None Include="openapi.yaml" />
   </ItemGroup>
   <ItemGroup>
     <DockerComposeServiceReference Include="keeperdata_bridge">

@@ -18,7 +18,7 @@ namespace KeeperData.SamAPI
             this.tokenClient = tokenClient;
         }
 
-        public async Task<FindCustomersResponse?> FindCustomersAsync(
+        public async Task<FindCustomersResponse?> FindCustomers(
             IEnumerable<string> ids,
             int page = 1,
             int pageSize = 50,
@@ -38,7 +38,32 @@ namespace KeeperData.SamAPI
             return (await response.Content.ReadFromJsonAsync<FindCustomersResponse>(cancellationToken: ct));
         }
 
-        public async Task<GetHoldingResponse?> GetHoldingAsync(
+        public async Task<FindHoldingsResponse?> FindHoldings(
+            IEnumerable<string> ids,
+            int page = 1,
+            int pageSize = 50,
+            CancellationToken ct = default)
+        {
+            var token = await tokenClient.GetAccessTokenAsync(ct);
+
+            http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            http.DefaultRequestHeaders.Accept.Clear();
+            http.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/vnd.apha.1+json"));
+
+            var response = await http.PostAsJsonAsync(
+                $"alpha/holdings/find?page={page}&pageSize={pageSize}",
+                new { ids },
+                ct);
+
+            response.EnsureSuccessStatusCode();
+
+            return await response.Content.ReadFromJsonAsync<FindHoldingsResponse>(cancellationToken: ct);
+        }
+
+        public async Task<GetHoldingResponse?> GetHoldings(
            string countyId,
            string parishId,
            string holdingId,
@@ -62,32 +87,7 @@ namespace KeeperData.SamAPI
             return await response.Content.ReadFromJsonAsync<GetHoldingResponse>(cancellationToken: ct);
         }
 
-        public async Task<FindHoldingsResponse?> FindHoldingsAsync(
-            IEnumerable<string> ids,
-            int page = 1,
-            int pageSize = 50,
-            CancellationToken ct = default)
-        {
-            var token = await tokenClient.GetAccessTokenAsync(ct);
-
-            http.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", token);
-
-            http.DefaultRequestHeaders.Accept.Clear();
-            http.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/vnd.apha.1+json"));
-
-            var response = await http.PostAsJsonAsync(
-                $"holdings/find?page={page}&pageSize={pageSize}",
-                new { ids },
-                ct);
-
-            response.EnsureSuccessStatusCode();
-
-            return await response.Content.ReadFromJsonAsync<FindHoldingsResponse>(cancellationToken: ct);
-        }
-
-        public async Task<FindLocationsResponse?> FindLocationsAsync(
+        public async Task<FindLocationsResponse?> FindLocations(
             IEnumerable<string> ids,
             int page = 1,
             int pageSize = 50,

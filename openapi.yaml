@@ -4,7 +4,7 @@ info:
   description: |
     REST API for the Keeper Data Bridge backend service.
     Provides endpoints for data import, OData-style querying, cleanse analysis,
-    issue management, holdings lookup, and throttle policy management.
+    issue management, ad-hoc report export, holdings lookup, and throttle policy management.
   version: 1.0.0
   contact:
     name: DEFRA
@@ -20,6 +20,12 @@ tags:
     description: OData-style querying of MongoDB collections.
   - name: Cleanse
     description: Cleanse analysis operations, issue management, and report export.
+  - name: Cleanse Export
+    description: |
+      Ad-hoc full cleanse report export operations.
+      Exports all active issues to CSV/ZIP on S3 with progress tracking.
+      Runs independently of the analysis pipeline — does not send notifications
+      or update the incremental-export timestamp.
   - name: Holdings
     description: CTS and SAM CPH holding lookups.
   - name: Throttle Policies
@@ -377,7 +383,7 @@ paths:
             type: string
         - name: $filter
           in: query
-          description: "OData $filter expression"
+          description: OData $filter expression
           schema:
             type: string
         - name: $orderby
@@ -1000,6 +1006,124 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Cleanse Export — Ad-hoc full export
+  # ═══════════════════════════════════════════════════════════════════
+  /cleanse-export/start:
+    post:
+      tags: [Cleanse Export]
+      operationId: startFullExport
+      summary: Start an ad-hoc full export of all active issues
+      description: |
+        The export runs in a long-running background task with a distributed lock
+        to prevent concurrent exports. Progress can be tracked via the returned
+        export ID. Unlike the export phase of a cleanse analysis (which is
+        incremental), this always exports all active issues. It does NOT update
+        the incremental-export timestamp and does NOT send email notifications.
+      responses:
+        '202':
+          description: Export started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartExportResponse'
+        '409':
+          description: An export is already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportErrorResponse'
+
+  /cleanse-export/{exportId}:
+    get:
+      tags: [Cleanse Export]
+      operationId: getExportOperation
+      summary: Get progress and details of a specific export operation
+      description: |
+        Poll this endpoint to track export progress. When the export completes
+        successfully, the response includes reportUrl (a presigned S3 download
+        URL) and reportObjectKey. If the export fails, the error field
+        contains the failure details.
+      parameters:
+        - name: exportId
+          in: path
+          required: true
+          description: The export operation ID returned from the start endpoint
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Export operation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CleanseExportOperationDto'
+        '404':
+          description: Export operation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportErrorResponse'
+
+  /cleanse-export/{exportId}/regenerate-url:
+    post:
+      tags: [Cleanse Export]
+      operationId: regenerateExportUrl
+      summary: Regenerate the presigned URL for an export report
+      description: |
+        Use this when the original presigned URL has expired. The S3 object key
+        must exist (i.e., the export must have completed successfully). The newly
+        generated URL is also persisted on the export operation document.
+      parameters:
+        - name: exportId
+          in: path
+          required: true
+          description: The export operation ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: URL regenerated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegenerateExportUrlResponse'
+        '400':
+          description: Export has no report file (may not have completed successfully)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportErrorResponse'
+        '404':
+          description: Export operation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportErrorResponse'
+
+  /cleanse-export:
+    get:
+      tags: [Cleanse Export]
+      operationId: getExportOperations
+      summary: Get a paginated list of export operations
+      description: Returns export operations in reverse chronological order (most recent first).
+      parameters:
+        - $ref: '#/components/parameters/Skip'
+        - $ref: '#/components/parameters/Top'
+      responses:
+        '200':
+          description: Paginated list of export operations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportOperationsResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportErrorResponse'
 
   # ═══════════════════════════════════════════════════════════════════
   # Holdings
@@ -1970,6 +2094,153 @@ components:
         performedBy:
           type: string
 
+    # ── Cleanse Export ────────────────────────────────────────────
+    StartExportResponse:
+      type: object
+      required: [exportId, status, message]
+      properties:
+        exportId:
+          type: string
+          description: Unique identifier for the started export operation. Use this to poll progress.
+        status:
+          type: string
+          description: Initial status of the export (Pending).
+        message:
+          type: string
+        startedAtUtc:
+          type: string
+          format: date-time
+
+    CleanseExportOperationDto:
+      type: object
+      description: Full details of an ad-hoc cleanse export operation.
+      properties:
+        id:
+          type: string
+          description: Unique export operation identifier.
+        status:
+          type: string
+          enum: [Pending, Running, Completed, Failed]
+        startedAtUtc:
+          type: string
+          format: date-time
+        completedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        progressPercentage:
+          type: number
+          format: double
+          description: Progress percentage (0-100).
+        statusDescription:
+          type: string
+          description: Human-readable status description.
+        totalRecords:
+          type: integer
+          description: Total number of records to export.
+        recordsExported:
+          type: integer
+          description: Number of records exported so far.
+        reportObjectKey:
+          type: string
+          nullable: true
+          description: S3 object key for the generated report. Populated on successful completion.
+        reportUrl:
+          type: string
+          nullable: true
+          description: Presigned URL to download the report. Use regenerate-url if expired.
+        error:
+          type: string
+          nullable: true
+          description: Error message with exception details if the export failed.
+        durationMs:
+          type: integer
+          format: int64
+          nullable: true
+          description: Total duration in milliseconds when complete.
+
+    CleanseExportOperationSummaryDto:
+      type: object
+      description: Lightweight summary of an ad-hoc export operation for listing.
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [Pending, Running, Completed, Failed]
+        startedAtUtc:
+          type: string
+          format: date-time
+        completedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        progressPercentage:
+          type: number
+          format: double
+        totalRecords:
+          type: integer
+        recordsExported:
+          type: integer
+        reportObjectKey:
+          type: string
+          nullable: true
+        reportUrl:
+          type: string
+          nullable: true
+        durationMs:
+          type: integer
+          format: int64
+          nullable: true
+
+    RegenerateExportUrlResponse:
+      type: object
+      required: [exportId, objectKey, reportUrl]
+      properties:
+        exportId:
+          type: string
+          description: The export operation ID.
+        objectKey:
+          type: string
+          description: The S3 object key.
+        reportUrl:
+          type: string
+          description: The new presigned URL.
+        regeneratedAtUtc:
+          type: string
+          format: date-time
+
+    ExportOperationsResponse:
+      type: object
+      required: [exports]
+      properties:
+        skip:
+          type: integer
+        top:
+          type: integer
+        count:
+          type: integer
+          description: Actual number of export operations returned.
+        exports:
+          type: array
+          items:
+            $ref: '#/components/schemas/CleanseExportOperationSummaryDto'
+        timestamp:
+          type: string
+          format: date-time
+
+    ExportErrorResponse:
+      type: object
+      required: [message]
+      description: Error response for export operations.
+      properties:
+        message:
+          type: string
+          description: The error message with details.
+        timestamp:
+          type: string
+          format: date-time
+
     # ── Holdings ──────────────────────────────────────────────────
     CtsCphHoldingResponse:
       type: object
@@ -2079,3 +2350,13 @@ components:
           type: string
         settings:
           $ref: '#/components/schemas/ThrottlePolicySettings'
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key authentication.
+
+security:
+  - ApiKeyAuth: []

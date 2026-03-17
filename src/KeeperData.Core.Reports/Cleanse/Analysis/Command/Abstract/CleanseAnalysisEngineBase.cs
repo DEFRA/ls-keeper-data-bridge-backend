@@ -49,6 +49,7 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
     protected async Task PumpAsync(PumpContext context, CancellationToken ct)
     {
         var skip = 0;
+        var baseRecordsAnalyzed = context.Metrics.RecordsAnalyzed;
         while (!ct.IsCancellationRequested)
         {
             var settings = Throttler.Settings.CleanseAnalysis;
@@ -62,7 +63,7 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
             await ProcessBatchAsync(batch, context, ct);
 
             skip += batch.Data.Count;
-            context.Metrics.RecordsAnalyzed = skip;
+            context.Metrics.RecordsAnalyzed = baseRecordsAnalyzed + skip;
 
             RunStatsService.RecordSnapshot(context.OperationId, context.Metrics.RecordsAnalyzed);
 
@@ -72,6 +73,14 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
             }
 
             await Throttler.DelayAsync(settings.PumpDelayMs, ct);
+        }
+
+        // Always fire a final progress update so the description and phase counters
+        // reflect the actual totals even when the last batch didn't align with the
+        // progressUpdateInterval.
+        if (skip > 0)
+        {
+            await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
         }
     }
 

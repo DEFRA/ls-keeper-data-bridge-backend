@@ -177,7 +177,7 @@ public class CleanseAnalysisEngineBaseTests
 
         engine.CtsRecords.Should().ContainSingle().Which.Id.Should().Be("UK-12/345/0001");
         engine.SamRecords.Should().ContainSingle().Which.Id.Should().Be("12/345/0002");
-        metrics.RecordsAnalyzed.Should().BeGreaterThanOrEqualTo(1);
+        metrics.RecordsAnalyzed.Should().Be(2, "CTS (1) + SAM (1) records should accumulate");
     }
 
     [Fact]
@@ -196,6 +196,100 @@ public class CleanseAnalysisEngineBaseTests
         metrics.RecordsAnalyzed.Should().Be(0);
         engine.CtsRecords.Should().BeEmpty();
         engine.SamRecords.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldAccumulateRecordsAnalyzedAcrossBothPumps()
+    {
+        const int ctsCount = 3;
+        const int samCount = 2;
+
+        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(ctsCount);
+        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(samCount);
+
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QueryResult
+            {
+                CollectionName = "cts_cph_holding",
+                Data = Enumerable.Range(1, ctsCount)
+                    .Select(i => new Dictionary<string, object?>
+                    { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = $"UK-01/001/{i:D4}" })
+                    .ToList(),
+                Count = ctsCount
+            });
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
+
+        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QueryResult
+            {
+                CollectionName = "sam_cph_holdings",
+                Data = Enumerable.Range(1, samCount)
+                    .Select(i => new Dictionary<string, object?>
+                    { [DataFields.SamCphHoldingFields.Cph] = $"02/002/{i:D4}" })
+                    .ToList(),
+                Count = samCount
+            });
+        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
+
+        var engine = CreateEngine();
+        var metrics = await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, CancellationToken.None);
+
+        metrics.RecordsAnalyzed.Should().Be(ctsCount + samCount,
+            "RecordsAnalyzed must accumulate across both the CTS and SAM pumps");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldFireFinalProgressCallbackWithCorrectTotals()
+    {
+        const int ctsCount = 2;
+        const int samCount = 3;
+        const int expectedTotal = ctsCount + samCount;
+
+        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(ctsCount);
+        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(samCount);
+
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QueryResult
+            {
+                CollectionName = "cts_cph_holding",
+                Data = Enumerable.Range(1, ctsCount)
+                    .Select(i => new Dictionary<string, object?>
+                    { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = $"UK-01/001/{i:D4}" })
+                    .ToList(),
+                Count = ctsCount
+            });
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
+
+        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QueryResult
+            {
+                CollectionName = "sam_cph_holdings",
+                Data = Enumerable.Range(1, samCount)
+                    .Select(i => new Dictionary<string, object?>
+                    { [DataFields.SamCphHoldingFields.Cph] = $"02/002/{i:D4}" })
+                    .ToList(),
+                Count = samCount
+            });
+        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
+
+        var lastCallbackRecordsAnalyzed = -1;
+        var lastCallbackTotalRecords = -1;
+        var engine = CreateEngine();
+        await engine.ExecuteAsync("op-1", (recordsAnalyzed, totalRecords, _, _) =>
+        {
+            lastCallbackRecordsAnalyzed = recordsAnalyzed;
+            lastCallbackTotalRecords = totalRecords;
+            return Task.CompletedTask;
+        }, CancellationToken.None);
+
+        lastCallbackRecordsAnalyzed.Should().Be(expectedTotal,
+            "the final progress callback should report all CTS + SAM records analyzed");
+        lastCallbackTotalRecords.Should().Be(expectedTotal,
+            "the final progress callback should report the correct total");
     }
 
     [Fact]

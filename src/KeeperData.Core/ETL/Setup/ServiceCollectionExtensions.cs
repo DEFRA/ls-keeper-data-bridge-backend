@@ -5,6 +5,7 @@ using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reporting.Setup;
 using KeeperData.Core.Telemetry;
+using KeeperData.Core.Throttling.Setup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics.CodeAnalysis;
@@ -29,5 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IImportOrchestrator, ImportOrchestrator>();
 
         services.AddReportingDependencies();
+
+        services.AddThrottlePolicies();
     }
 }

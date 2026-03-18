@@ -42,4 +42,34 @@ public interface ICleanseOperationCommandService
     /// </summary>
     /// <returns>The number of records deleted.</returns>
     Task<long> DeleteMetadataAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Requests cancellation of a running operation by setting the cancellation flag.
+    /// </summary>
+    Task RequestCancellationAsync(CancelOperationCommand command, CancellationToken ct = default);
+
+    /// <summary>
+    /// Marks an operation as cancelled.
+    /// </summary>
+    Task CancelOperationAsync(CancelOperationCommand command, long durationMs, CancellationToken ct = default);
+
+    /// <summary>
+    /// Checks whether cancellation has been requested for an operation.
+    /// </summary>
+    Task<bool> IsCancellationRequestedAsync(string operationId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Marks a phase as running and records its total record count.
+    /// </summary>
+    Task StartPhaseAsync(StartPhaseCommand command, CancellationToken ct = default);
+
+    /// <summary>
+    /// Updates the progress counters for a specific phase.
+    /// </summary>
+    Task UpdatePhaseProgressAsync(UpdatePhaseProgressCommand command, CancellationToken ct = default);
+
+    /// <summary>
+    /// Marks a phase as completed and records its duration.
+    /// </summary>
+    Task CompletePhaseAsync(CompletePhaseCommand command, CancellationToken ct = default);
 }

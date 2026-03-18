@@ -1,21 +1,23 @@
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
+using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Requests;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
+using KeeperData.Core.Throttling;
+using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
 
-public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueCommandService issueCommandService) 
-    : CleanseAnalysisEngineBase(dataService, issueCommandService), ICleanseAnalysisEngine
+public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueCommandService issueCommandService,
+    IThrottler throttler, ICleanseRunStatsService runStatsService, ILogger<CleanseAnalysisEngine> logger)
+    : CleanseAnalysisEngineBase(dataService, issueCommandService, throttler, runStatsService, logger), ICleanseAnalysisEngine
 {
     private readonly RecordIdGenerator _recordIdGenerator = new();
     private readonly ICtsSamQueryService _dataService = dataService;
-
-    private const int ThrottleDelayMs = 100;
 
     private async Task ProcessCtsPrimaryRecordInternalAsync(LidFullIdentifier lidFullIdentifier, string operationId, AnalysisMetrics metrics, CancellationToken ct)
     {
@@ -66,14 +68,14 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
                 results.Add(RuleResult.Issue(RuleDescriptors.SamMissingEmailAddresses, ctsHolding.Id, samCphHolding.Cph,
                     x => x.EmailCTS = missingEmails));
             }
-        }
-        else // PRIORITY 7: RULE 6 - Email addresses inconsistent between CTS and SAM
-        {
-            results.Add(RuleResult.Issue(RuleDescriptors.CtsSamEmailAddressesInconsistent, ctsHolding.Id, samCphHolding.Cph, x =>
+            else // PRIORITY 7: RULE 6 - Email addresses inconsistent between CTS and SAM
             {
-                x.EmailCTS = missingEmails;
-                x.EmailSAM = string.Join("; ", samEmails);
-            }));
+                results.Add(RuleResult.Issue(RuleDescriptors.CtsSamEmailAddressesInconsistent, ctsHolding.Id, samCphHolding.Cph, x =>
+                            {
+                                x.EmailCTS = missingEmails;
+                                x.EmailSAM = string.Join("; ", samEmails);
+                            }));
+            }
         }
     }
 
@@ -146,8 +148,15 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
     {
         var results = new List<RuleResult>();
 
-        // get the CTS CPH Holding...
-        var ctsCphHolding = await _dataService.GetCtsCphHoldingAsync(cph, ct);
+        // Resolve CPH to full LID_FULL_IDENTIFIER via the in-memory lookup
+        // so we can query by equals instead of a regex endswith on MongoDB.
+        CtsCphHoldingModel? ctsCphHolding = null;
+        if (CphToLidLookup.TryGetValue(cph.Value, out var lidValue))
+        {
+            var lid = LidFullIdentifier.Parse(lidValue);
+            ctsCphHolding = await _dataService.GetCtsCphHoldingAsync(lid, ct);
+        }
+
         if (ctsCphHolding is null) // does not exist
         {
             results.Add(RuleResult.Issue(RuleDescriptors.SamCphNotInCts, cph)); // PRIORITY 1B: RULE 2B - CPH present in SAM but missing in CTS
@@ -170,7 +179,7 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
     {
         var cph = Cph.TryParse(id);
 
-        if (cph is not null)
+        if (cph is not null && IsValidCountyCode(cph))
         {
             await ProcessSamPrimaryRecordInternalAsync(cph, operationId, metrics, ct);
         }
@@ -198,7 +207,7 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
                 metrics.IssuesFound++;
             }
 
-            await Task.Delay(ThrottleDelayMs, ct);
+            await Throttler.DelayAsync(Throttler.Settings.CleanseAnalysis.RecordIssueDelayMs, ct);
         }
     }
 
@@ -206,7 +215,13 @@ public class CleanseAnalysisEngine(ICtsSamQueryService dataService, IIssueComman
     /// County Code must be between 1 and 51 (inclusive) to be valid
     /// </summary>
     protected static bool IsValidCountyCode(LidFullIdentifier lidFullIdentifier)
-        => lidFullIdentifier.Cph.CountyCode.ToInteger() is >= 1 and <= 51;
+        => IsValidCountyCode(lidFullIdentifier.Cph);
+
+    /// <summary>
+    /// County Code must be between 1 and 51 (inclusive) to be valid
+    /// </summary>
+    protected static bool IsValidCountyCode(Cph cph)
+        => cph.CountyCode.ToInteger() is >= 1 and <= 51;
 
     protected string GenerateThumbprint(string primaryRecordId, string ruleId)
         => _recordIdGenerator.GenerateId($"{primaryRecordId}:{ruleId}");

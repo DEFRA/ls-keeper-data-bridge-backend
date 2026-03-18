@@ -72,10 +72,10 @@ public class IssueCommandServiceTests
     [Fact]
     public async Task DeactivateStaleIssuesAsync_ShouldDelegateToRepository()
     {
-        _repoMock.Setup(r => r.DeactivateStaleAsync("op-1", It.IsAny<CancellationToken>()))
+        _repoMock.Setup(r => r.DeactivateStaleAsync("op-1", null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(3);
 
-        var result = await _sut.DeactivateStaleIssuesAsync(new DeactivateStaleIssuesCommand("op-1"), CancellationToken.None);
+        var result = await _sut.DeactivateStaleIssuesAsync(new DeactivateStaleIssuesCommand("op-1"), null, CancellationToken.None);
 
         result.Should().Be(3);
     }

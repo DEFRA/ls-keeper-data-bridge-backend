@@ -1,19 +1,29 @@
+using System.Diagnostics;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
+using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
+using KeeperData.Core.Throttling;
+using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 
-public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService, IIssueCommandService issueCommandService)
+public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService, IIssueCommandService issueCommandService,
+    IThrottler throttler, ICleanseRunStatsService runStatsService, ILogger logger)
 {
-    private const int ThrottlingPumpDelayMs = 400;
-    private const int BatchSize = 70;
-    private const int ProgressUpdateInterval = 100;
     private const string DateTimeFormat = "yyyy-MM-dd HH:mm:ss";
 
     protected IIssueCommandService IssueCommandService { get; } = issueCommandService;
+    protected IThrottler Throttler { get; } = throttler;
+    protected ICleanseRunStatsService RunStatsService { get; } = runStatsService;
+
+    /// <summary>
+    /// In-memory lookup mapping CPH values to their full LID_FULL_IDENTIFIER strings.
+    /// Populated before the SAM pump runs so that CPH→LID resolution avoids regex queries on MongoDB.
+    /// </summary>
+    protected Dictionary<string, string> CphToLidLookup { get; private set; } = [];
 
     protected delegate Task RecordProcessor(string id,
         string operationId, AnalysisMetrics metrics, CancellationToken ct);
@@ -39,9 +49,11 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
     protected async Task PumpAsync(PumpContext context, CancellationToken ct)
     {
         var skip = 0;
+        var baseRecordsAnalyzed = context.Metrics.RecordsAnalyzed;
         while (!ct.IsCancellationRequested)
         {
-            var batch = await context.Fetcher(skip, BatchSize, ct);
+            var settings = Throttler.Settings.CleanseAnalysis;
+            var batch = await context.Fetcher(skip, settings.PumpBatchSize, ct);
 
             if (batch.Data.Count == 0)
             {
@@ -51,14 +63,24 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
             await ProcessBatchAsync(batch, context, ct);
 
             skip += batch.Data.Count;
-            context.Metrics.RecordsAnalyzed = skip;
+            context.Metrics.RecordsAnalyzed = baseRecordsAnalyzed + skip;
 
-            if (ShouldUpdateProgress(context.Metrics.RecordsAnalyzed))
+            RunStatsService.RecordSnapshot(context.OperationId, context.Metrics.RecordsAnalyzed);
+
+            if (context.Metrics.RecordsAnalyzed % settings.ProgressUpdateInterval == 0)
             {
                 await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
             }
 
-            await Task.Delay(ThrottlingPumpDelayMs, ct);
+            await Throttler.DelayAsync(settings.PumpDelayMs, ct);
+        }
+
+        // Always fire a final progress update so the description and phase counters
+        // reflect the actual totals even when the last batch didn't align with the
+        // progressUpdateInterval.
+        if (skip > 0)
+        {
+            await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
         }
     }
 
@@ -76,6 +98,10 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
         await PumpAsync(new PumpContext(totalRecords, operationId, metrics, progressCallback,
             dataService.ListCtsCphHoldingsAsync, ProcessCtsPrimaryRecordAsync,
             DataFields.CtsCphHoldingFields.LidFullIdentifier), ct);
+
+        // Pre-load all CTS LID_FULL_IDENTIFIER values so CPH→LID resolution
+        // can be done in-memory instead of via regex queries on MongoDB.
+        CphToLidLookup = await BuildCphToLidLookupAsync(ct);
 
         // iterate SAM CPH records
         await PumpAsync(new PumpContext(totalRecords, operationId, metrics, progressCallback,
@@ -117,6 +143,46 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
         };
 
 
-    protected static bool ShouldUpdateProgress(int recordsAnalyzed)
-        => recordsAnalyzed % ProgressUpdateInterval == 0;
-}
+    /// <summary>
+    /// Pages through all CTS CPH Holding records in throttled batches,
+    /// building a dictionary that maps each CPH value to its full LID_FULL_IDENTIFIER.
+    /// </summary>
+    private async Task<Dictionary<string, string>> BuildCphToLidLookupAsync(CancellationToken ct)
+    {
+        logger.LogInformation("Building CPH to LID lookup: starting");
+        var stopwatch = Stopwatch.StartNew();
+
+        var lookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var skip = 0;
+
+        while (!ct.IsCancellationRequested)
+        {
+            var settings = Throttler.Settings.CleanseAnalysis;
+            var batch = await dataService.ListCtsCphHoldingsAsync(skip, settings.PumpBatchSize, ct);
+
+            if (batch.Data.Count == 0)
+            {
+                break;
+            }
+
+            foreach (var record in batch.Data)
+            {
+                var lid = LidFullIdentifier.TryParse(record[DataFields.CtsCphHoldingFields.LidFullIdentifier]?.ToString());
+                if (lid is not null)
+                {
+                    lookup.TryAdd(lid.Cph.Value, lid.Value);
+                }
+            }
+
+            skip += batch.Data.Count;
+            await Throttler.DelayAsync(settings.PumpDelayMs, ct);
+        }
+
+        stopwatch.Stop();
+        logger.LogInformation("Building CPH to LID lookup: completed. Records={RecordCount}, Duration={DurationMs}ms ({DurationSeconds}s)",
+            lookup.Count, stopwatch.ElapsedMilliseconds, stopwatch.Elapsed.TotalSeconds);
+
+        return lookup;
+    }
+
+    }

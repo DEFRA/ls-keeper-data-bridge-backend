@@ -20,8 +20,11 @@ public interface IIssueAggRootRepository
     /// <summary>
     /// Deactivates all active issues whose OperationId does not match the specified current operation.
     /// </summary>
+    /// <param name="currentOperationId">The current operation identifier.</param>
+    /// <param name="onBatchProcessed">Optional callback invoked after each batch with (deactivatedSoFar, totalStale).</param>
+    /// <param name="ct">Cancellation token.</param>
     /// <returns>The number of issues deactivated.</returns>
-    Task<int> DeactivateStaleAsync(string currentOperationId, CancellationToken ct = default);
+    Task<int> DeactivateStaleAsync(string currentOperationId, Func<int, int, Task>? onBatchProcessed, CancellationToken ct = default);
 
     /// <summary>
     /// Deletes all issues.

@@ -1,5 +1,6 @@
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
 
 namespace KeeperData.Core.Reports.Cleanse.Operations.Queries.Dtos;
 
@@ -78,4 +79,35 @@ public class CleanseAnalysisOperationDto
     /// Gets or sets the presigned URL to download the generated report.
     /// </summary>
     public string? ReportUrl { get; set; }
+
+    /// <summary>
+    /// Gets or sets the final average records per minute when the operation completed.
+    /// Null while the operation is still running.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? FinalAverageRpm { get; set; }
+
+    /// <summary>
+    /// Gets or sets the UTC timestamp when the operation was cancelled.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? CancelledAtUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the name of the currently executing phase.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CurrentPhase { get; set; }
+
+    /// <summary>
+    /// Gets or sets the per-phase progress breakdown.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<OperationPhaseProgress>? Phases { get; set; }
+
+    /// <summary>
+    /// Gets or sets live performance statistics. Only populated for running operations.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CleanseRunStatsDto? Stats { get; set; }
 }

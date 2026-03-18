@@ -1,5 +1,6 @@
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
+using KeeperData.Core.Reports.Cleanse.Export.Operations.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Initialisation;
@@ -23,6 +24,7 @@ public interface ICleanseFacadeCommands
     ICleanseOperationCommandService CleanseOperationCommandService { get; }
     ICleanseAnalysisCommandService CleanseAnalysisCommandService { get; }
     ICleanseReportExportCommandService CleanseReportExportCommandService { get; }
+    ICleanseExportCommandService CleanseExportCommandService { get; }
 }
 
 public interface ICleanseFacadeQueries
@@ -30,6 +32,7 @@ public interface ICleanseFacadeQueries
     ICleanseAnalysisOperationsQueries CleanseAnalysisOperationsQueries { get; }
     IIssueQueries IssueQueries { get; }
     ICtsSamQueryService CtsSamQueryService { get; }
+    ICleanseExportOperationQueries CleanseExportOperationQueries { get; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "Pass-through facade - no logic to test.")]
@@ -48,21 +51,25 @@ public class CleanseFacadeCommands(
     IIssueCommandService issueCommandService,
     ICleanseOperationCommandService cleanseOperationCommandService,
     ICleanseAnalysisCommandService cleanseAnalysisCommandService,
-    ICleanseReportExportCommandService cleanseReportExportCommandService) : ICleanseFacadeCommands
+    ICleanseReportExportCommandService cleanseReportExportCommandService,
+    ICleanseExportCommandService cleanseExportCommandService) : ICleanseFacadeCommands
 {
     public IIssueCommandService IssueCommandService { get; } = issueCommandService;
     public ICleanseOperationCommandService CleanseOperationCommandService { get; } = cleanseOperationCommandService;
     public ICleanseAnalysisCommandService CleanseAnalysisCommandService { get; } = cleanseAnalysisCommandService;
     public ICleanseReportExportCommandService CleanseReportExportCommandService { get; } = cleanseReportExportCommandService;
+    public ICleanseExportCommandService CleanseExportCommandService { get; } = cleanseExportCommandService;
 }
 
 [ExcludeFromCodeCoverage(Justification = "Pass-through facade - no logic to test.")]
 public class CleanseFacadeQueries(
     ICleanseAnalysisOperationsQueries analysisOperationsQueries,
     IIssueQueries issueQueries,
-    ICtsSamQueryService ctsSamQueryService) : ICleanseFacadeQueries
+    ICtsSamQueryService ctsSamQueryService,
+    ICleanseExportOperationQueries cleanseExportOperationQueries) : ICleanseFacadeQueries
 {
     public ICleanseAnalysisOperationsQueries CleanseAnalysisOperationsQueries { get; } = analysisOperationsQueries;
     public IIssueQueries IssueQueries { get; } = issueQueries;
     public ICtsSamQueryService CtsSamQueryService { get; } = ctsSamQueryService;
+    public ICleanseExportOperationQueries CleanseExportOperationQueries { get; } = cleanseExportOperationQueries;
 }

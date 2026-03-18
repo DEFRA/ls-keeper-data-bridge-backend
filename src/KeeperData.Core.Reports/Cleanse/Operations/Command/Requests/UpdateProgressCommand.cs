@@ -8,5 +8,6 @@ public record UpdateProgressCommand(
     double ProgressPercentage,
     string StatusDescription,
     int RecordsAnalyzed,
+    int TotalRecords,
     int IssuesFound,
     int IssuesResolved);

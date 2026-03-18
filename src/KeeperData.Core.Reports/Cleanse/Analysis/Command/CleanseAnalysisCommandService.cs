@@ -26,6 +26,7 @@ public class CleanseAnalysisCommandService(
     IIssueCommandService issueCommandService,
     IDistributedLock distributedLock,
     ICleanseReportExportCommandService cleanseReportExportCommandService,
+    ICleanseRunStatsService runStatsService,
     ILogger<CleanseAnalysisCommandService> logger,
     ICleanseAnalysisEngine engine) : ICleanseAnalysisCommandService
 {
@@ -33,12 +34,7 @@ public class CleanseAnalysisCommandService(
     private static readonly TimeSpan LockDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan LockRenewalInterval = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// Starts a cleanse analysis operation in the background using a long-running thread.
-    /// Returns immediately after acquiring the lock and starting the background task.
-    /// </summary>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The operation if started, or null if the lock could not be acquired.</returns>
+    /// <inheritdoc/>
     public async Task<CleanseAnalysisOperationDto?> StartAnalysisAsync(CancellationToken ct = default)
     {
         var lockHandle = await AcquireLockAsync(ct);
@@ -47,13 +43,14 @@ public class CleanseAnalysisCommandService(
 
         var operation = await CreateOperationAsync(ct);
 
-        // Use a long-running thread to avoid thread pool starvation
+        // Use a long-running thread to avoid thread pool starvation.
+        // Do not capture the request-scoped ct here; it will be cancelled when the HTTP request completes.
         _ = Task.Factory.StartNew(
             async () =>
             {
                 try
                 {
-                    await RunAnalysisWithLockAsync(operation, lockHandle, ct);
+                    await RunAnalysisWithLockAsync(operation, lockHandle, CancellationToken.None);
                 }
                 catch (OperationCanceledException)
                 {
@@ -72,12 +69,7 @@ public class CleanseAnalysisCommandService(
         return operation;
     }
 
-    /// <summary>
-    /// Runs a cleanse analysis operation synchronously on the caller thread.
-    /// Exceptions are propagated to the caller. Useful for testing.
-    /// </summary>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The completed operation, or null if the lock could not be acquired.</returns>
+    /// <inheritdoc/>
     public async Task<CleanseAnalysisOperationDto?> RunAnalysisAsync(CancellationToken ct = default)
     {
         var lockHandle = await AcquireLockAsync(ct);
@@ -88,7 +80,21 @@ public class CleanseAnalysisCommandService(
         await RunAnalysisWithLockAsync(operation, lockHandle, ct);
         return await operationQueries.GetOperationAsync(operation.Id, ct);
     }
-    
+
+    /// <inheritdoc/>
+    public async Task<bool> CancelAnalysisAsync(CancellationToken ct = default)
+    {
+        var currentOperation = await operationQueries.GetCurrentOperationAsync(ct);
+        if (currentOperation is null)
+            return false;
+
+        await operationCommandService.RequestCancellationAsync(
+            new CancelOperationCommand(currentOperation.Id), ct);
+
+        logger.LogInformation("Cancellation requested for operationId={OperationId}", currentOperation.Id);
+        return true;
+    }
+
     private async Task RunAnalysisWithLockAsync(CleanseAnalysisOperationDto operation, IDistributedLockHandle lockHandle, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -99,47 +105,29 @@ public class CleanseAnalysisCommandService(
         {
             var aggregateMetrics = new AnalysisMetrics();
 
-            await operationCommandService.UpdateProgressAsync(new UpdateProgressCommand(
-                operation.Id,
-                ProgressPercentage: 0,
-                StatusDescription: "Running analysis",
-                RecordsAnalyzed: aggregateMetrics.RecordsAnalyzed,
-                IssuesFound: aggregateMetrics.IssuesFound,
-                IssuesResolved: aggregateMetrics.IssuesResolved), ct);
-
-            var metrics = await engine.ExecuteAsync(
-                operation.Id,
-                async (recordsAnalyzed, totalRecords, issuesFound, issuesResolved) =>
-                {
-                    var percentage = totalRecords > 0 ? (double)recordsAnalyzed / totalRecords * 100 : 0;
-                    await operationCommandService.UpdateProgressAsync(new UpdateProgressCommand(
-                        operation.Id,
-                        percentage,
-                        $"Analyzed {recordsAnalyzed} of {totalRecords} records",
-                        aggregateMetrics.RecordsAnalyzed + recordsAnalyzed,
-                        aggregateMetrics.IssuesFound + issuesFound,
-                        aggregateMetrics.IssuesResolved + issuesResolved), ct);
-                },
-                ct);
-
+            var metrics = await RunAnalysisPhaseAsync(operation, aggregateMetrics, ct);
             aggregateMetrics.RecordsAnalyzed += metrics.RecordsAnalyzed;
             aggregateMetrics.IssuesFound += metrics.IssuesFound;
 
-            // Deactivate all issues not touched by this operation
-            var deactivatedCount = await issueCommandService.DeactivateStaleIssuesAsync(
-                new DeactivateStaleIssuesCommand(operation.Id), ct);
+            var deactivatedCount = await RunDeactivationPhaseAsync(operation, ct);
             aggregateMetrics.IssuesResolved += deactivatedCount;
+
+            await RunExportPhaseAsync(operation, ct);
 
             stopwatch.Stop();
             await operationCommandService.CompleteOperationAsync(new CompleteOperationCommand(
                 operation.Id,
                 metrics.RecordsAnalyzed,
                 metrics.IssuesFound,
-                metrics.IssuesResolved,
+                aggregateMetrics.IssuesResolved,
                 stopwatch.ElapsedMilliseconds), ct);
-
-            // Export report to CSV, zip, and upload to S3
-            await cleanseReportExportCommandService.ExportReportAsync(operation.Id, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            stopwatch.Stop();
+            logger.LogInformation("Cleanse analysis cancelled (operationId={OperationId}), recording cancellation", operation.Id);
+            await operationCommandService.CancelOperationAsync(
+                new CancelOperationCommand(operation.Id), stopwatch.ElapsedMilliseconds, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -147,17 +135,126 @@ public class CleanseAnalysisCommandService(
             await operationCommandService.FailOperationAsync(new FailOperationCommand(
                 operation.Id,
                 ex.Message,
-                stopwatch.ElapsedMilliseconds), ct);
+                stopwatch.ElapsedMilliseconds), CancellationToken.None);
         }
         finally
         {
+            runStatsService.ClearSnapshots(operation.Id);
             await renewalCts.CancelAsync();
             try { await renewalTask; } catch { /* Ignore cancellation */ }
             await lockHandle.DisposeAsync();
         }
     }
 
-    private async Task StartLockRenewalAsync(IDistributedLockHandle lockHandle, CancellationToken ct)
+    private async Task<AnalysisMetrics> RunAnalysisPhaseAsync(
+        CleanseAnalysisOperationDto operation, AnalysisMetrics aggregateMetrics, CancellationToken ct)
+    {
+        await operationCommandService.StartPhaseAsync(
+            new StartPhaseCommand(operation.Id, OperationPhase.Analysis, 0), ct);
+
+        var metrics = await engine.ExecuteAsync(
+            operation.Id,
+            async (recordsAnalyzed, totalRecords, issuesFound, issuesResolved) =>
+            {
+                if (await operationCommandService.IsCancellationRequestedAsync(operation.Id, ct))
+                {
+                    throw new OperationCanceledException("Cancellation requested by user.");
+                }
+
+                runStatsService.RecordSnapshot(operation.Id, nameof(OperationPhase.Analysis), recordsAnalyzed);
+
+                await operationCommandService.UpdatePhaseProgressAsync(new UpdatePhaseProgressCommand(
+                    operation.Id,
+                    OperationPhase.Analysis,
+                    recordsAnalyzed,
+                    totalRecords,
+                    $"Analyzed {recordsAnalyzed} of {totalRecords} records"), ct);
+
+                await operationCommandService.UpdateProgressAsync(new UpdateProgressCommand(
+                    operation.Id,
+                    0,
+                    $"Analyzed {recordsAnalyzed} of {totalRecords} records",
+                    aggregateMetrics.RecordsAnalyzed + recordsAnalyzed,
+                    totalRecords,
+                    aggregateMetrics.IssuesFound + issuesFound,
+                    aggregateMetrics.IssuesResolved + issuesResolved), ct);
+            },
+            ct);
+
+        await operationCommandService.CompletePhaseAsync(
+            new CompletePhaseCommand(operation.Id, OperationPhase.Analysis), ct);
+        logger.LogInformation("Phase completed: Analysis (operationId={OperationId}, records={Records}, issues={Issues})",
+            operation.Id, metrics.RecordsAnalyzed, metrics.IssuesFound);
+
+        return metrics;
+    }
+
+    private async Task<int> RunDeactivationPhaseAsync(CleanseAnalysisOperationDto operation, CancellationToken ct)
+    {
+        await operationCommandService.StartPhaseAsync(
+            new StartPhaseCommand(operation.Id, OperationPhase.Deactivation, 0), ct);
+
+        var deactivatedCount = await issueCommandService.DeactivateStaleIssuesAsync(
+            new DeactivateStaleIssuesCommand(operation.Id),
+            async (deactivatedSoFar, totalStale) =>
+            {
+                runStatsService.RecordSnapshot(operation.Id, nameof(OperationPhase.Deactivation), deactivatedSoFar);
+
+                await operationCommandService.UpdatePhaseProgressAsync(new UpdatePhaseProgressCommand(
+                    operation.Id,
+                    OperationPhase.Deactivation,
+                    deactivatedSoFar,
+                    totalStale,
+                    $"Deactivated {deactivatedSoFar} of {totalStale} stale issues"), ct);
+            },
+            ct);
+
+        await operationCommandService.CompletePhaseAsync(
+            new CompletePhaseCommand(operation.Id, OperationPhase.Deactivation), ct);
+        logger.LogInformation("Phase completed: Deactivation (operationId={OperationId}, deactivated={Deactivated})",
+            operation.Id, deactivatedCount);
+
+        return deactivatedCount;
+    }
+
+    private async Task RunExportPhaseAsync(CleanseAnalysisOperationDto operation, CancellationToken ct)
+    {
+        await operationCommandService.StartPhaseAsync(
+            new StartPhaseCommand(operation.Id, OperationPhase.Export, 0), ct);
+
+        var since = await cleanseReportExportCommandService.GetLastExportedAtUtcAsync(ct);
+        logger.LogInformation("Incremental export since={Since} (operationId={OperationId})", since, operation.Id);
+
+        var options = new Export.Command.Domain.ExportOptions { Since = since, SendNotification = true };
+
+        var exportSucceeded = await cleanseReportExportCommandService.ExportReportAsync(
+            operation.Id,
+            options,
+            async (recordsProcessed, totalRecords, stepDescription) =>
+            {
+                runStatsService.RecordSnapshot(operation.Id, nameof(OperationPhase.Export), recordsProcessed);
+
+                await operationCommandService.UpdatePhaseProgressAsync(new UpdatePhaseProgressCommand(
+                    operation.Id,
+                    OperationPhase.Export,
+                    recordsProcessed,
+                    totalRecords,
+                    stepDescription), ct);
+            },
+            ct);
+
+        if (exportSucceeded)
+        {
+            await cleanseReportExportCommandService.RecordSuccessfulExportAsync(ct);
+            logger.LogInformation("Recorded successful incremental export timestamp (operationId={OperationId})", operation.Id);
+        }
+
+        await operationCommandService.CompletePhaseAsync(
+            new CompletePhaseCommand(operation.Id, OperationPhase.Export), ct);
+        logger.LogInformation("Phase completed: Export (operationId={OperationId})", operation.Id);
+    }
+
+    private static async Task StartLockRenewalAsync(IDistributedLockHandle lockHandle, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -166,9 +263,6 @@ public class CleanseAnalysisCommandService(
                 break;
         }
     }
-
-
-    
 
     #region Helpers
     private async Task<IDistributedLockHandle?> AcquireLockAsync(CancellationToken ct)
@@ -182,5 +276,4 @@ public class CleanseAnalysisCommandService(
     }
 
     #endregion
-
 }

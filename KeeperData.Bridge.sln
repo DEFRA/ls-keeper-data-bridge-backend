@@ -46,6 +46,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeeperData.Bridge.Performan
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeeperData.Core.Reports", "src\KeeperData.Core.Reports\KeeperData.Core.Reports.csproj", "{6C8D44A1-41DA-4D91-8414-9115991EE473}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{A40B087F-0F21-4C26-8D3F-734B3972C70A}"
+	ProjectSection(SolutionItems) = preProject
+		openapi.yaml = openapi.yaml
+		README.md = README.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

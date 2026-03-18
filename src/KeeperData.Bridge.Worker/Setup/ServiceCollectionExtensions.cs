@@ -27,7 +27,7 @@ public static class ServiceCollectionExtensions
         services.AddQuartz(q =>
         {
             var importBulkFilesConfig = scheduledJobConfiguration.FirstOrDefault(x => x.JobType == nameof(ImportBulkFilesJob));
-            if (importBulkFilesConfig?.CronSchedule != null)
+            if (!string.IsNullOrWhiteSpace(importBulkFilesConfig?.CronSchedule) && importBulkFilesConfig.IsEnabled)
             {
                 q.AddJob<ImportBulkFilesJob>(opts => opts.WithIdentity(importBulkFilesConfig.JobType));
 
@@ -37,19 +37,8 @@ public static class ServiceCollectionExtensions
                     .WithCronSchedule(importBulkFilesConfig.CronSchedule));
             }
 
-            var importDeltaFilesConfig = scheduledJobConfiguration.FirstOrDefault(x => x.JobType == nameof(ImportDeltaFilesJob));
-            if (importDeltaFilesConfig?.CronSchedule != null)
-            {
-                q.AddJob<ImportDeltaFilesJob>(opts => opts.WithIdentity(importDeltaFilesConfig.JobType));
-
-                q.AddTrigger(opts => opts
-                    .ForJob(importDeltaFilesConfig.JobType)
-                    .WithIdentity($"{importDeltaFilesConfig.JobType}-trigger")
-                    .WithCronSchedule(importDeltaFilesConfig.CronSchedule));
-            }
-
             var cleanseReportConfig = scheduledJobConfiguration.FirstOrDefault(x => x.JobType == nameof(CleanseReportJob));
-            if (cleanseReportConfig?.CronSchedule != null)
+            if (!string.IsNullOrWhiteSpace(cleanseReportConfig?.CronSchedule) && cleanseReportConfig.IsEnabled)
             {
                 q.AddJob<CleanseReportJob>(opts => opts.WithIdentity(cleanseReportConfig.JobType));
 
@@ -71,7 +60,6 @@ public static class ServiceCollectionExtensions
     private static IServiceCollection AddJobs(this IServiceCollection services)
     {
         services.AddScoped<ImportBulkFilesJob>();
-        services.AddScoped<ImportDeltaFilesJob>();
         services.AddScoped<CleanseReportJob>();
 
         return services;
@@ -80,7 +68,6 @@ public static class ServiceCollectionExtensions
     private static IServiceCollection AddTasks(this IServiceCollection services)
     {
         services.AddScoped<ITaskProcessBulkFiles, TaskProcessBulkFiles>();
-        services.AddScoped<ITaskProcessDeltaFiles, TaskProcessDeltaFiles>();
         services.AddScoped<ITaskRunCleanseReport, TaskRunCleanseReport>();
 
         return services;

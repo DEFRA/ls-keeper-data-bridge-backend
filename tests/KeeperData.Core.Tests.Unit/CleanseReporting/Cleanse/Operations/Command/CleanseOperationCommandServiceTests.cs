@@ -34,10 +34,11 @@ public class CleanseOperationCommandServiceTests
         _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
 
         await _sut.UpdateProgressAsync(
-            new UpdateProgressCommand(operation.Id, 50.0, "Halfway", 100, 5, 0), CancellationToken.None);
+            new UpdateProgressCommand(operation.Id, 50.0, "Halfway", 100, 500, 5, 0), CancellationToken.None);
 
         operation.ProgressPercentage.Should().Be(50.0);
         operation.RecordsAnalyzed.Should().Be(100);
+        operation.TotalRecords.Should().Be(500);
         operation.IssuesFound.Should().Be(5);
         _repoMock.Verify(r => r.UpdateAsync(operation, It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -106,8 +107,145 @@ public class CleanseOperationCommandServiceTests
         _repoMock.Setup(r => r.GetByIdAsync("missing", It.IsAny<CancellationToken>())).ReturnsAsync((CleanseAnalysisOperation?)null);
 
         var act = () => _sut.UpdateProgressAsync(
-            new UpdateProgressCommand("missing", 0, "", 0, 0, 0), CancellationToken.None);
+            new UpdateProgressCommand("missing", 0, "", 0, 0, 0, 0), CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
     }
+
+    [Fact]
+    public async Task RequestCancellationAsync_ShouldSetFlagAndPersist()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        await _sut.RequestCancellationAsync(
+            new CancelOperationCommand(operation.Id), CancellationToken.None);
+
+        operation.CancellationRequested.Should().BeTrue();
+        _repoMock.Verify(r => r.UpdateAsync(operation, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CancelOperationAsync_ShouldMarkCancelledAndPersist()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        await _sut.CancelOperationAsync(
+            new CancelOperationCommand(operation.Id), 5000, CancellationToken.None);
+
+        operation.Status.Should().Be(CleanseAnalysisStatus.Cancelled);
+        operation.DurationMs.Should().Be(5000);
+        operation.CancelledAtUtc.Should().NotBeNull();
+        _repoMock.Verify(r => r.UpdateAsync(operation, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task IsCancellationRequestedAsync_WhenNotRequested_ShouldReturnFalse()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        var result = await _sut.IsCancellationRequestedAsync(operation.Id, CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsCancellationRequestedAsync_WhenRequested_ShouldReturnTrue()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        operation.RequestCancellation();
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        var result = await _sut.IsCancellationRequestedAsync(operation.Id, CancellationToken.None);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsCancellationRequestedAsync_WhenNotFound_ShouldReturnFalse()
+    {
+        _repoMock.Setup(r => r.GetByIdAsync("missing", It.IsAny<CancellationToken>())).ReturnsAsync((CleanseAnalysisOperation?)null);
+
+        var result = await _sut.IsCancellationRequestedAsync("missing", CancellationToken.None);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RequestCancellationAsync_WhenNotFound_ShouldThrow()
+    {
+        _repoMock.Setup(r => r.GetByIdAsync("missing", It.IsAny<CancellationToken>())).ReturnsAsync((CleanseAnalysisOperation?)null);
+
+        var act = () => _sut.RequestCancellationAsync(
+            new CancelOperationCommand("missing"), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
+    }
+
+    #region Phase commands
+
+    [Fact]
+    public async Task StartPhaseAsync_ShouldSetPhaseRunningAndPersist()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        await _sut.StartPhaseAsync(
+            new StartPhaseCommand(operation.Id, OperationPhase.Analysis, 500), CancellationToken.None);
+
+        var phase = operation.Phases.Single(p => p.Name == "Analysis");
+        phase.Status.Should().Be("Running");
+        phase.TotalRecords.Should().Be(500);
+        operation.CurrentPhase.Should().Be("Analysis");
+        _repoMock.Verify(r => r.UpdateAsync(operation, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdatePhaseProgressAsync_ShouldUpdatePhaseAndPersist()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        operation.StartPhase(OperationPhase.Deactivation, 100);
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        await _sut.UpdatePhaseProgressAsync(
+            new UpdatePhaseProgressCommand(operation.Id, OperationPhase.Deactivation, 50, 100, "Half done"),
+            CancellationToken.None);
+
+        var phase = operation.Phases.Single(p => p.Name == "Deactivation");
+        phase.RecordsProcessed.Should().Be(50);
+        phase.Percentage.Should().Be(50.0);
+        _repoMock.Verify(r => r.UpdateAsync(operation, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompletePhaseAsync_ShouldSetPhaseCompletedAndPersist()
+    {
+        var operation = CleanseAnalysisOperation.Create();
+        operation.StartPhase(OperationPhase.Export, 200);
+        _repoMock.Setup(r => r.GetByIdAsync(operation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+
+        await _sut.CompletePhaseAsync(
+            new CompletePhaseCommand(operation.Id, OperationPhase.Export), CancellationToken.None);
+
+        var phase = operation.Phases.Single(p => p.Name == "Export");
+        phase.Status.Should().Be("Completed");
+        phase.Percentage.Should().Be(100.0);
+        phase.CompletedAtUtc.Should().NotBeNull();
+        _repoMock.Verify(r => r.UpdateAsync(operation, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task StartPhaseAsync_WhenNotFound_ShouldThrow()
+    {
+        _repoMock.Setup(r => r.GetByIdAsync("missing", It.IsAny<CancellationToken>())).ReturnsAsync((CleanseAnalysisOperation?)null);
+
+        var act = () => _sut.StartPhaseAsync(
+            new StartPhaseCommand("missing", OperationPhase.Analysis, 0), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
+    }
+
+    #endregion
 }

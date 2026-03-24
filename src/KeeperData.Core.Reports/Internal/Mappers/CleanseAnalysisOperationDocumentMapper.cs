@@ -32,7 +32,8 @@ internal static class CleanseAnalysisOperationDocumentMapper
         CancellationRequested = operation.CancellationRequested,
         CancelledAtUtc = operation.CancelledAtUtc,
         CurrentPhase = operation.CurrentPhase,
-        Phases = operation.Phases.Select(ToPhaseDocument).ToList()
+        Phases = operation.Phases.Select(ToPhaseDocument).ToList(),
+        Timings = operation.Timings is not null ? ToTimingNodeDocument(operation.Timings) : null
     };
 
     public static CleanseAnalysisOperation ToAggregateRoot(this CleanseAnalysisOperationDocument doc) => new()
@@ -55,7 +56,8 @@ internal static class CleanseAnalysisOperationDocumentMapper
         CancellationRequested = doc.CancellationRequested,
         CancelledAtUtc = doc.CancelledAtUtc,
         CurrentPhase = doc.CurrentPhase,
-        Phases = doc.Phases.Select(ToPhaseProgress).ToList()
+        Phases = doc.Phases.Select(ToPhaseProgress).ToList(),
+        Timings = doc.Timings is not null ? ToTimingNode(doc.Timings) : null
     };
 
     public static CleanseAnalysisOperationDto ToDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -77,7 +79,8 @@ internal static class CleanseAnalysisOperationDocumentMapper
         FinalAverageRpm = doc.FinalAverageRpm,
         CancelledAtUtc = doc.CancelledAtUtc,
         CurrentPhase = doc.CurrentPhase,
-        Phases = doc.Phases.Count > 0 ? doc.Phases.Select(ToPhaseProgress).ToList() : null
+        Phases = doc.Phases.Count > 0 ? doc.Phases.Select(ToPhaseProgress).ToList() : null,
+        Timings = doc.Timings is not null ? ToTimingNode(doc.Timings) : null
     };
 
     public static CleanseAnalysisOperationSummaryDto ToSummaryDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -123,5 +126,21 @@ internal static class CleanseAnalysisOperationDocumentMapper
         StartedAtUtc = d.StartedAtUtc,
         CompletedAtUtc = d.CompletedAtUtc,
         DurationMs = d.DurationMs
+    };
+
+    private static TimingNodeDocument ToTimingNodeDocument(TimingNode node) => new()
+    {
+        Name = node.Name,
+        ElapsedMs = node.ElapsedMs,
+        Elapsed = node.Elapsed,
+        Children = node.Children?.Select(ToTimingNodeDocument).ToList()
+    };
+
+    private static TimingNode ToTimingNode(TimingNodeDocument doc) => new()
+    {
+        Name = doc.Name,
+        ElapsedMs = doc.ElapsedMs,
+        Elapsed = doc.Elapsed,
+        Children = doc.Children?.Select(ToTimingNode).ToList()
     };
 }

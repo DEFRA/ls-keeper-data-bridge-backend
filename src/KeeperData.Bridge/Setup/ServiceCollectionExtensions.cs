@@ -6,6 +6,7 @@ using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Core.ETL.Setup;
 using KeeperData.Core.Querying.Setup;
 using KeeperData.Core.Telemetry;
+using KeeperData.Infrastructure.Benchmarking.Setup;
 using KeeperData.Infrastructure.Config;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Database.Setup;
@@ -72,6 +73,8 @@ namespace KeeperData.Bridge.Setup
             services.AddMongoQueryService();
 
             services.AddCleanseReportServices(configuration);
+
+            services.AddBenchmarkServices();
         }
 
         private static void ConfigureHealthChecks(this IServiceCollection services)

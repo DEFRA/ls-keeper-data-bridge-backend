@@ -123,4 +123,13 @@ public class CleanseOperationCommandService(ICleanseAnalysisOperationAggRootRepo
         operation.CompletePhase(command.Phase);
         await repository.UpdateAsync(operation, ct);
     }
+
+    public async Task UpdateTimingsAsync(UpdateTimingsCommand command, CancellationToken ct = default)
+    {
+        var operation = await repository.GetByIdAsync(command.OperationId, ct)
+            ?? throw new InvalidOperationException($"Operation '{command.OperationId}' not found.");
+
+        operation.UpdateTimings(command.Timings);
+        await repository.UpdateAsync(operation, ct);
+    }
 }

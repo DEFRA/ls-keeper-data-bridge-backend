@@ -31,6 +31,6 @@ public static class ServiceCollectionExtensions
 
         services.AddReportingDependencies();
 
-        services.AddThrottlePolicies();
+        services.AddThrottlePolicies(configuration);
     }
 }

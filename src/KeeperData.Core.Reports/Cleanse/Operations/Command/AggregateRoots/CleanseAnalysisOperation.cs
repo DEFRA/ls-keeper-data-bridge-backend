@@ -105,6 +105,11 @@ public class CleanseAnalysisOperation
     /// </summary>
     public List<OperationPhaseProgress> Phases { get; set; } = [];
 
+    /// <summary>
+    /// Gets or sets the hierarchical timing tree for this operation.
+    /// </summary>
+    public TimingNode? Timings { get; set; }
+
     #region Phase weights for aggregate progress calculation
 
     private static readonly Dictionary<string, double> PhaseWeights = new()
@@ -267,6 +272,14 @@ public class CleanseAnalysisOperation
             ? (long)(p.CompletedAtUtc.Value - p.StartedAtUtc.Value).TotalMilliseconds
             : null;
         RecalculateAggregateProgress();
+    }
+
+    /// <summary>
+    /// Replaces the timing tree with an updated snapshot.
+    /// </summary>
+    public void UpdateTimings(TimingNode timings)
+    {
+        Timings = timings;
     }
 
     private OperationPhaseProgress GetPhase(OperationPhase phase)

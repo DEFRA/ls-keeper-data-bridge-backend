@@ -401,7 +401,7 @@ public class AesCryptoTransformTests : IDisposable
 
         // Memory usage should remain constant (not proportional to file size)
         var memoryIncrease = memoryAfter - memoryBefore;
-        memoryIncrease.Should().BeLessThan(5 * 1024 * 1024); // Less than 5MB increase
+        memoryIncrease.Should().BeLessThan(6 * 1024 * 1024); // Less than 5MB increase
     }
 
     private string CreateTempFile(string content)

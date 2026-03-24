@@ -4,7 +4,8 @@ info:
   description: |
     REST API for the Keeper Data Bridge backend service.
     Provides endpoints for data import, OData-style querying, cleanse analysis,
-    issue management, ad-hoc report export, holdings lookup, and throttle policy management.
+    issue management, ad-hoc report export, holdings lookup, throttle policy management,
+    and MongoDB performance benchmarking with noisy-neighbour diagnostics.
   version: 1.0.0
   contact:
     name: DEFRA
@@ -32,6 +33,12 @@ tags:
     description: Throttle policy CRUD and activation.
   - name: External Catalogue
     description: External file catalogue browsing and file uploads.
+  - name: Benchmark
+    description: |
+      Self-contained MongoDB benchmark for diagnosing environment-level
+      performance differences. Creates temporary collections, runs read/write
+      scenarios, and produces a detailed report with noisy-neighbour analysis.
+      Does not touch production data collections.
 
 paths:
   # ═══════════════════════════════════════════════════════════════════
@@ -1478,6 +1485,104 @@ paths:
         '422':
           description: Validation error
 
+  # ═══════════════════════════════════════════════════════════════════
+  # Benchmark
+  # ═══════════════════════════════════════════════════════════════════
+  /benchmark/start:
+    post:
+      tags: [Benchmark]
+      operationId: startBenchmark
+      summary: Start a benchmark run
+      description: |
+        Starts a benchmark run with the supplied (or default) configuration.
+        The run executes in the background; poll GET /api/benchmark/status
+        and GET /api/benchmark/report for progress and results.
+        Creates temporary `_benchmark_*` collections that are cleaned up
+        automatically on completion or cancellation.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BenchmarkConfig'
+      responses:
+        '202':
+          description: Benchmark started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartBenchmarkResponse'
+        '409':
+          description: A benchmark is already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /benchmark/cancel:
+    post:
+      tags: [Benchmark]
+      operationId: cancelBenchmark
+      summary: Cancel the running benchmark
+      description: |
+        Requests cancellation of the currently running benchmark.
+        Temporary collections are cleaned up automatically.
+      responses:
+        '200':
+          description: Cancellation requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: No benchmark is currently running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /benchmark/report:
+    get:
+      tags: [Benchmark]
+      operationId: getBenchmarkReport
+      summary: Get the last benchmark report
+      description: |
+        Returns the full benchmark report from the most recent completed
+        (or cancelled) run. Includes scenario results, driver metrics,
+        explain plans, dataset/index fingerprints, and noisy-neighbour
+        analysis with severity levels, remediation guidance, and a
+        cross-correlated probable cause.
+      responses:
+        '200':
+          description: Benchmark report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BenchmarkReport'
+        '404':
+          description: No benchmark report available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /benchmark/status:
+    get:
+      tags: [Benchmark]
+      operationId: getBenchmarkStatus
+      summary: Get benchmark subsystem status
+      description: Returns whether a benchmark is running and summary info about the last report.
+      responses:
+        '200':
+          description: Benchmark status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BenchmarkStatus'
+
 # ═════════════════════════════════════════════════════════════════════
 # Components
 # ═════════════════════════════════════════════════════════════════════
@@ -1775,6 +1880,8 @@ components:
             $ref: '#/components/schemas/OperationPhaseProgress'
         stats:
           $ref: '#/components/schemas/CleanseRunStatsDto'
+        timings:
+          $ref: '#/components/schemas/TimingNode'
 
     CleanseAnalysisOperationSummaryDto:
       type: object
@@ -2350,6 +2457,309 @@ components:
           type: string
         settings:
           $ref: '#/components/schemas/ThrottlePolicySettings'
+
+    # ── Benchmark ────────────────────────────────────────────────
+    BenchmarkConfig:
+      type: object
+      description: |
+        Configuration for a benchmark run. All values have safe defaults
+        designed to avoid overloading a shared production database.
+        Omit the body entirely to use all defaults.
+      properties:
+        seedCount:
+          type: integer
+          default: 10000
+          description: Number of deterministic seed records to create.
+        concurrency:
+          type: integer
+          default: 4
+          description: Maximum degree of parallelism for scenario execution.
+        duration:
+          type: string
+          default: "00:03:00"
+          description: "Total benchmark duration (TimeSpan format, e.g. '00:03:00'). Scenarios loop until this elapses."
+        throttleDelay:
+          type: string
+          default: "00:00:00.0100000"
+          description: "Delay injected between every Mongo operation (TimeSpan format, e.g. '00:00:00.010')."
+        collectionPrefix:
+          type: string
+          default: "_benchmark_"
+          description: Prefix applied to all temporary benchmark collections.
+
+    StartBenchmarkResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        config:
+          $ref: '#/components/schemas/BenchmarkConfig'
+
+    BenchmarkStatus:
+      type: object
+      properties:
+        isRunning:
+          type: boolean
+        hasReport:
+          type: boolean
+        lastReportStatus:
+          type: string
+          nullable: true
+          description: "Status of the last report: Completed, Cancelled, or Failed."
+        lastReportTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+
+    BenchmarkReport:
+      type: object
+      description: |
+        Full benchmark report. Designed to be JSON-serialised, written to disk,
+        and compared across environments to detect noisy-neighbour impact.
+      properties:
+        environment:
+          type: string
+          description: Machine name where the benchmark ran.
+        timestampUtc:
+          type: string
+          format: date-time
+        config:
+          $ref: '#/components/schemas/BenchmarkConfig'
+        status:
+          type: string
+          description: "Completed, Cancelled, or Failed: <message>."
+        totalElapsedSeconds:
+          type: number
+          format: double
+        datasetFingerprints:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatasetFingerprint'
+        indexFingerprints:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndexFingerprint'
+        scenarioResults:
+          type: array
+          description: "Results for each scenario: PointLookup, RangeQuery, Aggregation, BulkWrite, MiniETL."
+          items:
+            $ref: '#/components/schemas/ScenarioResult'
+        driverMetrics:
+          $ref: '#/components/schemas/DriverMetrics'
+        explainResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExplainResult'
+        noisyNeighbourAnalysis:
+          $ref: '#/components/schemas/NoisyNeighbourAnalysis'
+
+    DatasetFingerprint:
+      type: object
+      description: Fingerprint of a benchmark collection's data distribution.
+      properties:
+        collectionName:
+          type: string
+        documentCount:
+          type: integer
+          format: int64
+        avgDocumentSizeBytes:
+          type: number
+          format: double
+        p95DocumentSizeBytes:
+          type: number
+          format: double
+
+    IndexFingerprint:
+      type: object
+      description: Fingerprint of an index on a benchmark collection.
+      properties:
+        collectionName:
+          type: string
+        indexName:
+          type: string
+        keyDefinition:
+          type: object
+          additionalProperties: true
+          description: BSON key definition document.
+        isUnique:
+          type: boolean
+
+    ScenarioResult:
+      type: object
+      description: Result of a single benchmark scenario.
+      properties:
+        scenarioName:
+          type: string
+        totalOperations:
+          type: integer
+        errorCount:
+          type: integer
+        elapsedSeconds:
+          type: number
+          format: double
+        opsPerSecond:
+          type: number
+          format: double
+          description: Wall-clock throughput.
+        effectiveOpsPerSecond:
+          type: number
+          format: double
+          description: Throughput excluding throttle wait time — pure Mongo performance.
+        latency:
+          $ref: '#/components/schemas/LatencyStats'
+
+    LatencyStats:
+      type: object
+      description: Percentile latency statistics in milliseconds.
+      properties:
+        avgMs:
+          type: number
+          format: double
+        p50Ms:
+          type: number
+          format: double
+        p95Ms:
+          type: number
+          format: double
+        p99Ms:
+          type: number
+          format: double
+        minMs:
+          type: number
+          format: double
+        maxMs:
+          type: number
+          format: double
+
+    DriverMetrics:
+      type: object
+      description: Aggregated MongoDB driver command and connection-pool statistics.
+      properties:
+        commandLatency:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/LatencyStats'
+          description: "Per-command-type latency breakdown (e.g. find, update, aggregate)."
+        commandFailures:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Total count of failed commands by command name.
+        connectionCheckoutWait:
+          $ref: '#/components/schemas/LatencyStats'
+          nullable: true
+          description: Connection checkout wait-time statistics.
+        checkoutFailures:
+          type: integer
+          description: Number of checkout failures (pool exhausted).
+        connectionsCreated:
+          type: integer
+        connectionsClosed:
+          type: integer
+        poolClearedEvents:
+          type: integer
+          description: Number of times the driver was forced to reset the connection pool.
+
+    ExplainResult:
+      type: object
+      description: Captured explain-plan output for a key query.
+      properties:
+        queryName:
+          type: string
+          description: "Name of the explained query: PointLookup, RangeQuery, or Aggregation."
+        winningPlan:
+          type: string
+          description: JSON representation of the winning query plan.
+        totalDocsExamined:
+          type: integer
+          format: int64
+        totalKeysExamined:
+          type: integer
+          format: int64
+        nReturned:
+          type: integer
+          format: int64
+        rawExplain:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Full raw explain output (BSON document).
+
+    NoisyNeighbourAnalysis:
+      type: object
+      description: |
+        Diagnostic analysis for noisy-neighbour indicators. Cross-correlates
+        connection pool health, command latency, and scenario errors to
+        produce a probable root cause.
+      properties:
+        hasRedFlags:
+          type: boolean
+          description: True if any red flag fired.
+        overallRisk:
+          type: string
+          enum: [None, Warning, Critical]
+          description: Highest severity across all flags.
+        probableCause:
+          type: string
+          nullable: true
+          description: |
+            Plain-language root-cause diagnosis based on cross-correlation
+            of multiple flags. Null when no flags are present.
+        flags:
+          type: array
+          items:
+            $ref: '#/components/schemas/RedFlag'
+
+    RedFlag:
+      type: object
+      description: A single noisy-neighbour diagnostic flag.
+      properties:
+        category:
+          type: string
+          description: Machine-readable category for comparison tooling.
+        severity:
+          type: string
+          enum: [None, Warning, Critical]
+        description:
+          type: string
+          description: Human-readable description of the problem observed.
+        remediation:
+          type: string
+          description: Actionable guidance on what to investigate next.
+        observedValue:
+          type: number
+          format: double
+          description: The observed value that triggered the flag.
+        threshold:
+          type: number
+          format: double
+          description: The threshold that was exceeded.
+
+    # ── Timings ──────────────────────────────────────────────────
+    TimingNode:
+      type: object
+      nullable: true
+      description: |
+        Hierarchical timing tree for a running or completed operation.
+        Each node tracks cumulative elapsed time and may contain child nodes
+        for sub-operations (e.g. Preload > SamCphHoldings > fetching).
+      properties:
+        name:
+          type: string
+          description: Name of the timing segment (e.g. "Preload", "CTS Pump").
+        elapsedMs:
+          type: integer
+          format: int64
+          description: Cumulative elapsed time in milliseconds.
+        elapsed:
+          type: string
+          description: "Formatted elapsed time (e.g. \"00:07:42.3\")."
+        children:
+          type: array
+          nullable: true
+          description: Child timing nodes forming a recursive tree.
+          items:
+            $ref: '#/components/schemas/TimingNode'
 
   securitySchemes:
     ApiKeyAuth:

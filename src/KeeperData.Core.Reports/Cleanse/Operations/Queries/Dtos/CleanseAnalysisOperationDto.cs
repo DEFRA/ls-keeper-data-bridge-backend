@@ -110,4 +110,10 @@ public class CleanseAnalysisOperationDto
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CleanseRunStatsDto? Stats { get; set; }
+
+    /// <summary>
+    /// Gets or sets the hierarchical timing tree showing where time was spent.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TimingNode? Timings { get; set; }
 }

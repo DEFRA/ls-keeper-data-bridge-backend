@@ -340,7 +340,7 @@ public class FileSystemBlobStorageService : IBlobStorageService
     private static string ComputeFileETag(string filePath)
     {
         using var stream = File.OpenRead(filePath);
-        var hash = MD5.HashData(stream);
+        var hash = SHA256.HashData(stream);
         return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
     }
 

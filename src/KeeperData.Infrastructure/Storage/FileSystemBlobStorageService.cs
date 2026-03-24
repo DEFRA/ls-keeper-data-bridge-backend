@@ -155,7 +155,7 @@ public class FileSystemBlobStorageService : IBlobStorageService
     public string GeneratePresignedUrl(string objectKey, TimeSpan? expiresIn = null)
     {
         var filePath = GetFullFilePath(objectKey);
-        return new Uri($"file:///{filePath.Replace('\\', '/')}").ToString();
+        return new Uri(filePath).AbsoluteUri;
     }
 
     public async Task UploadAsync(

@@ -90,8 +90,11 @@ public class InternalStorageHealthCheckTests
     [Fact]
     public async Task FileSystemProvider_UnwritablePath_ShouldReturnUnhealthy()
     {
-        // Arrange — use an invalid path that cannot be created
-        var config = CreateConfig(useFileSystem: true, basePath: Path.Combine("Z:\\", "nonexistent", Guid.NewGuid().ToString()));
+        // Arrange — use a path that cannot be created on any OS
+        var unwritablePath = OperatingSystem.IsWindows()
+            ? Path.Combine("Z:\\", "nonexistent", Guid.NewGuid().ToString())
+            : "/proc/0/nonexistent/" + Guid.NewGuid().ToString();
+        var config = CreateConfig(useFileSystem: true, basePath: unwritablePath);
         var sut = new InternalStorageHealthCheck(config);
 
         // Act

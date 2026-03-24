@@ -25,8 +25,8 @@ public class BenchmarkController(
     /// The run executes in the background; poll <c>GET /api/benchmark/report</c> for results.
     /// </summary>
     [HttpPost("start")]
-    [ProducesResponseType(StatusCodes.Status202Accepted)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<object>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<object>(StatusCodes.Status409Conflict)]
     public IActionResult Start([FromBody] BenchmarkConfig? config = null)
     {
         config ??= new BenchmarkConfig();
@@ -36,13 +36,7 @@ public class BenchmarkController(
             return Conflict(new { message = "A benchmark is already running." });
         }
 
-        CancellationTokenSource cts;
-        lock (s_lock)
-        {
-            s_cts?.Dispose();
-            s_cts = new CancellationTokenSource();
-            cts = s_cts;
-        }
+        var cts = ResetCancellationTokenSource();
 
         // Fire-and-forget; the result is retrieved via /report
         _ = Task.Run(async () =>
@@ -70,8 +64,8 @@ public class BenchmarkController(
     /// Cancels the currently running benchmark. Collections are cleaned up automatically.
     /// </summary>
     [HttpPost("cancel")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<object>(StatusCodes.Status200OK)]
+    [ProducesResponseType<object>(StatusCodes.Status404NotFound)]
     public IActionResult Cancel()
     {
         if (!orchestrator.IsRunning)
@@ -79,10 +73,7 @@ public class BenchmarkController(
             return NotFound(new { message = "No benchmark is currently running." });
         }
 
-        lock (s_lock)
-        {
-            s_cts?.Cancel();
-        }
+        CancelCurrentRun();
 
         logger.LogInformation("Benchmark cancellation requested via API");
         return Ok(new { message = "Benchmark cancellation requested. Collections will be cleaned up." });
@@ -93,7 +84,7 @@ public class BenchmarkController(
     /// </summary>
     [HttpGet("report")]
     [ProducesResponseType(typeof(BenchmarkReport), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<object>(StatusCodes.Status404NotFound)]
     public IActionResult GetReport()
     {
         var report = orchestrator.LastReport;
@@ -109,7 +100,7 @@ public class BenchmarkController(
     /// Returns the current status of the benchmark subsystem.
     /// </summary>
     [HttpGet("status")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<object>(StatusCodes.Status200OK)]
     public IActionResult GetStatus()
     {
         return Ok(new
@@ -119,5 +110,23 @@ public class BenchmarkController(
             lastReportStatus = orchestrator.LastReport?.Status,
             lastReportTimestamp = orchestrator.LastReport?.TimestampUtc
         });
+    }
+
+    private static CancellationTokenSource ResetCancellationTokenSource()
+    {
+        lock (s_lock)
+        {
+            s_cts?.Dispose();
+            s_cts = new CancellationTokenSource();
+            return s_cts;
+        }
+    }
+
+    private static void CancelCurrentRun()
+    {
+        lock (s_lock)
+        {
+            s_cts?.Cancel();
+        }
     }
 }

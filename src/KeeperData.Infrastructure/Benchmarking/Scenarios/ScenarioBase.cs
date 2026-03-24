@@ -111,7 +111,7 @@ public abstract class ScenarioBase : IBenchmarkScenario
             {
                 initial = Volatile.Read(ref _cumulativeOperationMs);
                 computed = initial + opMs;
-            } while (Interlocked.CompareExchange(ref _cumulativeOperationMs, computed, initial) != initial);
+            } while (BitConverter.DoubleToInt64Bits(Interlocked.CompareExchange(ref _cumulativeOperationMs, computed, initial)) != BitConverter.DoubleToInt64Bits(initial));
         }
 
         public ScenarioResult ToResult(string scenarioName, TimeSpan wallTime)

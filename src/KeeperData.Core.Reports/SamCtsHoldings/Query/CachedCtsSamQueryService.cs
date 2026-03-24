@@ -54,7 +54,7 @@ public sealed class CachedCtsSamQueryService(ICtsSamQueryService dataService) : 
 
         var result = (T)(await lazyTask.Value)!;
         sw.Stop();
-        Trace.WriteLine($"KRDSBRIDGE | CachedCtsSamQueryService | {(isHit ? "HIT" : "MISS")}, key={cacheKey}, duration={sw.ElapsedMilliseconds}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | CachedCtsSamQueryService | {(isHit ? "HIT" : "MISS")}, key={cacheKey}, duration={sw.ElapsedMilliseconds}ms");
         return result;
     }
 }

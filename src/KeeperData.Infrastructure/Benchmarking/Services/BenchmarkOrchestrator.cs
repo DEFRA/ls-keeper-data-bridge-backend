@@ -8,10 +8,12 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using MongoDB.Driver.Core.Events;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Infrastructure.Benchmarking.Services;
 
 /// <inheritdoc />
+[ExcludeFromCodeCoverage(Justification = "Deeply coupled to MongoDB driver — covered by integration/performance tests.")]
 public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
 {
     private readonly MongoClientSettings _baseSettings;
@@ -90,7 +92,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
         var writeCol = db.GetCollection<BsonDocument>($"{prefix}write");
 
         _logger.LogInformation("Benchmark: creating collections and indexes");
-        await CreateIndexesAsync(sourceCol, lookupCol, writeCol, ct);
+        await CreateIndexesAsync(sourceCol, writeCol, ct);
 
         _logger.LogInformation("Benchmark: seeding {Count} deterministic records", config.SeedCount);
         var baseDate = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -107,7 +109,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
         overallSw.Stop();
 
         return BuildReport(config, status, overallSw, eventCollector,
-            datasetFingerprints, indexFingerprints, scenarioResults, explains);
+            new BenchmarkData(datasetFingerprints, indexFingerprints, scenarioResults, explains));
     }
 
     private async Task<List<ScenarioResult>> RunScenariosAsync(
@@ -151,21 +153,18 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
         string status,
         Stopwatch overallSw,
         DriverEventCollector eventCollector,
-        IReadOnlyList<DatasetFingerprint>? datasetFingerprints = null,
-        IReadOnlyList<IndexFingerprint>? indexFingerprints = null,
-        IReadOnlyList<ScenarioResult>? scenarioResults = null,
-        IReadOnlyList<ExplainResult>? explainResults = null)
+        BenchmarkData? data = null)
     {
         var report = new BenchmarkReport
         {
             Config = config,
             Status = status,
             TotalElapsedSeconds = Math.Round(overallSw.Elapsed.TotalSeconds, 2),
-            DatasetFingerprints = datasetFingerprints ?? Array.Empty<DatasetFingerprint>(),
-            IndexFingerprints = indexFingerprints ?? Array.Empty<IndexFingerprint>(),
-            ScenarioResults = scenarioResults ?? Array.Empty<ScenarioResult>(),
+            DatasetFingerprints = data?.DatasetFingerprints ?? Array.Empty<DatasetFingerprint>(),
+            IndexFingerprints = data?.IndexFingerprints ?? Array.Empty<IndexFingerprint>(),
+            ScenarioResults = data?.ScenarioResults ?? Array.Empty<ScenarioResult>(),
             DriverMetrics = eventCollector.ToMetrics(),
-            ExplainResults = explainResults ?? Array.Empty<ExplainResult>()
+            ExplainResults = data?.ExplainResults ?? Array.Empty<ExplainResult>()
         };
 
         return report with
@@ -174,9 +173,12 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
         };
     }
 
+    private const string StatusField = "status";
+    private const string ExecutionStatsVerbosity = "executionStats";
+
     // ── Private helpers ───────────────────────────────────────────────
 
-    private IMongoClient CreateInstrumentedClient(DriverEventCollector collector)
+    private MongoClient CreateInstrumentedClient(DriverEventCollector collector)
     {
         var settings = _baseSettings.Clone();
         settings.ClusterConfigurator = cb =>
@@ -209,7 +211,6 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
 
     private static async Task CreateIndexesAsync(
         IMongoCollection<BsonDocument> source,
-        IMongoCollection<BsonDocument> lookup,
         IMongoCollection<BsonDocument> write,
         CancellationToken ct)
     {
@@ -223,7 +224,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
                 new CreateIndexOptions { Name = "ix_createdAt_status" }),
 
             new CreateIndexModel<BsonDocument>(
-                Builders<BsonDocument>.IndexKeys.Ascending("status").Ascending("category"),
+                Builders<BsonDocument>.IndexKeys.Ascending(StatusField).Ascending("category"),
                 new CreateIndexOptions { Name = "ix_status_category" }),
 
             new CreateIndexModel<BsonDocument>(
@@ -266,7 +267,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
                 var doc = new BsonDocument
                 {
                     { "_id", id },
-                    { "status", statuses[i % statuses.Length] },
+                    { StatusField, statuses[i % statuses.Length] },
                     { "category", categories[i % categories.Length] },
                     { "createdAt", ctx.BaseDate.AddDays(i % 30).AddHours(i % 24) },
                     { "numericValue", (i * 7) % 10000 },
@@ -323,6 +324,13 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
         DateTime BaseDate,
         TimeSpan ThrottleDelay,
         IBenchmarkThrottler Throttler);
+
+    /// <summary>Groups optional benchmark result data to keep <see cref="BuildReport"/> under 7 params.</summary>
+    private sealed record BenchmarkData(
+        IReadOnlyList<DatasetFingerprint> DatasetFingerprints,
+        IReadOnlyList<IndexFingerprint> IndexFingerprints,
+        IReadOnlyList<ScenarioResult> ScenarioResults,
+        IReadOnlyList<ExplainResult> ExplainResults);
 
     private static async Task<IReadOnlyList<DatasetFingerprint>> CollectDatasetFingerprintsAsync(
         IMongoDatabase db, string prefix, CancellationToken ct)
@@ -416,12 +424,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
 
         try
         {
-            // Explain: point lookup
-            var pointFilter = Builders<BsonDocument>.Filter.Eq("_id", "bench-00000001");
-            var pointExplain = await source.Find(pointFilter)
-                .As<BsonDocument>()
-                .ToCursorAsync(ct);
-            // Use the command-based explain approach
+            // Explain: point lookup — use the command-based explain approach
             var db = source.Database;
 
             var pointCmd = new BsonDocument
@@ -432,7 +435,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
                         { "filter", new BsonDocument("_id", "bench-00000001") }
                     }
                 },
-                { "verbosity", "executionStats" }
+                { "verbosity", ExecutionStatsVerbosity }
             };
 
             var pointResult = await db.RunCommandAsync<BsonDocument>(pointCmd, cancellationToken: ct);
@@ -452,12 +455,12 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
                                         { "$lt", baseDate.AddDays(1) }
                                     }
                                 },
-                                { "status", "Active" }
+                                { StatusField, "Active" }
                             }
                         }
                     }
                 },
-                { "verbosity", "executionStats" }
+                { "verbosity", ExecutionStatsVerbosity }
             };
 
             var rangeResult = await db.RunCommandAsync<BsonDocument>(rangeCmd, cancellationToken: ct);
@@ -471,7 +474,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
                         { "aggregate", source.CollectionNamespace.CollectionName },
                         { "pipeline", new BsonArray
                             {
-                                new BsonDocument("$match", new BsonDocument("status", "Active")),
+                                new BsonDocument("$match", new BsonDocument(StatusField, "Active")),
                                 new BsonDocument("$group", new BsonDocument
                                 {
                                     { "_id", "$category" },
@@ -482,7 +485,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
                         { "cursor", new BsonDocument() }
                     }
                 },
-                { "verbosity", "executionStats" }
+                { "verbosity", ExecutionStatsVerbosity }
             };
 
             var aggResult = await db.RunCommandAsync<BsonDocument>(aggCmd, cancellationToken: ct);
@@ -498,7 +501,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
 
     private static ExplainResult ParseExplain(string queryName, BsonDocument explain)
     {
-        var executionStats = FindNested(explain, "executionStats");
+        var executionStats = FindNested(explain, ExecutionStatsVerbosity);
         var queryPlanner = FindNested(explain, "queryPlanner");
 
         var winningPlan = queryPlanner?.GetValue("winningPlan", BsonNull.Value);

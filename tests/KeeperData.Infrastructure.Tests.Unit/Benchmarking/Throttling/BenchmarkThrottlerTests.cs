@@ -65,6 +65,7 @@ public class BenchmarkThrottlerTests
         cts.Cancel();
 
         // Should not throw — it returns Task.CompletedTask without checking the token
-        await throttler.DelayAsync(TimeSpan.FromSeconds(10), cts.Token);
+        var act = () => throttler.DelayAsync(TimeSpan.FromSeconds(10), cts.Token);
+        await act.Should().NotThrowAsync();
     }
 }

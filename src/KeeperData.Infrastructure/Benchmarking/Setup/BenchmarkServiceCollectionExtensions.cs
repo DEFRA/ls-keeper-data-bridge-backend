@@ -5,9 +5,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Infrastructure.Benchmarking.Setup;
 
+[ExcludeFromCodeCoverage(Justification = "DI registration wiring — covered by component/integration tests.")]
 public static class BenchmarkServiceCollectionExtensions
 {
     /// <summary>

@@ -365,10 +365,10 @@ public class FileSystemBlobStorageService : IBlobStorageService
     private static void CleanEmptyDirectories(string rootDir)
     {
         foreach (var dir in Directory.EnumerateDirectories(rootDir, "*", SearchOption.AllDirectories)
-            .OrderByDescending(d => d.Length))
+            .OrderByDescending(d => d.Length)
+            .Where(dir => !Directory.EnumerateFileSystemEntries(dir).Any()))
         {
-            if (!Directory.EnumerateFileSystemEntries(dir).Any())
-                Directory.Delete(dir);
+            Directory.Delete(dir);
         }
     }
 

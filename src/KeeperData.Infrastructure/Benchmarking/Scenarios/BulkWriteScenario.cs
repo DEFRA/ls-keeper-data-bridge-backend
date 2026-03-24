@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Infrastructure.Benchmarking.Scenarios;
 
@@ -7,6 +8,7 @@ namespace KeeperData.Infrastructure.Benchmarking.Scenarios;
 /// Bulk-write scenario: batches of upserts against the benchmark write collection.
 /// Uses deterministic IDs so each batch is repeatable.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Executes MongoDB bulk writes — covered by performance tests.")]
 public sealed class BulkWriteScenario : ScenarioBase
 {
     private readonly IMongoCollection<BsonDocument> _collection;

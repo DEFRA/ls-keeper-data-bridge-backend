@@ -1,11 +1,13 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Infrastructure.Benchmarking.Scenarios;
 
 /// <summary>
 /// Indexed point-lookup by <c>_id</c>. Deterministic ID derived from iteration index.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Executes MongoDB point lookups — covered by performance tests.")]
 public sealed class PointLookupScenario : ScenarioBase
 {
     private readonly IMongoCollection<BsonDocument> _collection;

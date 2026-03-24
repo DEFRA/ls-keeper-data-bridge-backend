@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Infrastructure.Benchmarking.Scenarios;
 
@@ -7,6 +8,7 @@ namespace KeeperData.Infrastructure.Benchmarking.Scenarios;
 /// Range query on an indexed <c>createdAt</c> + <c>status</c> compound field,
 /// representative of the kind of queries the data-cleanse analysis performs.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Executes MongoDB range queries — covered by performance tests.")]
 public sealed class RangeQueryScenario : ScenarioBase
 {
     private readonly IMongoCollection<BsonDocument> _collection;
@@ -40,6 +42,6 @@ public sealed class RangeQueryScenario : ScenarioBase
             Builders<BsonDocument>.Filter.Eq("status", status));
 
         var count = await _collection.Find(filter).Limit(100).CountDocumentsAsync(ct);
-        return count >= 0;
+        return count > 0;
     }
 }

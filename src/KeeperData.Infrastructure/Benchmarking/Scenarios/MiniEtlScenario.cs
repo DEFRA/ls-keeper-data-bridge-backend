@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
+using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Infrastructure.Benchmarking.Scenarios;
 
@@ -8,6 +9,7 @@ namespace KeeperData.Infrastructure.Benchmarking.Scenarios;
 /// look up a reference document, transform, then write to the write collection.
 /// This mirrors the data-cleanse read→analyse→write pattern.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Executes MongoDB ETL operations — covered by performance tests.")]
 public sealed class MiniEtlScenario : ScenarioBase
 {
     private readonly IMongoCollection<BsonDocument> _sourceCollection;

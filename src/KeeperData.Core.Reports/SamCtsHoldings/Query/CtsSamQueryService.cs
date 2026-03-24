@@ -61,12 +61,12 @@ public class CtsSamQueryService(DataSetDefinitions dataSetDefinitions, IQuerySer
         var sw = Stopwatch.StartNew();
         var holding = (await queryService.QueryAsync(holdingQuery, ct)).Data.ElementAtOrDefault(0);
         var holdingQueryMs = sw.ElapsedMilliseconds;
-        Trace.WriteLine($"KRDSBRIDGE | CtsSamQueryService | GetCtsCphHolding | holdingQuery done, collection={holdingQuery.CollectionName}, duration={holdingQueryMs}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | CtsSamQueryService | GetCtsCphHolding | holdingQuery done, collection={holdingQuery.CollectionName}, duration={holdingQueryMs}ms");
 
         var lidFullIdentifier = LidFullIdentifier.TryParse(holding?[CtsCphHoldingFields.LidFullIdentifier]?.ToString());
         if (holding == null || lidFullIdentifier == null)
         {
-            Trace.WriteLine($"KRDSBRIDGE | CtsSamQueryService | GetCtsCphHolding | not found, totalDuration={sw.ElapsedMilliseconds}ms");
+            Trace.TraceInformation($"KRDSBRIDGE | CtsSamQueryService | GetCtsCphHolding | not found, totalDuration={sw.ElapsedMilliseconds}ms");
             return null;
         }
         else
@@ -74,7 +74,7 @@ public class CtsSamQueryService(DataSetDefinitions dataSetDefinitions, IQuerySer
             var keepersQueryStart = sw.ElapsedMilliseconds;
             var keepersQuery = GetCtsKeepersQuery(lidFullIdentifier);
             var keepers = await queryService.QueryAsync(keepersQuery);
-            Trace.WriteLine($"KRDSBRIDGE | CtsSamQueryService | GetCtsCphHolding | keepersQuery done, lid={lidFullIdentifier.Value}, keeperCount={keepers.Data.Count}, duration={sw.ElapsedMilliseconds - keepersQueryStart}ms, totalDuration={sw.ElapsedMilliseconds}ms");
+            Trace.TraceInformation($"KRDSBRIDGE | CtsSamQueryService | GetCtsCphHolding | keepersQuery done, lid={lidFullIdentifier.Value}, keeperCount={keepers.Data.Count}, duration={sw.ElapsedMilliseconds - keepersQueryStart}ms, totalDuration={sw.ElapsedMilliseconds}ms");
             return new CtsCphHoldingModel
             {
                 Id = lidFullIdentifier,
@@ -90,10 +90,10 @@ public class CtsSamQueryService(DataSetDefinitions dataSetDefinitions, IQuerySer
         var sw = Stopwatch.StartNew();
         var holdingQuery = GetSamCphHoldingQuery(cph);
         var holding = (await queryService.QueryAsync(holdingQuery, ct)).Data.ElementAtOrDefault(0);
-        Trace.WriteLine($"KRDSBRIDGE | CtsSamQueryService | GetSamCphHolding | holdingQuery done, cph={cph.Value}, duration={sw.ElapsedMilliseconds}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | CtsSamQueryService | GetSamCphHolding | holdingQuery done, cph={cph.Value}, duration={sw.ElapsedMilliseconds}ms");
         if (holding == null)
         {
-            Trace.WriteLine($"KRDSBRIDGE | CtsSamQueryService | GetSamCphHolding | not found, cph={cph.Value}, totalDuration={sw.ElapsedMilliseconds}ms");
+            Trace.TraceInformation($"KRDSBRIDGE | CtsSamQueryService | GetSamCphHolding | not found, cph={cph.Value}, totalDuration={sw.ElapsedMilliseconds}ms");
             return null;
         }
         else
@@ -106,7 +106,7 @@ public class CtsSamQueryService(DataSetDefinitions dataSetDefinitions, IQuerySer
 
             var samHerds = samHerdsTask.Result;
             var holders = holdersTask.Result;
-            Trace.WriteLine($"KRDSBRIDGE | CtsSamQueryService | GetSamCphHolding | herds+holders parallel done, cph={cph.Value}, herdCount={samHerds.Data.Count}, holderCount={holders.Data.Count}, duration={sw.ElapsedMilliseconds - herdsStart}ms");
+            Trace.TraceInformation($"KRDSBRIDGE | CtsSamQueryService | GetSamCphHolding | herds+holders parallel done, cph={cph.Value}, herdCount={samHerds.Data.Count}, holderCount={holders.Data.Count}, duration={sw.ElapsedMilliseconds - herdsStart}ms");
 
             var partyIds = samHerds.Data
                 .SelectMany(x => new[]
@@ -122,7 +122,7 @@ public class CtsSamQueryService(DataSetDefinitions dataSetDefinitions, IQuerySer
             var partiesStart = sw.ElapsedMilliseconds;
             var samPartyResults = await Task.WhenAll(partyIds.Select(partyId => queryService.QueryAsync(GetSamPartiesQuery(partyId), ct)));
             var samParties = QueryResult.Combine(samPartyResults);
-            Trace.WriteLine($"KRDSBRIDGE | CtsSamQueryService | GetSamCphHolding | partiesQuery done, cph={cph.Value}, partyCount={partyIds.Count}, duration={sw.ElapsedMilliseconds - partiesStart}ms, totalDuration={sw.ElapsedMilliseconds}ms");
+            Trace.TraceInformation($"KRDSBRIDGE | CtsSamQueryService | GetSamCphHolding | partiesQuery done, cph={cph.Value}, partyCount={partyIds.Count}, duration={sw.ElapsedMilliseconds - partiesStart}ms, totalDuration={sw.ElapsedMilliseconds}ms");
 
             return new SamCphHoldingModel
             {

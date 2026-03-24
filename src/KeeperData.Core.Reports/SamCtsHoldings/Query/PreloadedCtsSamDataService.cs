@@ -39,7 +39,7 @@ public sealed class PreloadedCtsSamDataService(
             throw new InvalidOperationException("PreloadAsync has already been called. This service instance cannot be preloaded more than once.");
         _loaded = true;
 
-        Trace.WriteLine("KRDSBRIDGE | PreloadedCtsSamDataService | PreloadAsync | BEGIN");
+        Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | PreloadAsync | BEGIN");
         var sw = Stopwatch.StartNew();
 
         // CTS and SAM collections are independent — load them in parallel
@@ -55,7 +55,7 @@ public sealed class PreloadedCtsSamDataService(
         await LoadSamCphHoldersAsync(timings, ct);
 
         sw.Stop();
-        Trace.WriteLine($"KRDSBRIDGE | PreloadedCtsSamDataService | PreloadAsync | END, duration={sw.ElapsedMilliseconds}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | PreloadAsync | END, duration={sw.ElapsedMilliseconds}ms");
         logger.LogInformation(
             "PreloadAsync completed. CTS Holdings={CtsHoldings}, CTS Keepers={CtsKeepers}, SAM Holdings={SamHoldings}, SAM Herds={SamHerds}, SAM Parties={SamParties}, SAM Holders={SamHolders}, Duration={DurationMs}ms",
             _ctsCphHoldings.Count,
@@ -183,7 +183,7 @@ public sealed class PreloadedCtsSamDataService(
 
     private async Task LoadCtsCphHoldingsAsync(TimingTree timings, CancellationToken ct)
     {
-        Trace.WriteLine("KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsCphHoldings | BEGIN");
+        Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsCphHoldings | BEGIN");
         var sw = Stopwatch.StartNew();
 
         await foreach (var record in PageAllAsync(dataSetDefinitions.CTSCPHHolding.Name, timings, "Preload/CtsCphHoldings", ct))
@@ -200,12 +200,12 @@ public sealed class PreloadedCtsSamDataService(
 
         sw.Stop();
         timings.Track("Preload/CtsCphHoldings/total", sw.ElapsedMilliseconds);
-        Trace.WriteLine($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsCphHoldings | END, count={_ctsCphHoldings.Count}, duration={sw.ElapsedMilliseconds}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsCphHoldings | END, count={_ctsCphHoldings.Count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
     private async Task LoadCtsKeepersAsync(TimingTree timings, CancellationToken ct)
     {
-        Trace.WriteLine("KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsKeepers | BEGIN");
+        Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsKeepers | BEGIN");
         var sw = Stopwatch.StartNew();
         var count = 0;
 
@@ -226,12 +226,12 @@ public sealed class PreloadedCtsSamDataService(
 
         sw.Stop();
         timings.Track("Preload/CtsKeepers/total", sw.ElapsedMilliseconds);
-        Trace.WriteLine($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsKeepers | END, count={count}, duration={sw.ElapsedMilliseconds}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsKeepers | END, count={count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
     private async Task LoadSamCphHoldingsAsync(TimingTree timings, CancellationToken ct)
     {
-        Trace.WriteLine("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHoldings | BEGIN");
+        Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHoldings | BEGIN");
         var sw = Stopwatch.StartNew();
 
         await foreach (var record in PageAllAsync(dataSetDefinitions.SamCPHHolding.Name, timings, "Preload/SamCphHoldings", ct))
@@ -247,12 +247,12 @@ public sealed class PreloadedCtsSamDataService(
 
         sw.Stop();
         timings.Track("Preload/SamCphHoldings/total", sw.ElapsedMilliseconds);
-        Trace.WriteLine($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHoldings | END, count={_samCphHoldings.Count}, duration={sw.ElapsedMilliseconds}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHoldings | END, count={_samCphHoldings.Count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
     private async Task LoadSamHerdsAsync(TimingTree timings, CancellationToken ct)
     {
-        Trace.WriteLine("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamHerds | BEGIN");
+        Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamHerds | BEGIN");
         var sw = Stopwatch.StartNew();
         var count = 0;
 
@@ -280,12 +280,12 @@ public sealed class PreloadedCtsSamDataService(
 
         sw.Stop();
         timings.Track("Preload/SamHerds/total", sw.ElapsedMilliseconds);
-        Trace.WriteLine($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamHerds | END, count={count}, duration={sw.ElapsedMilliseconds}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamHerds | END, count={count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
     private async Task LoadSamPartiesAsync(TimingTree timings, CancellationToken ct)
     {
-        Trace.WriteLine("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamParties | BEGIN");
+        Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamParties | BEGIN");
         var sw = Stopwatch.StartNew();
         var count = 0;
 
@@ -306,12 +306,12 @@ public sealed class PreloadedCtsSamDataService(
 
         sw.Stop();
         timings.Track("Preload/SamParties/total", sw.ElapsedMilliseconds);
-        Trace.WriteLine($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamParties | END, count={count}, duration={sw.ElapsedMilliseconds}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamParties | END, count={count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
     private async Task LoadSamCphHoldersAsync(TimingTree timings, CancellationToken ct)
     {
-        Trace.WriteLine("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHolders | BEGIN");
+        Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHolders | BEGIN");
         var sw = Stopwatch.StartNew();
         var count = 0;
 
@@ -326,17 +326,15 @@ public sealed class PreloadedCtsSamDataService(
             if (!string.IsNullOrEmpty(cphs))
             {
                 // CPHS is comma-delimited (e.g. "09/236/0027,09/236/0028") — split and match against known CPHs
-                foreach (var segment in cphs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                foreach (var segment in cphs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Where(allCphValues.Contains))
                 {
-                    if (allCphValues.Contains(segment))
+                    if (!_samCphHoldersByCph.TryGetValue(segment, out var list))
                     {
-                        if (!_samCphHoldersByCph.TryGetValue(segment, out var list))
-                        {
-                            list = [];
-                            _samCphHoldersByCph[segment] = list;
-                        }
-                        list.Add(record);
+                        list = [];
+                        _samCphHoldersByCph[segment] = list;
                     }
+                    list.Add(record);
                 }
                 count++;
             }
@@ -344,7 +342,7 @@ public sealed class PreloadedCtsSamDataService(
 
         sw.Stop();
         timings.Track("Preload/SamCphHolders/total", sw.ElapsedMilliseconds);
-        Trace.WriteLine($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHolders | END, records={count}, mappings={_samCphHoldersByCph.Values.Sum(v => v.Count)}, duration={sw.ElapsedMilliseconds}ms");
+        Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHolders | END, records={count}, mappings={_samCphHoldersByCph.Values.Sum(v => v.Count)}, duration={sw.ElapsedMilliseconds}ms");
     }
 
     // ── Shared paging infrastructure ────────────────────────────────────────

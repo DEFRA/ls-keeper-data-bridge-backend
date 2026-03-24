@@ -29,7 +29,7 @@ public static class NoisyNeighbourAnalyser
         CheckCommandFailures(report.DriverMetrics, flags);
         CheckScenarioErrors(report.ScenarioResults, flags);
 
-        var cause = DiagnoseProbableCause(flags, report.DriverMetrics);
+        var cause = DiagnoseProbableCause(flags);
 
         return new NoisyNeighbourAnalysis
         {
@@ -167,7 +167,7 @@ public static class NoisyNeighbourAnalyser
 
     // ── Cross-correlation ─────────────────────────────────────────────
 
-    private static string? DiagnoseProbableCause(List<RedFlag> flags, DriverMetrics dm)
+    private static string? DiagnoseProbableCause(List<RedFlag> flags)
     {
         if (flags.Count == 0) return null;
 

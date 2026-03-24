@@ -24,7 +24,7 @@ public class FileSystemBlobStorageServiceFactoryTests
             .Returns(Mock.Of<ILogger>());
     }
 
-    private StorageConfiguration CreateConfig(bool useFileSystem, string? basePath = null)
+    private static StorageConfiguration CreateConfig(bool useFileSystem, string? basePath = null)
     {
         return new StorageConfiguration
         {

@@ -26,28 +26,45 @@ public static class ServiceCollectionExtensions
 
         var factory = new S3ClientFactory();
 
+        var externalS3Config = !string.IsNullOrEmpty(storageConfiguration.ExternalStorage.ServiceUrl)
+            ? new AmazonS3Config { ServiceURL = storageConfiguration.ExternalStorage.ServiceUrl }
+            : defaultAmazonS3Config;
+
         factory.AddClientWithCredentials<ExternalStorageClient>(
                 storageConfiguration.ExternalStorage.BucketName,
                 storageConfiguration.ExternalStorage.AccessKeySecretName,
                 storageConfiguration.ExternalStorage.SecretKeySecretName,
-                defaultAmazonS3Config);
+                externalS3Config);
 
-        factory.AddClient<InternalStorageClient>(
-            storageConfiguration.InternalStorage.BucketName,
-            defaultAmazonS3Config);
+        if (!storageConfiguration.UseFileSystem)
+        {
+            factory.AddClient<InternalStorageClient>(
+                storageConfiguration.InternalStorage.BucketName,
+                defaultAmazonS3Config);
+        }
 
         if (storageConfiguration.ExternalStorage.HealthcheckEnabled
-            || storageConfiguration.InternalStorage.HealthcheckEnabled)
+            || (!storageConfiguration.UseFileSystem && storageConfiguration.InternalStorage.HealthcheckEnabled))
         {
             services.AddHealthChecks()
                 .AddCheck<AwsS3HealthCheck>("aws_s3", tags: ["aws", "s3"]);
         }
 
+        services.AddHealthChecks()
+            .AddCheck<InternalStorageHealthCheck>("internal_storage", tags: ["storage"]);
+
         services.AddSingleton<IS3ClientFactory>(factory);
 
         services.AddTransient<IStorageReader<ExternalStorageClient>, ExternalStorageReader>();
 
-        services.AddTransient<IBlobStorageServiceFactory, S3BlobStorageServiceFactory>();
+        if (storageConfiguration.UseFileSystem)
+        {
+            services.AddTransient<IBlobStorageServiceFactory, FileSystemBlobStorageServiceFactory>();
+        }
+        else
+        {
+            services.AddTransient<IBlobStorageServiceFactory, S3BlobStorageServiceFactory>();
+        }
 
     }
 

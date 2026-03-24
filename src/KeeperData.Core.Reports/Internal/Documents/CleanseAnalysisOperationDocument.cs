@@ -30,6 +30,7 @@ internal class CleanseAnalysisOperationDocument
     [BsonElement("cancelled_at_utc")] public DateTime? CancelledAtUtc { get; set; }
     [BsonElement("current_phase")] public string? CurrentPhase { get; set; }
     [BsonElement("phases")] public List<OperationPhaseProgressDocument> Phases { get; set; } = [];
+    [BsonElement("timings")] public TimingNodeDocument? Timings { get; set; }
 }
 
 /// <summary>
@@ -47,4 +48,16 @@ internal class OperationPhaseProgressDocument
     [BsonElement("started_at_utc")] public DateTime? StartedAtUtc { get; set; }
     [BsonElement("completed_at_utc")] public DateTime? CompletedAtUtc { get; set; }
     [BsonElement("duration_ms")] public long? DurationMs { get; set; }
+}
+
+/// <summary>
+/// Embedded sub-document representing a node in the hierarchical timing tree.
+/// </summary>
+[ExcludeFromCodeCoverage(Justification = "Internal persistence document - covered by integration tests.")]
+internal class TimingNodeDocument
+{
+    [BsonElement("name")] public string Name { get; set; } = string.Empty;
+    [BsonElement("elapsed_ms")] public long ElapsedMs { get; set; }
+    [BsonElement("elapsed")] public string Elapsed { get; set; } = string.Empty;
+    [BsonElement("children")][BsonIgnoreIfNull] public List<TimingNodeDocument>? Children { get; set; }
 }

@@ -1,5 +1,14 @@
 <Project>
   <PropertyGroup>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- ASP.NET Core MVC does not support IL trimming (https://aka.ms/aspnet/trimming).
+         Suppress trim analysis warnings so PublishTrimmed can still reduce deployment
+         size without failing the build on unavoidable IL2026/IL2091 diagnostics. -->
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <!-- The .NET 10 SDK's configuration binder source generator produces code that
+         is incompatible with net8.0 targets (CS9035 on 'required' members, SYSLIB0026-0028
+         on obsolete X509 APIs). Disable it so binding falls back to reflection, which is
+         safe because trim analysis warnings are already suppressed above. -->
+    <EnableConfigurationBindingGenerator>false</EnableConfigurationBindingGenerator>
   </PropertyGroup>
 </Project>

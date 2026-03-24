@@ -72,4 +72,9 @@ public interface ICleanseOperationCommandService
     /// Marks a phase as completed and records its duration.
     /// </summary>
     Task CompletePhaseAsync(CompletePhaseCommand command, CancellationToken ct = default);
+
+    /// <summary>
+    /// Updates the hierarchical timing tree for an operation.
+    /// </summary>
+    Task UpdateTimingsAsync(UpdateTimingsCommand command, CancellationToken ct = default);
 }

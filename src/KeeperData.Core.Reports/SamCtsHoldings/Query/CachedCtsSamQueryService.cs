@@ -2,6 +2,7 @@ using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Core.Reports.SamCtsHoldings.Query;
@@ -41,10 +42,19 @@ public sealed class CachedCtsSamQueryService(ICtsSamQueryService dataService) : 
 
     private async Task<T> GetOrAddAsync<T>(string cacheKey, Func<Task<T>> factory)
     {
-        var lazyTask = _cache.GetOrAdd(cacheKey, _ => new Lazy<Task<object?>>(
-            async () => (object?)await factory(),
-            LazyThreadSafetyMode.ExecutionAndPublication));
+        var isHit = true;
+        var sw = Stopwatch.StartNew();
+        var lazyTask = _cache.GetOrAdd(cacheKey, _ =>
+        {
+            isHit = false;
+            return new Lazy<Task<object?>>(
+                async () => (object?)await factory(),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+        });
 
-        return (T)(await lazyTask.Value)!;
+        var result = (T)(await lazyTask.Value)!;
+        sw.Stop();
+        Trace.TraceInformation($"KRDSBRIDGE | CachedCtsSamQueryService | {(isHit ? "HIT" : "MISS")}, key={cacheKey}, duration={sw.ElapsedMilliseconds}ms");
+        return result;
     }
 }

@@ -12,7 +12,8 @@ public interface ICleanseAnalysisEngine
     /// </summary>
     /// <param name="operationId">The identifier of the current analysis operation.</param>
     /// <param name="progressCallback">Callback for reporting progress.</param>
+    /// <param name="timings">Timing tree to accumulate duration data into.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Metrics collected during execution.</returns>
-    Task<AnalysisMetrics> ExecuteAsync(string operationId, ProgressCallback progressCallback, CancellationToken ct);
+    Task<AnalysisMetrics> ExecuteAsync(string operationId, ProgressCallback progressCallback, TimingTree timings, CancellationToken ct);
 }

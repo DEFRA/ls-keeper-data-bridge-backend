@@ -75,6 +75,7 @@ public static class ServiceCollectionExtensions
 
         // Register query services for CTS/SAM data
         services.AddScoped<ICtsSamQueryService, CtsSamQueryService>();
+        services.AddScoped<IPreloadedCtsSamDataService, PreloadedCtsSamDataService>();
 
         // Register engine
         services.AddScoped<ICleanseAnalysisEngine, CleanseAnalysisEngine>();

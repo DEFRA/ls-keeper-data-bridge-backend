@@ -20,7 +20,7 @@ public class CleanseAnalysisEngineBaseTests
     /// <summary>
     /// Concrete test subclass to expose protected static members.
     /// </summary>
-    private sealed class TestableEngine(ICtsSamQueryService ds, IIssueCommandService ics, ICleanseRunStatsService rss)
+    private sealed class TestableEngine(IPreloadedCtsSamDataService ds, IIssueCommandService ics, ICleanseRunStatsService rss)
         : CleanseAnalysisEngineBase(ds, ics, new FakeThrottler(), rss, NullLogger.Instance)
     {
         public readonly List<(string Id, string OperationId)> CtsRecords = [];
@@ -38,8 +38,6 @@ public class CleanseAnalysisEngineBaseTests
             return Task.CompletedTask;
         }
 
-        public Dictionary<string, string> ExposedCphToLidLookup => CphToLidLookup;
-
         // Expose protected statics for testing
         public static new bool IsCtsCphHoldingRecordActive(IDictionary<string, object?> record)
             => CleanseAnalysisEngineBase.IsCtsCphHoldingRecordActive(record);
@@ -48,7 +46,7 @@ public class CleanseAnalysisEngineBaseTests
             => CleanseAnalysisEngineBase.ParseLidFullIdentifier(record);
     }
 
-    private readonly Mock<ICtsSamQueryService> _dataServiceMock = new();
+    private readonly Mock<IPreloadedCtsSamDataService> _dataServiceMock = new();
     private readonly Mock<IIssueCommandService> _issueServiceMock = new();
 
     private TestableEngine CreateEngine() => new(_dataServiceMock.Object, _issueServiceMock.Object, _runStatsServiceMock.Object);
@@ -149,31 +147,32 @@ public class CleanseAnalysisEngineBaseTests
     [Fact]
     public async Task ExecuteAsync_ShouldProcessBothCtsAndSamRecords()
     {
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<TimingTree>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount()).Returns(1);
+        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCount()).Returns(1);
 
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldings(0, It.IsAny<int>()))
+            .Returns(new QueryResult
             {
                 CollectionName = "cts_cph_holding",
                 Data = [new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = "UK-12/345/0001" }],
                 Count = 1
             });
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldings(It.Is<int>(i => i > 0), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
 
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
+        _dataServiceMock.Setup(s => s.ListSamCphHoldings(0, It.IsAny<int>()))
+            .Returns(new QueryResult
             {
                 CollectionName = "sam_cph_holdings",
                 Data = [new Dictionary<string, object?> { [DataFields.SamCphHoldingFields.Cph] = "12/345/0002" }],
                 Count = 1
             });
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.ListSamCphHoldings(It.Is<int>(i => i > 0), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
 
         var engine = CreateEngine();
-        var metrics = await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, CancellationToken.None);
+        var metrics = await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, new TimingTree(), CancellationToken.None);
 
         engine.CtsRecords.Should().ContainSingle().Which.Id.Should().Be("UK-12/345/0001");
         engine.SamRecords.Should().ContainSingle().Which.Id.Should().Be("12/345/0002");
@@ -183,15 +182,16 @@ public class CleanseAnalysisEngineBaseTests
     [Fact]
     public async Task ExecuteAsync_WithEmptyData_ShouldReturnZeroMetrics()
     {
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<TimingTree>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount()).Returns(0);
+        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCount()).Returns(0);
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldings(It.IsAny<int>(), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.ListSamCphHoldings(It.IsAny<int>(), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
 
         var engine = CreateEngine();
-        var metrics = await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, CancellationToken.None);
+        var metrics = await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, new TimingTree(), CancellationToken.None);
 
         metrics.RecordsAnalyzed.Should().Be(0);
         engine.CtsRecords.Should().BeEmpty();
@@ -204,11 +204,12 @@ public class CleanseAnalysisEngineBaseTests
         const int ctsCount = 3;
         const int samCount = 2;
 
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(ctsCount);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(samCount);
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<TimingTree>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount()).Returns(ctsCount);
+        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCount()).Returns(samCount);
 
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldings(0, It.IsAny<int>()))
+            .Returns(new QueryResult
             {
                 CollectionName = "cts_cph_holding",
                 Data = Enumerable.Range(1, ctsCount)
@@ -217,11 +218,11 @@ public class CleanseAnalysisEngineBaseTests
                     .ToList(),
                 Count = ctsCount
             });
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldings(It.Is<int>(i => i > 0), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
 
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
+        _dataServiceMock.Setup(s => s.ListSamCphHoldings(0, It.IsAny<int>()))
+            .Returns(new QueryResult
             {
                 CollectionName = "sam_cph_holdings",
                 Data = Enumerable.Range(1, samCount)
@@ -230,11 +231,11 @@ public class CleanseAnalysisEngineBaseTests
                     .ToList(),
                 Count = samCount
             });
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.ListSamCphHoldings(It.Is<int>(i => i > 0), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
 
         var engine = CreateEngine();
-        var metrics = await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, CancellationToken.None);
+        var metrics = await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, new TimingTree(), CancellationToken.None);
 
         metrics.RecordsAnalyzed.Should().Be(ctsCount + samCount,
             "RecordsAnalyzed must accumulate across both the CTS and SAM pumps");
@@ -247,11 +248,12 @@ public class CleanseAnalysisEngineBaseTests
         const int samCount = 3;
         const int expectedTotal = ctsCount + samCount;
 
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(ctsCount);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(samCount);
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<TimingTree>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount()).Returns(ctsCount);
+        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCount()).Returns(samCount);
 
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldings(0, It.IsAny<int>()))
+            .Returns(new QueryResult
             {
                 CollectionName = "cts_cph_holding",
                 Data = Enumerable.Range(1, ctsCount)
@@ -260,11 +262,11 @@ public class CleanseAnalysisEngineBaseTests
                     .ToList(),
                 Count = ctsCount
             });
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldings(It.Is<int>(i => i > 0), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
 
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
+        _dataServiceMock.Setup(s => s.ListSamCphHoldings(0, It.IsAny<int>()))
+            .Returns(new QueryResult
             {
                 CollectionName = "sam_cph_holdings",
                 Data = Enumerable.Range(1, samCount)
@@ -273,8 +275,8 @@ public class CleanseAnalysisEngineBaseTests
                     .ToList(),
                 Count = samCount
             });
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.ListSamCphHoldings(It.Is<int>(i => i > 0), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
 
         var lastCallbackRecordsAnalyzed = -1;
         var lastCallbackTotalRecords = -1;
@@ -284,7 +286,7 @@ public class CleanseAnalysisEngineBaseTests
             lastCallbackRecordsAnalyzed = recordsAnalyzed;
             lastCallbackTotalRecords = totalRecords;
             return Task.CompletedTask;
-        }, CancellationToken.None);
+        }, new TimingTree(), CancellationToken.None);
 
         lastCallbackRecordsAnalyzed.Should().Be(expectedTotal,
             "the final progress callback should report all CTS + SAM records analyzed");
@@ -295,12 +297,13 @@ public class CleanseAnalysisEngineBaseTests
     [Fact]
     public async Task ExecuteAsync_ShouldReportInitialProgressCallback()
     {
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<TimingTree>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount()).Returns(0);
+        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCount()).Returns(0);
+        _dataServiceMock.Setup(s => s.ListCtsCphHoldings(It.IsAny<int>(), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
+        _dataServiceMock.Setup(s => s.ListSamCphHoldings(It.IsAny<int>(), It.IsAny<int>()))
+            .Returns(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
 
         var callbackCalled = false;
         var engine = CreateEngine();
@@ -308,155 +311,9 @@ public class CleanseAnalysisEngineBaseTests
         {
             if (analyzed == 0) callbackCalled = true;
             return Task.CompletedTask;
-        }, CancellationToken.None);
+        }, new TimingTree(), CancellationToken.None);
 
         callbackCalled.Should().BeTrue("the initial progress callback with 0 records analyzed should fire");
-    }
-
-    #endregion
-
-    #region CphToLidLookup
-
-    [Fact]
-    public async Task ExecuteAsync_ShouldPopulateCphToLidLookup_FromCtsRecords()
-    {
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(2);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
-            {
-                CollectionName = "cts_cph_holding",
-                Data =
-                [
-                    new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = "UK-12/345/0001" },
-                    new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = "WA-22/555/0002" }
-                ],
-                Count = 2
-            });
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
-
-        var engine = CreateEngine();
-        await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, CancellationToken.None);
-
-        engine.ExposedCphToLidLookup.Should().HaveCount(2);
-        engine.ExposedCphToLidLookup["12/345/0001"].Should().Be("UK-12/345/0001");
-        engine.ExposedCphToLidLookup["22/555/0002"].Should().Be("WA-22/555/0002");
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_WithNoCtsRecords_ShouldHaveEmptyLookup()
-    {
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
-
-        var engine = CreateEngine();
-        await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, CancellationToken.None);
-
-        engine.ExposedCphToLidLookup.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_ShouldSkipInvalidLidValues_InLookup()
-    {
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(3);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
-            {
-                CollectionName = "cts_cph_holding",
-                Data =
-                [
-                    new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = "UK-12/345/0001" },
-                    new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = null },
-                    new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = "INVALID" }
-                ],
-                Count = 3
-            });
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
-
-        var engine = CreateEngine();
-        await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, CancellationToken.None);
-
-        engine.ExposedCphToLidLookup.Should().ContainSingle()
-            .Which.Value.Should().Be("UK-12/345/0001");
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_ShouldLoadLookupAcrossMultiplePages()
-    {
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(2);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-
-        // Page 1
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
-            {
-                CollectionName = "cts_cph_holding",
-                Data = [new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = "UK-01/001/0001" }],
-                Count = 1
-            });
-        // Page 2
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(1, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
-            {
-                CollectionName = "cts_cph_holding",
-                Data = [new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = "UK-02/002/0002" }],
-                Count = 1
-            });
-        // Page 3 (empty – terminates)
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(2, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
-
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
-
-        var engine = CreateEngine();
-        await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, CancellationToken.None);
-
-        engine.ExposedCphToLidLookup.Should().HaveCount(2);
-        engine.ExposedCphToLidLookup["01/001/0001"].Should().Be("UK-01/001/0001");
-        engine.ExposedCphToLidLookup["02/002/0002"].Should().Be("UK-02/002/0002");
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_DuplicateCph_ShouldKeepFirstLidValue()
-    {
-        _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(2);
-        _dataServiceMock.Setup(s => s.GetSamCphHoldingsCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
-
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(0, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult
-            {
-                CollectionName = "cts_cph_holding",
-                Data =
-                [
-                    new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = "UK-12/345/0001" },
-                    new Dictionary<string, object?> { [DataFields.CtsCphHoldingFields.LidFullIdentifier] = "WA-12/345/0001" }
-                ],
-                Count = 2
-            });
-        _dataServiceMock.Setup(s => s.ListCtsCphHoldingsAsync(It.Is<int>(i => i > 0), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0 });
-        _dataServiceMock.Setup(s => s.ListSamCphHoldingsAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new QueryResult { CollectionName = "sam_cph_holdings", Data = [], Count = 0 });
-
-        var engine = CreateEngine();
-        await engine.ExecuteAsync("op-1", (_, _, _, _) => Task.CompletedTask, CancellationToken.None);
-
-        engine.ExposedCphToLidLookup.Should().ContainSingle();
-        engine.ExposedCphToLidLookup["12/345/0001"].Should().Be("UK-12/345/0001");
     }
 
     #endregion

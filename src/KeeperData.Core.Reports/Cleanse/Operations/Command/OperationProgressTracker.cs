@@ -1,6 +1,6 @@
-using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.AggregateRoots;
+using KeeperData.Core.Reports.Operations;
 
 namespace KeeperData.Core.Reports.Cleanse.Operations.Command;
 
@@ -42,68 +42,13 @@ public sealed class OperationProgressTracker
     }
 
     /// <summary>
-    /// Updates the operation-level progress counters (in-memory only).
+    /// Replaces the unified operation tree progress snapshot (in-memory only).
     /// </summary>
-    public void UpdateProgress(
-        double progressPercentage,
-        string statusDescription,
-        int recordsAnalyzed,
-        int totalRecords,
-        int issuesFound,
-        int issuesResolved)
+    public void UpdateProgress(OperationNode progress)
     {
         lock (_lock)
         {
-            _operation.UpdateProgress(progressPercentage, statusDescription,
-                recordsAnalyzed, totalRecords, issuesFound, issuesResolved);
-            _isDirty = true;
-        }
-    }
-
-    /// <summary>
-    /// Marks a phase as running (in-memory only).
-    /// </summary>
-    public void StartPhase(OperationPhase phase, int totalRecords)
-    {
-        lock (_lock)
-        {
-            _operation.StartPhase(phase, totalRecords);
-            _isDirty = true;
-        }
-    }
-
-    /// <summary>
-    /// Updates the progress counters for a specific phase (in-memory only).
-    /// </summary>
-    public void UpdatePhaseProgress(OperationPhase phase, int recordsProcessed, int totalRecords, string description)
-    {
-        lock (_lock)
-        {
-            _operation.UpdatePhaseProgress(phase, recordsProcessed, totalRecords, description);
-            _isDirty = true;
-        }
-    }
-
-    /// <summary>
-    /// Marks a phase as completed (in-memory only).
-    /// </summary>
-    public void CompletePhase(OperationPhase phase)
-    {
-        lock (_lock)
-        {
-            _operation.CompletePhase(phase);
-            _isDirty = true;
-        }
-    }
-
-    /// <summary>
-    /// Replaces the timing tree snapshot (in-memory only).
-    /// </summary>
-    public void UpdateTimings(TimingNode timings)
-    {
-        lock (_lock)
-        {
-            _operation.UpdateTimings(timings);
+            _operation.Progress = progress;
             _isDirty = true;
         }
     }
@@ -111,17 +56,17 @@ public sealed class OperationProgressTracker
     /// <summary>
     /// Runs the periodic flush loop that persists dirty state to the database every
     /// <see cref="FlushInterval"/> and refreshes the cancellation flag from the database.
-    /// When <paramref name="timings"/> is provided, a timing tree snapshot is captured
-    /// into the in-memory operation before each flush.
+    /// When <paramref name="operationTree"/> is provided, a unified progress tree snapshot
+    /// is captured before each flush.
     /// Exits when <paramref name="ct"/> is cancelled.
     /// </summary>
-    public async Task RunPeriodicFlushAsync(TimingTree? timings, CancellationToken ct)
+    public async Task RunPeriodicFlushAsync(CancellationToken ct, OperationTree? operationTree = null)
     {
         using var timer = new PeriodicTimer(FlushInterval);
         while (await timer.WaitForNextTickAsync(ct))
         {
-            if (timings is not null)
-                UpdateTimings(timings.Snapshot("Analysis"));
+            if (operationTree is not null)
+                UpdateProgress(operationTree.Snapshot());
 
             await FlushAsync(CancellationToken.None);
         }
@@ -171,74 +116,20 @@ public sealed class OperationProgressTracker
     /// <summary>Captures a deep-enough copy of the mutable progress fields. Must be called under <see cref="_lock"/>.</summary>
     private ProgressSnapshot CaptureSnapshot()
     {
-        var phasesCopy = _operation.Phases.Select(p => new PhaseSnapshot(
-            p.Name, p.Status, p.Percentage, p.Description,
-            p.RecordsProcessed, p.TotalRecords,
-            p.StartedAtUtc, p.CompletedAtUtc, p.DurationMs)).ToList();
-
         return new ProgressSnapshot(
             _operation.Id,
-            _operation.ProgressPercentage,
-            _operation.StatusDescription,
-            _operation.RecordsAnalyzed,
-            _operation.TotalRecords,
-            _operation.IssuesFound,
-            _operation.IssuesResolved,
-            _operation.CurrentPhase,
-            phasesCopy,
-            _operation.Timings);
+            _operation.Progress);
     }
 
     /// <summary>Applies snapshot values onto a DB-loaded aggregate root.</summary>
     private static void ApplySnapshot(CleanseAnalysisOperation target, ProgressSnapshot snapshot)
     {
-        target.ProgressPercentage = snapshot.ProgressPercentage;
-        target.StatusDescription = snapshot.StatusDescription;
-        target.RecordsAnalyzed = snapshot.RecordsAnalyzed;
-        target.TotalRecords = snapshot.TotalRecords;
-        target.IssuesFound = snapshot.IssuesFound;
-        target.IssuesResolved = snapshot.IssuesResolved;
-        target.CurrentPhase = snapshot.CurrentPhase;
-        target.Timings = snapshot.Timings;
-
-        foreach (var ps in snapshot.Phases)
-        {
-            var targetPhase = target.Phases.Find(p => p.Name == ps.Name);
-            if (targetPhase is null) continue;
-
-            targetPhase.Status = ps.Status;
-            targetPhase.Percentage = ps.Percentage;
-            targetPhase.Description = ps.Description;
-            targetPhase.RecordsProcessed = ps.RecordsProcessed;
-            targetPhase.TotalRecords = ps.TotalRecords;
-            targetPhase.StartedAtUtc = ps.StartedAtUtc;
-            targetPhase.CompletedAtUtc = ps.CompletedAtUtc;
-            targetPhase.DurationMs = ps.DurationMs;
-        }
+        target.Progress = snapshot.Progress;
     }
 
     private sealed record ProgressSnapshot(
         string Id,
-        double ProgressPercentage,
-        string StatusDescription,
-        int RecordsAnalyzed,
-        int TotalRecords,
-        int IssuesFound,
-        int IssuesResolved,
-        string? CurrentPhase,
-        List<PhaseSnapshot> Phases,
-        TimingNode? Timings);
-
-    private sealed record PhaseSnapshot(
-        string Name,
-        string Status,
-        double Percentage,
-        string Description,
-        int RecordsProcessed,
-        int TotalRecords,
-        DateTime? StartedAtUtc,
-        DateTime? CompletedAtUtc,
-        long? DurationMs);
+        OperationNode? Progress);
 
     #endregion
 }

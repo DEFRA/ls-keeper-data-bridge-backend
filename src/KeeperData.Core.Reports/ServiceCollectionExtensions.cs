@@ -63,9 +63,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIssueQueries, IssueQueries>();
         services.AddScoped<ICleanseExportOperationQueries, CleanseExportOperationQueries>();
 
-        // Register run stats service (singleton - holds in-memory sliding window state)
-        services.AddSingleton<ICleanseRunStatsService, CleanseRunStatsService>();
-
         // Register index managers and initialisation
         services.AddSingleton<IIssueIndexManager, IssueIndexManager>();
         services.AddSingleton<IIssueHistoryIndexManager, IssueHistoryIndexManager>();

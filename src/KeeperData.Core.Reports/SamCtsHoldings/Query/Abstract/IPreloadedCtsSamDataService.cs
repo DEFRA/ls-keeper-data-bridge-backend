@@ -1,5 +1,5 @@
-using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Domain;
+using KeeperData.Core.Reports.Operations;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 
 namespace KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
@@ -13,7 +13,9 @@ public interface IPreloadedCtsSamDataService
     /// <summary>
     /// Loads all CTS and SAM data into memory. Must be called once before any lookup methods are used.
     /// </summary>
-    Task PreloadAsync(TimingTree timings, CancellationToken ct);
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="scope">Optional operation scope for unified progress tracking.</param>
+    Task PreloadAsync(CancellationToken ct, OperationScope? scope = null);
 
     CtsCphHoldingModel? GetCtsCphHolding(LidFullIdentifier lidFullIdentifier);
     CtsCphHoldingModel? GetCtsCphHolding(Cph cph);

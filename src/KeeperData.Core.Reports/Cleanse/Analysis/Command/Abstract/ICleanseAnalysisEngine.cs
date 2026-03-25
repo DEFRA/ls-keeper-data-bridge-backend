@@ -1,4 +1,5 @@
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
+using KeeperData.Core.Reports.Operations;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 
@@ -11,9 +12,10 @@ public interface ICleanseAnalysisEngine
     /// Executes the analysis strategy.
     /// </summary>
     /// <param name="operationId">The identifier of the current analysis operation.</param>
-    /// <param name="progressCallback">Callback for reporting progress.</param>
-    /// <param name="timings">Timing tree to accumulate duration data into.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="scope">Optional operation scope for unified progress tracking.</param>
+    /// <param name="isCancellationRequested">Optional function polled to detect external cancellation requests.</param>
     /// <returns>Metrics collected during execution.</returns>
-    Task<AnalysisMetrics> ExecuteAsync(string operationId, ProgressCallback progressCallback, TimingTree timings, CancellationToken ct);
+    Task<AnalysisMetrics> ExecuteAsync(string operationId, CancellationToken ct,
+        OperationScope? scope = null, Func<bool>? isCancellationRequested = null);
 }

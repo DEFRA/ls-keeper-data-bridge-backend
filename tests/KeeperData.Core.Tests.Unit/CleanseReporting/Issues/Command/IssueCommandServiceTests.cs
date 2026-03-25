@@ -5,6 +5,7 @@ using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
 using KeeperData.Core.Reports.Issues.Command.Requests;
 using KeeperData.Core.Reports.Issues.Command;
+using KeeperData.Core.Reports.Operations;
 using Moq;
 
 namespace KeeperData.Core.Tests.Unit.CleanseReporting.Issues.Command;
@@ -72,7 +73,7 @@ public class IssueCommandServiceTests
     [Fact]
     public async Task DeactivateStaleIssuesAsync_ShouldDelegateToRepository()
     {
-        _repoMock.Setup(r => r.DeactivateStaleAsync("op-1", null, It.IsAny<CancellationToken>()))
+        _repoMock.Setup(r => r.DeactivateStaleAsync("op-1", It.IsAny<Func<int, int, Task>?>(), It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>()))
             .ReturnsAsync(3);
 
         var result = await _sut.DeactivateStaleIssuesAsync(new DeactivateStaleIssuesCommand("op-1"), null, CancellationToken.None);

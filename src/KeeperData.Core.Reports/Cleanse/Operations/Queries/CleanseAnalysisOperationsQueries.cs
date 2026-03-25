@@ -11,8 +11,7 @@ namespace KeeperData.Core.Reports.Cleanse.Operations.Queries;
 
 [ExcludeFromCodeCoverage(Justification = "MongoDB query class - covered by integration tests.")]
 public class CleanseAnalysisOperationsQueries(
-    CleanseOperationsCollection operationsCollection,
-    ICleanseRunStatsService runStatsService)
+    CleanseOperationsCollection operationsCollection)
     : ICleanseAnalysisOperationsQueries
 {
     private readonly IMongoCollection<CleanseAnalysisOperationDocument> _collection = operationsCollection.Collection;
@@ -21,9 +20,7 @@ public class CleanseAnalysisOperationsQueries(
     {
         var filter = Builders<CleanseAnalysisOperationDocument>.Filter.Eq(d => d.Id, operationId);
         var document = await _collection.Find(filter).FirstOrDefaultAsync(ct);
-        var dto = document?.ToDto();
-        EnrichWithStats(dto);
-        return dto;
+        return document?.ToDto();
     }
 
     public async Task<IReadOnlyList<CleanseAnalysisOperationSummaryDto>> GetOperationsAsync(int skip, int top, CancellationToken ct = default)
@@ -34,12 +31,7 @@ public class CleanseAnalysisOperationsQueries(
             .Skip(skip)
             .Limit(top)
             .ToListAsync(ct);
-        var summaries = documents.Select(d => d.ToSummaryDto()).ToList();
-        foreach (var summary in summaries)
-        {
-            EnrichSummaryWithStats(summary);
-        }
-        return summaries;
+        return documents.Select(d => d.ToSummaryDto()).ToList();
     }
 
     public async Task<CleanseAnalysisOperationDto?> GetCurrentOperationAsync(CancellationToken ct = default)
@@ -48,37 +40,7 @@ public class CleanseAnalysisOperationsQueries(
             d => d.Status,
             new[] { CleanseAnalysisStatus.Running.ToString(), CleanseAnalysisStatus.Cancelling.ToString() });
         var document = await _collection.Find(filter).FirstOrDefaultAsync(ct);
-        var dto = document?.ToDto();
-        EnrichWithStats(dto);
-        return dto;
-    }
-
-    private void EnrichWithStats(CleanseAnalysisOperationDto? dto)
-    {
-        if (dto is null || (dto.Status != CleanseAnalysisStatus.Running && dto.Status != CleanseAnalysisStatus.Cancelling))
-            return;
-
-        // Enrich per-phase stats for the currently running phase
-        if (dto.Phases is not null)
-        {
-            foreach (var phase in dto.Phases.Where(p => p.Status == "Running" && p.StartedAtUtc.HasValue))
-            {
-                phase.Stats = runStatsService.CalculatePhaseStats(
-                    dto.Id, phase.Name, phase.RecordsProcessed, phase.TotalRecords, phase.StartedAtUtc!.Value);
-            }
-        }
-
-        // Top-level Stats: use current phase's sliding window data for RPM, operation-wide elapsed time for average
-        dto.Stats = runStatsService.CalculateStats(dto.Id, dto.RecordsAnalyzed, dto.TotalRecords, dto.StartedAtUtc);
-    }
-
-    private void EnrichSummaryWithStats(CleanseAnalysisOperationSummaryDto summary)
-    {
-        if (summary.Status != CleanseAnalysisStatus.Running.ToString() &&
-            summary.Status != CleanseAnalysisStatus.Cancelling.ToString())
-            return;
-
-        summary.Stats = runStatsService.CalculateStats(summary.Id, summary.RecordsAnalyzed, summary.TotalRecords, summary.StartedAtUtc);
+        return document?.ToDto();
     }
 }
 

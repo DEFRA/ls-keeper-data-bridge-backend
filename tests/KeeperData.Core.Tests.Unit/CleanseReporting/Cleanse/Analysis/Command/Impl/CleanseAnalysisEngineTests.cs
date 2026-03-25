@@ -2,11 +2,11 @@ using FluentAssertions;
 using KeeperData.Core.Querying.Models;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
-using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
 using KeeperData.Core.Reports.Issues.Command.Requests;
+using KeeperData.Core.Reports.Operations;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 using KeeperData.Core.Tests.Unit.Throttling;
@@ -19,7 +19,6 @@ public class CleanseAnalysisEngineTests
 {
     private readonly Mock<IPreloadedCtsSamDataService> _dataServiceMock = new();
     private readonly Mock<IIssueCommandService> _issueServiceMock = new();
-    private readonly Mock<ICleanseRunStatsService> _runStatsServiceMock = new();
     private readonly CleanseAnalysisEngine _sut;
 
     private const string OperationId = "op-1";
@@ -27,7 +26,7 @@ public class CleanseAnalysisEngineTests
     public CleanseAnalysisEngineTests()
     {
         _sut = new CleanseAnalysisEngine(_dataServiceMock.Object, _issueServiceMock.Object,
-            new FakeThrottler(), _runStatsServiceMock.Object, NullLogger<CleanseAnalysisEngine>.Instance);
+            new FakeThrottler(), NullLogger<CleanseAnalysisEngine>.Instance);
         _issueServiceMock.Setup(s => s.RecordIssueAsync(It.IsAny<RecordIssueCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(IssueRecordResult.Created);
     }
@@ -266,7 +265,7 @@ public class CleanseAnalysisEngineTests
             [DataFields.CtsCphHoldingFields.LidFullIdentifier] = lid
         }).ToList();
 
-        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<TimingTree>(), It.IsAny<CancellationToken>()))
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>()))
             .Returns(Task.CompletedTask);
         _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount())
             .Returns(data.Count);
@@ -387,7 +386,7 @@ public class CleanseAnalysisEngineTests
 
     private async Task RunEngineAsync()
     {
-        await _sut.ExecuteAsync(OperationId, (_, _, _, _) => Task.CompletedTask, new TimingTree(), CancellationToken.None);
+        await _sut.ExecuteAsync(OperationId, CancellationToken.None);
     }
 
     private void VerifyIssueRecorded(string ruleId)

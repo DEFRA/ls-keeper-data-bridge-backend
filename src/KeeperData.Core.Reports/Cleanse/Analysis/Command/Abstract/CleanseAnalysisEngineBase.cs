@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
-using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
+using KeeperData.Core.Reports.Operations;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 using KeeperData.Core.Throttling;
@@ -11,13 +11,12 @@ using Microsoft.Extensions.Logging;
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 
 public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService dataService, IIssueCommandService issueCommandService,
-    IThrottler throttler, ICleanseRunStatsService runStatsService, ILogger logger)
+    IThrottler throttler, ILogger logger)
 {
     private const string DateTimeFormat = "yyyy-MM-dd HH:mm:ss";
 
     protected IIssueCommandService IssueCommandService { get; } = issueCommandService;
     protected IThrottler Throttler { get; } = throttler;
-    protected ICleanseRunStatsService RunStatsService { get; } = runStatsService;
     protected ILogger Logger { get; } = logger;
 
     protected delegate Task RecordProcessor(string id,
@@ -29,11 +28,12 @@ public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService data
         int TotalRecords,
         string OperationId,
         AnalysisMetrics Metrics,
-        ProgressCallback ProgressCallback,
         Fetch Fetcher,
         RecordProcessor RecordProcessor,
         string IdFieldKey,
-        string PumpName = "Pump");
+        string PumpName = "Pump",
+        OperationScope? Scope = null,
+        Func<bool>? IsCancellationRequested = null);
 
     protected abstract Task ProcessCtsPrimaryRecordAsync(string id,
         string operationId, AnalysisMetrics metrics, CancellationToken ct);
@@ -48,7 +48,7 @@ public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService data
         var pumpStopwatch = Stopwatch.StartNew();
         var skip = 0;
         var baseRecordsAnalyzed = context.Metrics.RecordsAnalyzed;
-        var timings = context.Metrics.Timings;
+        var scope = context.Scope;
         var sw = new Stopwatch();
 
         while (!ct.IsCancellationRequested)
@@ -58,7 +58,7 @@ public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService data
             sw.Restart();
             var batch = await context.Fetcher(skip, settings.PumpBatchSize, ct);
             sw.Stop();
-            timings?.Track($"{context.PumpName}/fetching", sw.ElapsedMilliseconds);
+            scope?.TrackElapsed("fetching", sw.ElapsedMilliseconds);
             Trace.TraceInformation($"KRDSBRIDGE | PumpAsync | {context.PumpName} | Fetched batch, skip={skip}, batchSize={batch.Data.Count}, fetchDuration={sw.ElapsedMilliseconds}ms");
 
             if (batch.Data.Count == 0)
@@ -69,43 +69,44 @@ public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService data
             sw.Restart();
             await ProcessBatchAsync(batch, context, ct);
             sw.Stop();
-            timings?.Track($"{context.PumpName}/record_processing", sw.ElapsedMilliseconds);
+            scope?.TrackElapsed("record_processing", sw.ElapsedMilliseconds);
             Trace.TraceInformation($"KRDSBRIDGE | PumpAsync | {context.PumpName} | Batch processed, count={batch.Data.Count}, processingDuration={sw.ElapsedMilliseconds}ms");
 
             skip += batch.Data.Count;
             context.Metrics.RecordsAnalyzed = baseRecordsAnalyzed + skip;
+            scope?.UpdateProgress(skip);
 
-            RunStatsService.RecordSnapshot(context.OperationId, context.Metrics.RecordsAnalyzed);
-
-            if (context.Metrics.RecordsAnalyzed % settings.ProgressUpdateInterval == 0)
+            // Check for external cancellation requests (e.g. user-initiated)
+            if (context.IsCancellationRequested?.Invoke() == true)
             {
-                sw.Restart();
-                await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
-                sw.Stop();
-                timings?.Track($"{context.PumpName}/progress_reporting", sw.ElapsedMilliseconds);
+                throw new OperationCanceledException("Cancellation requested by user.");
             }
         }
 
-        // Always fire a final progress update so the description and phase counters
-        // reflect the actual totals even when the last batch didn't align with the
-        // progressUpdateInterval.
-        if (skip > 0)
-        {
-            await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
-        }
         pumpStopwatch.Stop();
         Trace.TraceInformation($"KRDSBRIDGE | PumpAsync | END, pump={context.PumpName}, recordsProcessed={skip}, totalAnalyzed={context.Metrics.RecordsAnalyzed}, issues={context.Metrics.IssuesFound}, duration={pumpStopwatch.ElapsedMilliseconds}ms");
     }
 
-    public async Task<AnalysisMetrics> ExecuteAsync(string operationId, ProgressCallback progressCallback, TimingTree timings, CancellationToken ct)
+    public async Task<AnalysisMetrics> ExecuteAsync(string operationId, CancellationToken ct,
+        OperationScope? scope = null, Func<bool>? isCancellationRequested = null)
     {
         Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | BEGIN, operationId={operationId}");
         var executeStopwatch = Stopwatch.StartNew();
-        var metrics = new AnalysisMetrics { Timings = timings };
+        var metrics = new AnalysisMetrics();
 
         // Pre-load all CTS and SAM data into memory before pumping
         Trace.TraceInformation("KRDSBRIDGE | ExecuteAsync | Starting data preload");
-        await dataService.PreloadAsync(timings, ct);
+        var preloadScope = scope?.CreateChild(OperationPhases.Preload);
+        try
+        {
+            await dataService.PreloadAsync(ct, preloadScope);
+            preloadScope?.Complete();
+        }
+        catch
+        {
+            preloadScope?.Fail("Preload failed");
+            throw;
+        }
         Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | Preload complete, elapsed={executeStopwatch.ElapsedMilliseconds}ms");
 
         var ctsTotalRecords = dataService.GetCtsCphHoldingsCount();
@@ -113,22 +114,42 @@ public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService data
         var totalRecords = ctsTotalRecords + samTotalRecords;
         Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | Counts retrieved, ctsRecords={ctsTotalRecords}, samRecords={samTotalRecords}, total={totalRecords}");
 
-        await progressCallback(0, totalRecords, 0, 0);
-
         // iterate CTS CPH records
         Trace.TraceInformation("KRDSBRIDGE | ExecuteAsync | Starting CTS Pump");
-        await PumpAsync(new PumpContext(totalRecords, operationId, metrics, progressCallback,
-            (skip, batchSize, token) => Task.FromResult(dataService.ListCtsCphHoldings(skip, batchSize)),
-            ProcessCtsPrimaryRecordAsync,
-            DataFields.CtsCphHoldingFields.LidFullIdentifier, "CTS Pump"), ct);
+        var ctsPumpScope = scope?.CreateChild("CTS Pump");
+        ctsPumpScope?.Start(ctsTotalRecords, "Processing CTS records");
+        try
+        {
+            await PumpAsync(new PumpContext(totalRecords, operationId, metrics,
+                (skip, batchSize, token) => Task.FromResult(dataService.ListCtsCphHoldings(skip, batchSize)),
+                ProcessCtsPrimaryRecordAsync,
+                DataFields.CtsCphHoldingFields.LidFullIdentifier, "CTS Pump", ctsPumpScope, isCancellationRequested), ct);
+            ctsPumpScope?.Complete();
+        }
+        catch
+        {
+            ctsPumpScope?.Fail("CTS Pump failed");
+            throw;
+        }
         Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | CTS Pump complete, elapsed={executeStopwatch.ElapsedMilliseconds}ms");
 
         // iterate SAM CPH records
         Trace.TraceInformation("KRDSBRIDGE | ExecuteAsync | Starting SAM Pump");
-        await PumpAsync(new PumpContext(totalRecords, operationId, metrics, progressCallback,
-            (skip, batchSize, token) => Task.FromResult(dataService.ListSamCphHoldings(skip, batchSize)),
-            ProcessSamPrimaryRecordAsync,
-            DataFields.SamCphHoldingFields.Cph, "SAM Pump"), ct);
+        var samPumpScope = scope?.CreateChild("SAM Pump");
+        samPumpScope?.Start(samTotalRecords, "Processing SAM records");
+        try
+        {
+            await PumpAsync(new PumpContext(totalRecords, operationId, metrics,
+                (skip, batchSize, token) => Task.FromResult(dataService.ListSamCphHoldings(skip, batchSize)),
+                ProcessSamPrimaryRecordAsync,
+                DataFields.SamCphHoldingFields.Cph, "SAM Pump", samPumpScope, isCancellationRequested), ct);
+            samPumpScope?.Complete();
+        }
+        catch
+        {
+            samPumpScope?.Fail("SAM Pump failed");
+            throw;
+        }
 
         executeStopwatch.Stop();
         Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | END, operationId={operationId}, records={metrics.RecordsAnalyzed}, issues={metrics.IssuesFound}, duration={executeStopwatch.ElapsedMilliseconds}ms");

@@ -1,5 +1,6 @@
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Issues.Command.Requests;
+using KeeperData.Core.Reports.Operations;
 
 namespace KeeperData.Core.Reports.Issues.Command.Abstract;
 
@@ -16,8 +17,9 @@ public interface IIssueCommandService
     /// <param name="command">The deactivation command.</param>
     /// <param name="onBatchProcessed">Optional callback invoked after each batch with (deactivatedSoFar, totalStale).</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="scope">Optional operation scope for unified progress tracking.</param>
     /// <returns>The number of issues deactivated.</returns>
-    Task<int> DeactivateStaleIssuesAsync(DeactivateStaleIssuesCommand command, Func<int, int, Task>? onBatchProcessed, CancellationToken ct);
+    Task<int> DeactivateStaleIssuesAsync(DeactivateStaleIssuesCommand command, Func<int, int, Task>? onBatchProcessed, CancellationToken ct, OperationScope? scope = null);
 
     /// <summary>
     /// Flags an issue as ignored.

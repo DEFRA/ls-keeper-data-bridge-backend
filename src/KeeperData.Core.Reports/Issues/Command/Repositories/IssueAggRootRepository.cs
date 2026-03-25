@@ -5,6 +5,7 @@ using KeeperData.Core.Reports.Internal.Documents;
 using KeeperData.Core.Reports.Internal.Mappers;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
+using KeeperData.Core.Reports.Operations;
 using KeeperData.Core.Throttling;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
@@ -35,16 +36,22 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
         await _collection.ReplaceOneAsync(filter, item.ToDocument(), options, ct);
     }
 
-    public async Task<int> DeactivateStaleAsync(string currentOperationId, Func<int, int, Task>? onBatchProcessed, CancellationToken ct = default)
+    public async Task<int> DeactivateStaleAsync(string currentOperationId, Func<int, int, Task>? onBatchProcessed, CancellationToken ct = default, OperationScope? scope = null)
     {
         logger.LogInformation("Deactivating stale issues: starting (OperationId={OperationId})", currentOperationId);
         var stopwatch = Stopwatch.StartNew();
+        var sw = new Stopwatch();
 
         var staleFilter = Builders<IssueDocument>.Filter.And(
             Builders<IssueDocument>.Filter.Eq(d => d.IsActive, true),
             Builders<IssueDocument>.Filter.Ne(d => d.OperationId, currentOperationId));
 
+        sw.Restart();
         var totalStale = (int)await _collection.CountDocumentsAsync(staleFilter, cancellationToken: ct);
+        sw.Stop();
+        scope?.TrackElapsed("counting", sw.ElapsedMilliseconds);
+        scope?.Start(totalStale, $"Deactivating {totalStale} stale issues");
+
         var totalDeactivated = 0;
 
         while (!ct.IsCancellationRequested)
@@ -52,11 +59,14 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
             var settings = throttler.Settings.IssueDeactivation;
 
             // Find a batch of stale document IDs (lightweight read, _id only)
+            sw.Restart();
             var staleIds = await _collection
                 .Find(staleFilter)
                 .Project(d => d.Id)
                 .Limit(settings.BatchSize)
                 .ToListAsync(ct);
+            sw.Stop();
+            scope?.TrackElapsed("batch_fetch", sw.ElapsedMilliseconds);
 
             if (staleIds.Count == 0)
             {
@@ -64,13 +74,17 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
             }
 
             // Update this batch using an indexed _id $in filter
+            sw.Restart();
             var batchFilter = Builders<IssueDocument>.Filter.In(d => d.Id, staleIds);
             var update = Builders<IssueDocument>.Update
                 .Set(d => d.IsActive, false)
                 .Set(d => d.LastUpdatedAtUtc, DateTime.UtcNow);
 
             var result = await _collection.UpdateManyAsync(batchFilter, update, cancellationToken: ct);
+            sw.Stop();
+            scope?.TrackElapsed("batch_update", sw.ElapsedMilliseconds);
             totalDeactivated += (int)result.ModifiedCount;
+            scope?.UpdateProgress(totalDeactivated, $"Deactivated {totalDeactivated} of {totalStale} stale issues");
 
             if (onBatchProcessed is not null)
             {
@@ -82,13 +96,17 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
                 break;
             }
 
+            sw.Restart();
             await throttler.DelayAsync(settings.ThrottleDelayMs, ct);
+            sw.Stop();
+            scope?.TrackElapsed("throttle_wait", sw.ElapsedMilliseconds);
         }
 
         stopwatch.Stop();
         logger.LogInformation("Deactivating stale issues: completed. Deactivated={DeactivatedCount}, Duration={DurationMs}ms ({DurationSeconds}s)",
             totalDeactivated, stopwatch.ElapsedMilliseconds, stopwatch.Elapsed.TotalSeconds);
 
+        scope?.Complete($"Deactivated {totalDeactivated} stale issues");
         return totalDeactivated;
     }
 

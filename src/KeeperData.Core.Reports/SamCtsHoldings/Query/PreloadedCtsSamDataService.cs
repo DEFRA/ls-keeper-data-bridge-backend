@@ -2,8 +2,8 @@ using System.Diagnostics;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Querying.Abstract;
 using KeeperData.Core.Querying.Models;
-using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Domain;
+using KeeperData.Core.Reports.Operations;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 using KeeperData.Core.Throttling;
@@ -33,7 +33,7 @@ public sealed class PreloadedCtsSamDataService(
 
     private bool _loaded;
 
-    public async Task PreloadAsync(TimingTree timings, CancellationToken ct)
+    public async Task PreloadAsync(CancellationToken ct, OperationScope? scope = null)
     {
         if (_loaded)
             throw new InvalidOperationException("PreloadAsync has already been called. This service instance cannot be preloaded more than once.");
@@ -42,17 +42,39 @@ public sealed class PreloadedCtsSamDataService(
         Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | PreloadAsync | BEGIN");
         var sw = Stopwatch.StartNew();
 
+        // ── Count all collections upfront so we can report % complete ────────
+        var countSw = Stopwatch.StartNew();
+        var collectionNames = new[]
+        {
+            dataSetDefinitions.CTSCPHHolding.Name,
+            dataSetDefinitions.CTSKeeper.Name,
+            dataSetDefinitions.SamCPHHolding.Name,
+            dataSetDefinitions.SamHerd.Name,
+            dataSetDefinitions.SamParty.Name,
+            dataSetDefinitions.SamCPHHolder.Name
+        };
+        var countTasks = collectionNames.Select(name => CountCollectionAsync(name, ct)).ToArray();
+        await Task.WhenAll(countTasks);
+        var counts = countTasks.Select(t => t.Result).ToArray();
+        countSw.Stop();
+        scope?.TrackElapsed("counting", countSw.ElapsedMilliseconds);
+
+        var totalRecords = counts.Sum();
+        scope?.Start((int)totalRecords, $"Loading {totalRecords:N0} records from {collectionNames.Length} collections");
+        Trace.TraceInformation($"KRDSBRIDGE | PreloadAsync | Counts retrieved: {string.Join(", ", collectionNames.Zip(counts, (n, c) => $"{n}={c}"))} total={totalRecords}, countDuration={countSw.ElapsedMilliseconds}ms");
+
+        // Create per-collection child scopes
+        var collectionScopes = collectionNames.Select(name => scope?.CreateChild(name)).ToArray();
+        for (var i = 0; i < collectionScopes.Length; i++)
+            collectionScopes[i]?.Start((int)counts[i], $"Loading {collectionNames[i]}");
+
         // CTS and SAM collections are independent — load them in parallel
-        var ctsTimings = new TimingTree();
-        var samTimings = new TimingTree();
         await Task.WhenAll(
-            LoadCtsGroupAsync(ctsTimings, ct),
-            LoadSamGroupAsync(samTimings, ct));
-        timings.Merge(ctsTimings, "");
-        timings.Merge(samTimings, "");
+            LoadCtsGroupAsync(ct, collectionScopes[0], collectionScopes[1]),
+            LoadSamGroupAsync(ct, collectionScopes[2], collectionScopes[3], collectionScopes[4]));
 
         // Holders depend on both CTS + SAM CPH keys being populated
-        await LoadSamCphHoldersAsync(timings, ct);
+        await LoadSamCphHoldersAsync(ct, collectionScopes[5]);
 
         sw.Stop();
         Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | PreloadAsync | END, duration={sw.ElapsedMilliseconds}ms");
@@ -168,25 +190,27 @@ public sealed class PreloadedCtsSamDataService(
 
     // ── Private loading methods ─────────────────────────────────────────────
 
-    private async Task LoadCtsGroupAsync(TimingTree timings, CancellationToken ct)
+    private async Task LoadCtsGroupAsync(CancellationToken ct,
+        OperationScope? holdingsScope = null, OperationScope? keepersScope = null)
     {
-        await LoadCtsCphHoldingsAsync(timings, ct);
-        await LoadCtsKeepersAsync(timings, ct);
+        await LoadCtsCphHoldingsAsync(ct, holdingsScope);
+        await LoadCtsKeepersAsync(ct, keepersScope);
     }
 
-    private async Task LoadSamGroupAsync(TimingTree timings, CancellationToken ct)
+    private async Task LoadSamGroupAsync(CancellationToken ct,
+        OperationScope? holdingsScope = null, OperationScope? herdsScope = null, OperationScope? partiesScope = null)
     {
-        await LoadSamCphHoldingsAsync(timings, ct);
-        await LoadSamHerdsAsync(timings, ct);
-        await LoadSamPartiesAsync(timings, ct);
+        await LoadSamCphHoldingsAsync(ct, holdingsScope);
+        await LoadSamHerdsAsync(ct, herdsScope);
+        await LoadSamPartiesAsync(ct, partiesScope);
     }
 
-    private async Task LoadCtsCphHoldingsAsync(TimingTree timings, CancellationToken ct)
+    private async Task LoadCtsCphHoldingsAsync(CancellationToken ct, OperationScope? scope = null)
     {
         Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsCphHoldings | BEGIN");
         var sw = Stopwatch.StartNew();
 
-        await foreach (var record in PageAllAsync(dataSetDefinitions.CTSCPHHolding.Name, timings, "Preload/CtsCphHoldings", ct))
+        await foreach (var record in PageAllAsync(dataSetDefinitions.CTSCPHHolding.Name, ct, scope))
         {
             _ctsCphHoldings.Add(record);
 
@@ -198,18 +222,18 @@ public sealed class PreloadedCtsSamDataService(
             }
         }
 
+        scope?.Complete();
         sw.Stop();
-        timings.Track("Preload/CtsCphHoldings/total", sw.ElapsedMilliseconds);
         Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsCphHoldings | END, count={_ctsCphHoldings.Count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
-    private async Task LoadCtsKeepersAsync(TimingTree timings, CancellationToken ct)
+    private async Task LoadCtsKeepersAsync(CancellationToken ct, OperationScope? scope = null)
     {
         Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsKeepers | BEGIN");
         var sw = Stopwatch.StartNew();
         var count = 0;
 
-        await foreach (var record in PageAllAsync(dataSetDefinitions.CTSKeeper.Name, timings, "Preload/CtsKeepers", ct))
+        await foreach (var record in PageAllAsync(dataSetDefinitions.CTSKeeper.Name, ct, scope))
         {
             var lid = record.GetValueOrDefault(CtsKeeperFields.LidFullIdentifier)?.ToString();
             if (!string.IsNullOrEmpty(lid))
@@ -224,17 +248,17 @@ public sealed class PreloadedCtsSamDataService(
             }
         }
 
+        scope?.Complete();
         sw.Stop();
-        timings.Track("Preload/CtsKeepers/total", sw.ElapsedMilliseconds);
         Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadCtsKeepers | END, count={count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
-    private async Task LoadSamCphHoldingsAsync(TimingTree timings, CancellationToken ct)
+    private async Task LoadSamCphHoldingsAsync(CancellationToken ct, OperationScope? scope = null)
     {
         Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHoldings | BEGIN");
         var sw = Stopwatch.StartNew();
 
-        await foreach (var record in PageAllAsync(dataSetDefinitions.SamCPHHolding.Name, timings, "Preload/SamCphHoldings", ct))
+        await foreach (var record in PageAllAsync(dataSetDefinitions.SamCPHHolding.Name, ct, scope))
         {
             _samCphHoldings.Add(record);
 
@@ -245,18 +269,18 @@ public sealed class PreloadedCtsSamDataService(
             }
         }
 
+        scope?.Complete();
         sw.Stop();
-        timings.Track("Preload/SamCphHoldings/total", sw.ElapsedMilliseconds);
         Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHoldings | END, count={_samCphHoldings.Count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
-    private async Task LoadSamHerdsAsync(TimingTree timings, CancellationToken ct)
+    private async Task LoadSamHerdsAsync(CancellationToken ct, OperationScope? scope = null)
     {
         Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamHerds | BEGIN");
         var sw = Stopwatch.StartNew();
         var count = 0;
 
-        await foreach (var record in PageAllAsync(dataSetDefinitions.SamHerd.Name, timings, "Preload/SamHerds", ct))
+        await foreach (var record in PageAllAsync(dataSetDefinitions.SamHerd.Name, ct, scope))
         {
             var cphh = record.GetValueOrDefault(SamHerd.Cphh)?.ToString();
             if (!string.IsNullOrEmpty(cphh))
@@ -278,18 +302,18 @@ public sealed class PreloadedCtsSamDataService(
             }
         }
 
+        scope?.Complete();
         sw.Stop();
-        timings.Track("Preload/SamHerds/total", sw.ElapsedMilliseconds);
         Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamHerds | END, count={count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
-    private async Task LoadSamPartiesAsync(TimingTree timings, CancellationToken ct)
+    private async Task LoadSamPartiesAsync(CancellationToken ct, OperationScope? scope = null)
     {
         Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamParties | BEGIN");
         var sw = Stopwatch.StartNew();
         var count = 0;
 
-        await foreach (var record in PageAllAsync(dataSetDefinitions.SamParty.Name, timings, "Preload/SamParties", ct))
+        await foreach (var record in PageAllAsync(dataSetDefinitions.SamParty.Name, ct, scope))
         {
             var partyId = record.GetValueOrDefault(SamPartyFields.PartyId)?.ToString();
             if (!string.IsNullOrEmpty(partyId))
@@ -304,12 +328,12 @@ public sealed class PreloadedCtsSamDataService(
             }
         }
 
+        scope?.Complete();
         sw.Stop();
-        timings.Track("Preload/SamParties/total", sw.ElapsedMilliseconds);
         Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamParties | END, count={count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
-    private async Task LoadSamCphHoldersAsync(TimingTree timings, CancellationToken ct)
+    private async Task LoadSamCphHoldersAsync(CancellationToken ct, OperationScope? scope = null)
     {
         Trace.TraceInformation("KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHolders | BEGIN");
         var sw = Stopwatch.StartNew();
@@ -320,7 +344,7 @@ public sealed class PreloadedCtsSamDataService(
             _ctsCphHoldingsByCph.Keys.Concat(_samCphHoldingsByCph.Keys),
             StringComparer.OrdinalIgnoreCase);
 
-        await foreach (var record in PageAllAsync(dataSetDefinitions.SamCPHHolder.Name, timings, "Preload/SamCphHolders", ct))
+        await foreach (var record in PageAllAsync(dataSetDefinitions.SamCPHHolder.Name, ct, scope))
         {
             var cphs = record.GetValueOrDefault(SamCphHolderFields.Cphs)?.ToString();
             if (!string.IsNullOrEmpty(cphs))
@@ -340,8 +364,8 @@ public sealed class PreloadedCtsSamDataService(
             }
         }
 
+        scope?.Complete();
         sw.Stop();
-        timings.Track("Preload/SamCphHolders/total", sw.ElapsedMilliseconds);
         Trace.TraceInformation($"KRDSBRIDGE | PreloadedCtsSamDataService | LoadSamCphHolders | END, records={count}, mappings={_samCphHoldersByCph.Values.Sum(v => v.Count)}, duration={sw.ElapsedMilliseconds}ms");
     }
 
@@ -349,9 +373,8 @@ public sealed class PreloadedCtsSamDataService(
 
     private async IAsyncEnumerable<Dictionary<string, object?>> PageAllAsync(
         string collectionName,
-        TimingTree timings,
-        string timingPrefix,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct,
+        OperationScope? scope = null)
     {
         var skip = 0;
         var batchSw = new Stopwatch();
@@ -370,7 +393,7 @@ public sealed class PreloadedCtsSamDataService(
             };
             var batch = await queryService.QueryAsync(query, ct);
             batchSw.Stop();
-            timings.Track($"{timingPrefix}/fetching", batchSw.ElapsedMilliseconds);
+            scope?.TrackElapsed("fetching", batchSw.ElapsedMilliseconds);
 
             if (batch.Data.Count == 0)
                 break;
@@ -379,12 +402,26 @@ public sealed class PreloadedCtsSamDataService(
                 yield return record;
 
             skip += batch.Data.Count;
+            scope?.UpdateProgress(skip);
 
             batchSw.Restart();
             await throttler.DelayAsync(settings.PumpDelayMs, ct);
             batchSw.Stop();
-            timings.Track($"{timingPrefix}/throttle_wait", batchSw.ElapsedMilliseconds);
+            scope?.TrackElapsed("throttle_wait", batchSw.ElapsedMilliseconds);
         }
+    }
+
+    private async Task<long> CountCollectionAsync(string collectionName, CancellationToken ct)
+    {
+        var query = new QueryParameters
+        {
+            CollectionName = collectionName,
+            Filter = FilterExpression.Equal(IsDeleted, false),
+            Top = 0,
+            IncludeCount = true
+        };
+        var result = await queryService.QueryAsync(query, ct);
+        return result.TotalCount ?? 0;
     }
 
     private static QueryResult BuildQueryResult(string collectionName, List<Dictionary<string, object?>> data) => new()
@@ -393,4 +430,5 @@ public sealed class PreloadedCtsSamDataService(
         Data = data,
         Count = data.Count
     };
+
 }

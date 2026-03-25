@@ -147,12 +147,12 @@ public class CleanseAnalysisCommandService(
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | Analysis phase done, records={metrics.RecordsAnalyzed}, issues={metrics.IssuesFound}, elapsed={stopwatch.ElapsedMilliseconds}ms");
 
             var deactivationScope = operationTree.CreateScope(OperationPhases.Deactivation);
-            var deactivatedCount = await RunDeactivationPhaseAsync(operation, tracker, deactivationScope, ct);
+            var deactivatedCount = await RunDeactivationPhaseAsync(operation, deactivationScope, ct);
             aggregateMetrics.IssuesResolved += deactivatedCount;
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | Deactivation phase done, deactivated={deactivatedCount}, elapsed={stopwatch.ElapsedMilliseconds}ms");
 
             var exportScope = operationTree.CreateScope(OperationPhases.Export);
-            await RunExportPhaseAsync(operation, tracker, exportScope, ct);
+            await RunExportPhaseAsync(operation, exportScope, ct);
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | Export phase done, elapsed={stopwatch.ElapsedMilliseconds}ms");
 
             stopwatch.Stop();
@@ -228,7 +228,7 @@ public class CleanseAnalysisCommandService(
     }
 
     private async Task<int> RunDeactivationPhaseAsync(CleanseAnalysisOperationDto operation,
-        OperationProgressTracker tracker, OperationScope scope, CancellationToken ct)
+        OperationScope scope, CancellationToken ct)
     {
         Trace.TraceInformation($"KRDSBRIDGE | RunDeactivationPhaseAsync | BEGIN, operationId={operation.Id}");
         var phaseStopwatch = Stopwatch.StartNew();
@@ -258,7 +258,7 @@ public class CleanseAnalysisCommandService(
     }
 
     private async Task RunExportPhaseAsync(CleanseAnalysisOperationDto operation,
-        OperationProgressTracker tracker, OperationScope scope, CancellationToken ct)
+        OperationScope scope, CancellationToken ct)
     {
         Trace.TraceInformation($"KRDSBRIDGE | RunExportPhaseAsync | BEGIN, operationId={operation.Id}");
         var phaseStopwatch = Stopwatch.StartNew();

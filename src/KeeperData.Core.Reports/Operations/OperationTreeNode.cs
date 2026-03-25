@@ -119,22 +119,7 @@ internal sealed class OperationTreeNode
         var averageRpm = ComputeAverageRpm(now);
 
         // Compute projections
-        long? projectedRemainingMs = null;
-        DateTime? projectedEndTimeUtc = null;
-        if (TotalRecords.HasValue && TotalRecords.Value > 0)
-        {
-            var remaining = TotalRecords.Value - ProcessedCount;
-            if (remaining > 0)
-            {
-                var projectionRpm = currentRpm > 0 ? currentRpm : averageRpm;
-                if (projectionRpm > 0)
-                {
-                    var remainingMinutes = remaining / projectionRpm;
-                    projectedRemainingMs = (long)(remainingMinutes * 60_000);
-                    projectedEndTimeUtc = now.AddMinutes(remainingMinutes);
-                }
-            }
-        }
+        var (projectedRemainingMs, projectedEndTimeUtc) = ComputeProjections(now, currentRpm, averageRpm);
 
         return new OperationNode
         {
@@ -192,6 +177,24 @@ internal sealed class OperationTreeNode
         return elapsedMinutes > 0
             ? Math.Round(ProcessedCount / elapsedMinutes, 2)
             : 0;
+    }
+
+    private (long? RemainingMs, DateTime? EndTimeUtc) ComputeProjections(
+        DateTime nowUtc, double currentRpm, double averageRpm)
+    {
+        if (!TotalRecords.HasValue || TotalRecords.Value <= 0)
+            return (null, null);
+
+        var remaining = TotalRecords.Value - ProcessedCount;
+        if (remaining <= 0)
+            return (null, null);
+
+        var projectionRpm = currentRpm > 0 ? currentRpm : averageRpm;
+        if (projectionRpm <= 0)
+            return (null, null);
+
+        var remainingMinutes = remaining / projectionRpm;
+        return ((long)(remainingMinutes * 60_000), nowUtc.AddMinutes(remainingMinutes));
     }
 
     private static long RollUpChildElapsed(List<OperationNode>? children)

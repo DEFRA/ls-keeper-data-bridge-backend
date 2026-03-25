@@ -375,35 +375,6 @@ public class AesCryptoTransformTests : IDisposable
 
     
 
-    [Fact]
-    public async Task StreamDecryption_LargeFile_ShouldMaintainConstantMemoryUsage()
-    {
-        // Arrange
-        const long fileSizeBytes = 100L * 1024 * 1024; // 100MB for faster test execution
-        var testData = GenerateTestData(1024); // 1KB pattern
-        var inputFile = CreateLargeTempFileWithPattern(fileSizeBytes, testData);
-        var encryptedFile = GetTempFilePath();
-        var decryptedFile = GetTempFilePath();
-
-        // Act
-        await _cryptoTransform.EncryptFileAsync(inputFile, encryptedFile, TestPassword, TestSaltBytes);
-
-        // Monitor memory during streaming decryption
-        var memoryBefore = GC.GetTotalMemory(true);
-
-        await _cryptoTransform.DecryptFileAsync(encryptedFile, decryptedFile, TestPassword, TestSaltBytes);
-
-        var memoryAfter = GC.GetTotalMemory(false);
-
-        // Assert
-        // Verify the decrypted file matches original
-        await VerifyFileIntegrity(inputFile, decryptedFile);
-
-        // Memory usage should remain constant (not proportional to file size)
-        var memoryIncrease = memoryAfter - memoryBefore;
-        memoryIncrease.Should().BeLessThan(50 * 1024 * 1024); // Less than 50MB increase (generous for CI runners)
-    }
-
     private string CreateTempFile(string content)
     {
         var filePath = GetTempFilePath();

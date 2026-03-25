@@ -1868,20 +1868,10 @@ components:
           type: string
           format: date-time
           nullable: true
-        currentPhase:
-          type: string
+        progress:
           nullable: true
-          description: "Currently executing phase: Analysis, Deactivation, or Export"
-        phases:
-          type: array
-          nullable: true
-          description: Per-phase progress breakdown
-          items:
-            $ref: '#/components/schemas/OperationPhaseProgress'
-        stats:
-          $ref: '#/components/schemas/CleanseRunStatsDto'
-        timings:
-          $ref: '#/components/schemas/TimingNode'
+          description: Unified operation tree progress snapshot. Null until the first periodic flush.
+          $ref: '#/components/schemas/OperationNode'
 
     CleanseAnalysisOperationSummaryDto:
       type: object
@@ -1926,105 +1916,6 @@ components:
           type: string
           format: date-time
           nullable: true
-        currentPhase:
-          type: string
-          nullable: true
-        stats:
-          $ref: '#/components/schemas/CleanseRunStatsDto'
-
-    OperationPhaseProgress:
-      type: object
-      description: Progress tracking for a single operation phase.
-      properties:
-        name:
-          type: string
-          description: "Phase name: Analysis, Deactivation, or Export"
-        status:
-          type: string
-          enum: [NotStarted, Running, Completed]
-        percentage:
-          type: number
-          format: double
-          description: 0-100 within this phase
-        description:
-          type: string
-        recordsProcessed:
-          type: integer
-        totalRecords:
-          type: integer
-        startedAtUtc:
-          type: string
-          format: date-time
-          nullable: true
-        completedAtUtc:
-          type: string
-          format: date-time
-          nullable: true
-        durationMs:
-          type: integer
-          format: int64
-          nullable: true
-          description: Phase duration, set on completion
-        stats:
-          $ref: '#/components/schemas/PhaseStats'
-
-    PhaseStats:
-      type: object
-      nullable: true
-      description: Live performance statistics for a running phase.
-      properties:
-        currentRpm:
-          type: number
-          format: double
-          description: Records/min over the sliding window
-        averageRpm:
-          type: number
-          format: double
-          description: Records/min over the entire phase lifetime
-        projectedEndUtc:
-          type: string
-          format: date-time
-          nullable: true
-        estimatedRemainingSeconds:
-          type: number
-          format: double
-          nullable: true
-        throttlePolicyName:
-          type: string
-        throttlePolicySlug:
-          type: string
-        batchSize:
-          type: integer
-        batchDelayMs:
-          type: integer
-
-    CleanseRunStatsDto:
-      type: object
-      nullable: true
-      description: Operation-level live performance statistics.
-      properties:
-        currentRpm:
-          type: number
-          format: double
-        averageRpm:
-          type: number
-          format: double
-        projectedEndUtc:
-          type: string
-          format: date-time
-          nullable: true
-        estimatedDurationRemainingSeconds:
-          type: number
-          format: double
-          nullable: true
-        throttlePolicyName:
-          type: string
-        throttlePolicySlug:
-          type: string
-        pumpBatchSize:
-          type: integer
-        pumpDelayMs:
-          type: integer
 
     RegenerateUrlResponse:
       type: object
@@ -2736,17 +2627,39 @@ components:
           description: The threshold that was exceeded.
 
     # ── Timings ──────────────────────────────────────────────────
-    TimingNode:
+    OperationNode:
       type: object
       nullable: true
       description: |
-        Hierarchical timing tree for a running or completed operation.
-        Each node tracks cumulative elapsed time and may contain child nodes
-        for sub-operations (e.g. Preload > SamCphHoldings > fetching).
+        Immutable snapshot of a single node in the operation tree.
+        Combines timing, progress, and rate metrics into one self-describing
+        recursive structure. The root node is named "total" with phase children
+        (Analysis, Deactivation, Export) that may contain further sub-scopes.
       properties:
         name:
           type: string
-          description: Name of the timing segment (e.g. "Preload", "CTS Pump").
+          description: "Node name (e.g. \"total\", \"Analysis\", \"CTS Pump\", \"fetching\")."
+        status:
+          type: string
+          enum: [not-started, in-progress, completed, failed]
+          description: Current status of this node.
+        description:
+          type: string
+          nullable: true
+          description: Human-readable description of what this node is doing.
+        percentComplete:
+          type: number
+          format: double
+          nullable: true
+          description: "Progress percentage (0-100). Leaf nodes compute from processedCount/totalRecords; parent nodes use weighted average of children."
+        processedCount:
+          type: integer
+          nullable: true
+          description: Number of records processed so far in this scope.
+        totalRecords:
+          type: integer
+          nullable: true
+          description: Total records expected in this scope.
         elapsedMs:
           type: integer
           format: int64
@@ -2754,12 +2667,32 @@ components:
         elapsed:
           type: string
           description: "Formatted elapsed time (e.g. \"00:07:42.3\")."
+        projectedRemainingMs:
+          type: integer
+          format: int64
+          nullable: true
+          description: Estimated remaining time in milliseconds based on current throughput.
+        projectedEndTimeUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: Projected completion time based on current throughput.
+        currentRecordsPerMinute:
+          type: number
+          format: double
+          nullable: true
+          description: Windowed records-per-minute rate (last 60 seconds).
+        averageRecordsPerMinute:
+          type: number
+          format: double
+          nullable: true
+          description: Average records-per-minute rate since the scope started.
         children:
           type: array
           nullable: true
-          description: Child timing nodes forming a recursive tree.
+          description: Child nodes forming a recursive tree.
           items:
-            $ref: '#/components/schemas/TimingNode'
+            $ref: '#/components/schemas/OperationNode'
 
   securitySchemes:
     ApiKeyAuth:

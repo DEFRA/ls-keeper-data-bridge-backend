@@ -2,6 +2,7 @@ using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
 using KeeperData.Core.Reports.Issues.Command.Requests;
+using KeeperData.Core.Reports.Operations;
 
 namespace KeeperData.Core.Reports.Issues.Command;
 
@@ -44,8 +45,8 @@ public class IssueCommandService(IIssueAggRootRepository repo, IIssueHistoryAggR
         return wasInactive ? IssueRecordResult.Reactivated : IssueRecordResult.NoChange;
     }
 
-    public async Task<int> DeactivateStaleIssuesAsync(DeactivateStaleIssuesCommand command, Func<int, int, Task>? onBatchProcessed, CancellationToken ct)
-        => await repo.DeactivateStaleAsync(command.OperationId, onBatchProcessed, ct);
+    public async Task<int> DeactivateStaleIssuesAsync(DeactivateStaleIssuesCommand command, Func<int, int, Task>? onBatchProcessed, CancellationToken ct, OperationScope? scope = null)
+        => await repo.DeactivateStaleAsync(command.OperationId, onBatchProcessed, ct, scope);
 
     public async Task IgnoreIssueAsync(IgnoreIssueCommand command, CancellationToken ct)
     {

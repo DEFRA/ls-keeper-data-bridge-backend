@@ -1,7 +1,6 @@
 using KeeperData.Core.ETL.Utils;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
-using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Requests;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
@@ -14,8 +13,8 @@ using System.Diagnostics;
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
 
 public class CleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIssueCommandService issueCommandService,
-    IThrottler throttler, ICleanseRunStatsService runStatsService, ILogger<CleanseAnalysisEngine> logger)
-    : CleanseAnalysisEngineBase(dataService, issueCommandService, throttler, runStatsService, logger), ICleanseAnalysisEngine
+    IThrottler throttler, ILogger<CleanseAnalysisEngine> logger)
+    : CleanseAnalysisEngineBase(dataService, issueCommandService, throttler, logger), ICleanseAnalysisEngine
 {
     private readonly RecordIdGenerator _recordIdGenerator = new();
     private readonly IPreloadedCtsSamDataService _dataService = dataService;

@@ -2,7 +2,6 @@ using FluentAssertions;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Querying.Abstract;
 using KeeperData.Core.Querying.Models;
-using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.SamCtsHoldings.Query;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
@@ -44,10 +43,9 @@ public class PreloadedCtsSamDataServiceTests
     public async Task PreloadAsync_CalledTwice_ThrowsInvalidOperationException()
     {
         SetupEmptyCollections();
-        var timings = new TimingTree();
-        await _sut.PreloadAsync(timings, CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
-        var act = () => _sut.PreloadAsync(timings, CancellationToken.None);
+        var act = () => _sut.PreloadAsync(CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*already been called*");
@@ -57,9 +55,8 @@ public class PreloadedCtsSamDataServiceTests
     public async Task PreloadAsync_LoadsAllCollections()
     {
         SetupEmptyCollections();
-        var timings = new TimingTree();
 
-        await _sut.PreloadAsync(timings, CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         // All 6 collections should have been queried
         _queryServiceMock.Verify(q => q.QueryAsync(
@@ -82,25 +79,13 @@ public class PreloadedCtsSamDataServiceTests
             It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
-    [Fact]
-    public async Task PreloadAsync_RecordsTimings()
-    {
-        SetupEmptyCollections();
-        var timings = new TimingTree();
-
-        await _sut.PreloadAsync(timings, CancellationToken.None);
-
-        var snapshot = timings.Snapshot("root");
-        snapshot.Should().NotBeNull();
-    }
-
     // ── GetCtsCphHolding by LID ─────────────────────────────────────────────
 
     [Fact]
     public async Task GetCtsCphHolding_ByLid_WhenNotLoaded_ReturnsNull()
     {
         SetupEmptyCollections();
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetCtsCphHolding(LidFullIdentifier.Parse("AB-01/234/5678"));
 
@@ -119,7 +104,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetCtsCphHolding(LidFullIdentifier.Parse(lid));
 
@@ -138,7 +123,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetCtsCphHolding(LidFullIdentifier.Parse(lid));
 
@@ -152,7 +137,7 @@ public class PreloadedCtsSamDataServiceTests
     public async Task GetCtsCphHolding_ByCph_WhenNotLoaded_ReturnsNull()
     {
         SetupEmptyCollections();
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetCtsCphHolding(Cph.Parse("01/234/5678"));
 
@@ -170,7 +155,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetCtsCphHolding(Cph.Parse("01/234/5678"));
 
@@ -189,7 +174,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         // The row won't be indexed because LidFullIdentifier.TryParse returns null for invalid LID
         // so CPH lookup will miss it
@@ -214,7 +199,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         _sut.GetCtsCphHoldingsCount().Should().Be(2);
     }
@@ -225,7 +210,7 @@ public class PreloadedCtsSamDataServiceTests
     public async Task GetSamCphHolding_WhenNotLoaded_ReturnsNull()
     {
         SetupEmptyCollections();
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetSamCphHolding(Cph.Parse("01/234/5678"));
 
@@ -254,7 +239,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupCollection("sam_herd", herdRow);
         SetupCollection("sam_party", partyP1, partyP2, partyP3);
         SetupCollection("sam_cph_holder", holderRow);
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetSamCphHolding(Cph.Parse(cph));
 
@@ -283,7 +268,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupCollection("sam_herd", herdRow);
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetSamCphHolding(Cph.Parse(cph));
 
@@ -304,7 +289,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         _sut.GetSamCphHoldingsCount().Should().Be(2);
     }
@@ -326,7 +311,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var page = _sut.ListCtsCphHoldings(skip: 1, take: 2);
 
@@ -347,7 +332,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var page = _sut.ListCtsCphHoldings(skip: 0, take: 100);
 
@@ -365,7 +350,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var page = _sut.ListCtsCphHoldings(skip: 10, take: 5);
 
@@ -385,7 +370,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var page = _sut.ListSamCphHoldings(skip: 0, take: 10);
 
@@ -411,8 +396,10 @@ public class PreloadedCtsSamDataServiceTests
         _queryServiceMock.Setup(q => q.QueryAsync(
                 It.Is<QueryParameters>(p => p.CollectionName == "cts_cph_holding"),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
+            .ReturnsAsync((QueryParameters p, CancellationToken _) =>
             {
+                if (p.Top == 0 && p.IncludeCount)
+                    return new QueryResult { CollectionName = "cts_cph_holding", Data = [], Count = 0, TotalCount = 150 };
                 var batch = callCount switch
                 {
                     0 => batch1,
@@ -428,7 +415,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         _sut.GetCtsCphHoldingsCount().Should().Be(150);
     }
@@ -445,7 +432,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_herd");
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         // No error, just skipped
         _sut.GetCtsCphHoldingsCount().Should().Be(0);
@@ -466,7 +453,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupCollection("sam_herd", badHerd);
         SetupEmptyCollection("sam_party");
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetSamCphHolding(Cph.Parse(cph));
         result.Should().NotBeNull();
@@ -488,7 +475,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_party");
         // Holder mapped to two CPHs (one from CTS, one from SAM)
         SetupCollection("sam_cph_holder", MakeRow(SamCphHolderFields.Cphs, $"{cph1},{cph2}"));
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         var result = _sut.GetSamCphHolding(Cph.Parse(cph2));
         result.Should().NotBeNull();
@@ -505,7 +492,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_party");
         // Holder with empty CPHS
         SetupCollection("sam_cph_holder", MakeRow(SamCphHolderFields.Cphs, ""));
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         // Should not throw, just skip
         _sut.GetSamCphHoldingsCount().Should().Be(0);
@@ -521,7 +508,7 @@ public class PreloadedCtsSamDataServiceTests
         SetupEmptyCollection("sam_party");
         // Holder referencing a CPH not in any CTS/SAM holding
         SetupCollection("sam_cph_holder", MakeRow(SamCphHolderFields.Cphs, "99/999/9999"));
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         // No holdings, so no holder mappings
         _sut.GetCtsCphHoldingsCount().Should().Be(0);
@@ -540,7 +527,7 @@ public class PreloadedCtsSamDataServiceTests
         // Party with no PARTY_ID — skipped
         SetupCollection("sam_party", MakeRow("SOME_FIELD", "value"));
         SetupEmptyCollection("sam_cph_holder");
-        await _sut.PreloadAsync(new TimingTree(), CancellationToken.None);
+        await _sut.PreloadAsync(CancellationToken.None);
 
         // No error
         _sut.GetSamCphHoldingsCount().Should().Be(0);
@@ -581,7 +568,12 @@ public class PreloadedCtsSamDataServiceTests
         _queryServiceMock.Setup(q => q.QueryAsync(
                 It.Is<QueryParameters>(p => p.CollectionName == collectionName),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeResult(collectionName, []));
+            .ReturnsAsync((QueryParameters p, CancellationToken _) =>
+            {
+                if (p.Top == 0 && p.IncludeCount)
+                    return new QueryResult { CollectionName = collectionName, Data = [], Count = 0, TotalCount = 0 };
+                return MakeResult(collectionName, []);
+            });
     }
 
     private void SetupCollection(string collectionName, params Dictionary<string, object?>[] rows)
@@ -591,8 +583,10 @@ public class PreloadedCtsSamDataServiceTests
         _queryServiceMock.Setup(q => q.QueryAsync(
                 It.Is<QueryParameters>(p => p.CollectionName == collectionName),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
+            .ReturnsAsync((QueryParameters p, CancellationToken _) =>
             {
+                if (p.Top == 0 && p.IncludeCount)
+                    return new QueryResult { CollectionName = collectionName, Data = [], Count = 0, TotalCount = data.Count };
                 if (!returned)
                 {
                     returned = true;

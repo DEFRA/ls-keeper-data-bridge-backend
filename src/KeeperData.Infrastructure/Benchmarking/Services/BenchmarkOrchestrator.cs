@@ -269,7 +269,7 @@ public sealed class BenchmarkOrchestrator : IBenchmarkOrchestrator
                     { "_id", id },
                     { StatusField, statuses[i % statuses.Length] },
                     { "category", categories[i % categories.Length] },
-                    { "createdAt", ctx.BaseDate.AddDays(i % 30).AddHours(i % 24) },
+                    { "createdAt", ctx.BaseDate.AddDays(i % 31).AddHours(i % 24) },
                     { "numericValue", (i * 7) % 10000 },
                     { "referenceId", $"ref-{i % (ctx.Count / 5):D8}" },
                     { "payload", new string('A', 150 + (i % 100)) }

@@ -22,9 +22,4 @@ public sealed class AnalysisMetrics
     /// Gets or sets the number of issues resolved.
     /// </summary>
     public int IssuesResolved { get; set; }
-
-    /// <summary>
-    /// Gets or sets the timing tree accumulated during analysis.
-    /// </summary>
-    public TimingTree? Timings { get; set; }
 }

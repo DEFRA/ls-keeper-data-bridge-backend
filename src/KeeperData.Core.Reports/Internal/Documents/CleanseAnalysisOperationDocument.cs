@@ -28,36 +28,27 @@ internal class CleanseAnalysisOperationDocument
     [BsonElement("final_average_rpm")] public double? FinalAverageRpm { get; set; }
     [BsonElement("cancellation_requested")] public bool CancellationRequested { get; set; }
     [BsonElement("cancelled_at_utc")] public DateTime? CancelledAtUtc { get; set; }
-    [BsonElement("current_phase")] public string? CurrentPhase { get; set; }
-    [BsonElement("phases")] public List<OperationPhaseProgressDocument> Phases { get; set; } = [];
-    [BsonElement("timings")] public TimingNodeDocument? Timings { get; set; }
+    [BsonElement("progress")][BsonIgnoreIfNull] public OperationNodeDocument? Progress { get; set; }
 }
 
 /// <summary>
-/// Embedded sub-document for per-phase progress tracking.
+/// Embedded sub-document representing a node in the unified operation tree.
+/// Combines timing, progress, and rate metrics.
 /// </summary>
 [ExcludeFromCodeCoverage(Justification = "Internal persistence document - covered by integration tests.")]
-internal class OperationPhaseProgressDocument
+internal class OperationNodeDocument
 {
     [BsonElement("name")] public string Name { get; set; } = string.Empty;
-    [BsonElement("status")] public string Status { get; set; } = "NotStarted";
-    [BsonElement("percentage")] public double Percentage { get; set; }
-    [BsonElement("description")] public string Description { get; set; } = string.Empty;
-    [BsonElement("records_processed")] public int RecordsProcessed { get; set; }
-    [BsonElement("total_records")] public int TotalRecords { get; set; }
-    [BsonElement("started_at_utc")] public DateTime? StartedAtUtc { get; set; }
-    [BsonElement("completed_at_utc")] public DateTime? CompletedAtUtc { get; set; }
-    [BsonElement("duration_ms")] public long? DurationMs { get; set; }
-}
-
-/// <summary>
-/// Embedded sub-document representing a node in the hierarchical timing tree.
-/// </summary>
-[ExcludeFromCodeCoverage(Justification = "Internal persistence document - covered by integration tests.")]
-internal class TimingNodeDocument
-{
-    [BsonElement("name")] public string Name { get; set; } = string.Empty;
+    [BsonElement("status")] public string Status { get; set; } = "not-started";
+    [BsonElement("description")][BsonIgnoreIfNull] public string? Description { get; set; }
+    [BsonElement("percent_complete")][BsonIgnoreIfNull] public double? PercentComplete { get; set; }
+    [BsonElement("processed_count")][BsonIgnoreIfNull] public int? ProcessedCount { get; set; }
+    [BsonElement("total_records")][BsonIgnoreIfNull] public int? TotalRecords { get; set; }
     [BsonElement("elapsed_ms")] public long ElapsedMs { get; set; }
     [BsonElement("elapsed")] public string Elapsed { get; set; } = string.Empty;
-    [BsonElement("children")][BsonIgnoreIfNull] public List<TimingNodeDocument>? Children { get; set; }
+    [BsonElement("projected_remaining_ms")][BsonIgnoreIfNull] public long? ProjectedRemainingMs { get; set; }
+    [BsonElement("projected_end_time_utc")][BsonIgnoreIfNull] public DateTime? ProjectedEndTimeUtc { get; set; }
+    [BsonElement("current_rpm")][BsonIgnoreIfNull] public double? CurrentRecordsPerMinute { get; set; }
+    [BsonElement("average_rpm")][BsonIgnoreIfNull] public double? AverageRecordsPerMinute { get; set; }
+    [BsonElement("children")][BsonIgnoreIfNull] public List<OperationNodeDocument>? Children { get; set; }
 }

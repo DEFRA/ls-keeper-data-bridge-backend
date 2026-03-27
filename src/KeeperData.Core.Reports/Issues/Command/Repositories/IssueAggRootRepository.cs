@@ -5,6 +5,7 @@ using KeeperData.Core.Reports.Internal.Documents;
 using KeeperData.Core.Reports.Internal.Mappers;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
+using KeeperData.Core.Reports.Issues.Index;
 using KeeperData.Core.Reports.Operations;
 using KeeperData.Core.Throttling;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,7 @@ namespace KeeperData.Core.Reports.Issues.Command.Repositories;
 /// </summary>
 [ExcludeFromCodeCoverage(Justification = "MongoDB repository - covered by integration tests.")]
 public class IssueAggRootRepository(IssueCollection issueCollection,
+    IIssueIndexManager issueIndexManager,
     IThrottler throttler,
     ILogger<IssueAggRootRepository> logger) : IIssueAggRootRepository
 {
@@ -115,7 +117,9 @@ public class IssueAggRootRepository(IssueCollection issueCollection,
 
     public async Task<long> DeleteAllAsync(CancellationToken ct = default)
     {
-        var result = await _collection.DeleteManyAsync(Builders<IssueDocument>.Filter.Empty, ct);
-        return result.DeletedCount;
+        var countBefore = await _collection.CountDocumentsAsync(Builders<IssueDocument>.Filter.Empty, cancellationToken: ct);
+        await _collection.Database.DropCollectionAsync(_collection.CollectionNamespace.CollectionName, ct);
+        await issueIndexManager.ForceRecreateIndexesAsync(ct);
+        return countBefore;
     }
 }

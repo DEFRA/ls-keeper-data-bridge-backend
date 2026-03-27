@@ -24,13 +24,13 @@ public class CleanseAnalysisEngineBaseTests
         public readonly List<(string Id, string OperationId)> CtsRecords = [];
         public readonly List<(string Id, string OperationId)> SamRecords = [];
 
-        protected override Task ProcessCtsPrimaryRecordAsync(string id, string operationId, AnalysisMetrics metrics, CancellationToken ct)
+        protected override Task ProcessCtsPrimaryRecordAsync(string id, string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null)
         {
             CtsRecords.Add((id, operationId));
             return Task.CompletedTask;
         }
 
-        protected override Task ProcessSamPrimaryRecordAsync(string id, string operationId, AnalysisMetrics metrics, CancellationToken ct)
+        protected override Task ProcessSamPrimaryRecordAsync(string id, string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null)
         {
             SamRecords.Add((id, operationId));
             return Task.CompletedTask;

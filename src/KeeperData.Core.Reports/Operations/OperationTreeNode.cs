@@ -137,21 +137,36 @@ internal sealed class OperationTreeNode
 
     private double? ComputePercentComplete(List<OperationNode>? childSnapshots, bool childrenHaveProgress)
     {
-        // When children carry deterministic progress, prefer the weighted aggregate
-        // over the parent's own (potentially stale) ProcessedCount.
+        // When children carry progress AND the node has its own authoritative total
+        // (set via Start), compute directly — avoids skew from not-yet-started children.
+        if (childrenHaveProgress && TotalRecords.HasValue && TotalRecords.Value > 0)
+        {
+            var childProcessed = childSnapshots!.Sum(c => c.ProcessedCount ?? 0);
+            return Math.Round(100.0 * childProcessed / TotalRecords.Value, 2);
+        }
+
+        // When children carry progress but the node has no own total, use weighted average
         if (childrenHaveProgress)
+        {
             return ComputeWeightedChildPercent(childSnapshots!);
+        }
 
         // Leaf node with own totalRecords (no children with progress)
         if (TotalRecords.HasValue && TotalRecords.Value > 0)
+        {
             return Math.Round(100.0 * ProcessedCount / TotalRecords.Value, 2);
+        }
 
         if (Status == OperationStatuses.Completed)
+        {
             return 100;
+        }
 
         // Parent with children that lack TotalRecords — use equal weight
         if (childSnapshots is { Count: > 0 })
+        {
             return ComputeWeightedChildPercent(childSnapshots);
+        }
 
         return null;
     }
@@ -184,7 +199,16 @@ internal sealed class OperationTreeNode
     {
         if (childrenHaveProgress)
         {
-            return AggregateChildCounts(childSnapshots!);
+            var (childProcessed, childTotal) = AggregateChildCounts(childSnapshots!);
+
+            // Prefer the node's own TotalRecords when set — it's the authoritative
+            // value from Start() and avoids underreporting when some children
+            // haven't been started yet.
+            var total = TotalRecords.HasValue && TotalRecords.Value > 0
+                ? TotalRecords
+                : childTotal;
+
+            return (childProcessed, total);
         }
 
         return (TotalRecords.HasValue ? ProcessedCount : null, TotalRecords);
@@ -205,7 +229,7 @@ internal sealed class OperationTreeNode
 
             if (averageRpm <= 0)
             {
-                averageRpm = RollUpChildRpm(childSnapshots!, c => c.AverageRecordsPerMinute);
+                averageRpm = ComputeAverageRpmFromChildren(childSnapshots!);
             }
         }
 
@@ -230,7 +254,11 @@ internal sealed class OperationTreeNode
     {
         var sum = 0.0;
         foreach (var child in childSnapshots)
+        {
+            if (child.Status == OperationStatuses.Completed)
+                continue;
             sum += selector(child) ?? 0;
+        }
 
         return Math.Round(sum, 2);
     }
@@ -244,6 +272,30 @@ internal sealed class OperationTreeNode
         return elapsedMinutes > 0
             ? Math.Round(ProcessedCount / elapsedMinutes, 2)
             : 0;
+    }
+
+    /// <summary>
+    /// Computes average RPM from aggregated child processedCount / max child elapsed.
+    /// Unlike summing child averages (which are per-child rates and not additive),
+    /// this gives the true throughput across all children.
+    /// </summary>
+    private static double ComputeAverageRpmFromChildren(List<OperationNode> childSnapshots)
+    {
+        var totalProcessed = 0;
+        var maxElapsedMs = 0L;
+
+        foreach (var child in childSnapshots)
+        {
+            totalProcessed += child.ProcessedCount ?? 0;
+            if (child.ElapsedMs > maxElapsedMs)
+                maxElapsedMs = child.ElapsedMs;
+        }
+
+        if (totalProcessed <= 0 || maxElapsedMs <= 0)
+            return 0;
+
+        var elapsedMinutes = maxElapsedMs / 60_000.0;
+        return Math.Round(totalProcessed / elapsedMinutes, 2);
     }
 
     private (long? RemainingMs, DateTime? EndTimeUtc) ComputeProjections(

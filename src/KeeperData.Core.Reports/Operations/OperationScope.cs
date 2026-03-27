@@ -46,6 +46,20 @@ public sealed class OperationScope
     }
 
     /// <summary>
+    /// Updates the authoritative total record count and/or description without
+    /// resetting the timer. Use after discovering the true total (e.g. after preload).
+    /// </summary>
+    public void UpdateTotal(int totalRecords, string? description = null)
+    {
+        lock (_node.Lock)
+        {
+            _node.TotalRecords = totalRecords;
+            if (description is not null)
+                _node.Description = description;
+        }
+    }
+
+    /// <summary>
     /// Updates progress for this scope.
     /// </summary>
     public void UpdateProgress(int processedCount, string? description = null)
@@ -119,6 +133,24 @@ public sealed class OperationScope
                 _node.ElapsedMs += (long)(now - _node.StartedAtUtc.Value).TotalMilliseconds;
                 _node.StartedAtUtc = null;
             }
+
+            // Cascade terminal status to timing-only children (created by TrackElapsed).
+            // These nodes have no own scope and would otherwise stay "not-started" forever.
+            CascadeStatusToTimingChildren(_node, status);
+        }
+    }
+
+    private static void CascadeStatusToTimingChildren(OperationTreeNode node, string status)
+    {
+        foreach (var child in node.Children)
+        {
+            // Timing-only nodes are those that were never started (no StartedAtUtc set,
+            // no TotalRecords) but have accumulated elapsed time.
+            if (child.StartedAtUtc is null && !child.TotalRecords.HasValue && child.ElapsedMs > 0)
+            {
+                child.Status = status;
+                CascadeStatusToTimingChildren(child, status);
+            }
         }
     }
 
@@ -135,6 +167,6 @@ public sealed class OperationScope
 
     private static void TrackSegments(OperationTreeNode parent, string[] segments, int index, long elapsedMs)
     {
-        OperationTreeNode.TrackSegments(parent, segments, index, elapsedMs, markLeafComplete: true);
+        OperationTreeNode.TrackSegments(parent, segments, index, elapsedMs, markLeafComplete: false);
     }
 }

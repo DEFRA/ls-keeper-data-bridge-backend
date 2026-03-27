@@ -136,11 +136,11 @@ public class CleanseAnalysisCommandService(
         using var trackerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var trackerTask = tracker.RunPeriodicFlushAsync(trackerCts.Token, operationTree);
 
+        var aggregateMetrics = new AnalysisMetrics();
         string rootStatus = OperationStatuses.Completed;
+        string? failureMessage = null;
         try
         {
-            var aggregateMetrics = new AnalysisMetrics();
-
             var analysisScope = operationTree.CreateScope(OperationPhases.Analysis);
             var metrics = await RunAnalysisPhaseAsync(operation, aggregateMetrics, tracker, analysisScope, ct);
             aggregateMetrics.RecordsAnalyzed += metrics.RecordsAnalyzed;
@@ -156,44 +156,55 @@ public class CleanseAnalysisCommandService(
             await RunExportPhaseAsync(operation, exportScope, ct, () => tracker.IsCancellationRequested);
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | Export phase done, elapsed={stopwatch.ElapsedMilliseconds}ms");
 
-            stopwatch.Stop();
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | All phases completed, operationId={operation.Id}, totalDuration={stopwatch.ElapsedMilliseconds}ms");
-            await operationCommandService.CompleteOperationAsync(new CompleteOperationCommand(
-                operation.Id,
-                metrics.RecordsAnalyzed,
-                metrics.IssuesFound,
-                aggregateMetrics.IssuesResolved,
-                stopwatch.ElapsedMilliseconds), ct);
         }
         catch (OperationCanceledException)
         {
             rootStatus = OperationStatuses.Cancelled;
-            stopwatch.Stop();
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | CANCELLED, operationId={operation.Id}, elapsed={stopwatch.ElapsedMilliseconds}ms");
             logger.LogInformation("Cleanse analysis cancelled (operationId={OperationId}), recording cancellation", operation.Id);
-            await operationCommandService.CancelOperationAsync(
-                new CancelOperationCommand(operation.Id), stopwatch.ElapsedMilliseconds, CancellationToken.None);
         }
         catch (Exception ex)
         {
             rootStatus = OperationStatuses.Failed;
-            stopwatch.Stop();
+            failureMessage = ex.Message;
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | FAILED, operationId={operation.Id}, error={ex.Message}, elapsed={stopwatch.ElapsedMilliseconds}ms");
-            await operationCommandService.FailOperationAsync(new FailOperationCommand(
-                operation.Id,
-                ex.Message,
-                stopwatch.ElapsedMilliseconds), CancellationToken.None);
         }
         finally
         {
+            stopwatch.Stop();
+
             // Stop the periodic flusher and do a final flush
             await trackerCts.CancelAsync();
             try { await trackerTask; } catch (OperationCanceledException) { /* expected */ }
 
+            // Finalize tree and flush BEFORE persisting terminal status,
+            // so any observer that sees the terminal status also sees the finalized tree.
             operationTree.Finalize(rootStatus);
-
             tracker.UpdateProgress(operationTree.Snapshot());
             await tracker.FlushAsync(CancellationToken.None);
+
+            if (rootStatus == OperationStatuses.Completed)
+            {
+                await operationCommandService.CompleteOperationAsync(new CompleteOperationCommand(
+                    operation.Id,
+                    aggregateMetrics.RecordsAnalyzed,
+                    aggregateMetrics.IssuesFound,
+                    aggregateMetrics.IssuesResolved,
+                    stopwatch.ElapsedMilliseconds), CancellationToken.None);
+            }
+            else if (rootStatus == OperationStatuses.Cancelled)
+            {
+                await operationCommandService.CancelOperationAsync(
+                    new CancelOperationCommand(operation.Id), stopwatch.ElapsedMilliseconds, CancellationToken.None);
+            }
+            else
+            {
+                await operationCommandService.FailOperationAsync(new FailOperationCommand(
+                    operation.Id,
+                    failureMessage!,
+                    stopwatch.ElapsedMilliseconds), CancellationToken.None);
+            }
 
             await renewalCts.CancelAsync();
             try { await renewalTask; } catch { /* Ignore cancellation */ }

@@ -111,26 +111,10 @@ internal sealed class OperationTreeNode
             }
         }
 
-        // Check whether children carry deterministic progress (their own TotalRecords)
         var childrenHaveProgress = HasChildrenWithProgress(childSnapshots);
-
-        // Compute progress percentage — prefer child aggregate when children have TotalRecords
         double? percentComplete = ComputePercentComplete(childSnapshots, childrenHaveProgress);
-
-        // Roll up ProcessedCount / TotalRecords from children when applicable
-        var (snapshotProcessed, snapshotTotal) = childrenHaveProgress
-            ? AggregateChildCounts(childSnapshots!)
-            : (TotalRecords.HasValue ? ProcessedCount : (int?)null, TotalRecords);
-
-        // Compute rate metrics — roll up from children when the parent has no ring buffer data
-        var currentRpm = CalculateWindowRpm();
-        var averageRpm = ComputeAverageRpm(now);
-        if (currentRpm <= 0 && childrenHaveProgress)
-            currentRpm = RollUpChildRpm(childSnapshots!, c => c.CurrentRecordsPerMinute);
-        if (averageRpm <= 0 && childrenHaveProgress)
-            averageRpm = RollUpChildRpm(childSnapshots!, c => c.AverageRecordsPerMinute);
-
-        // Compute projections (only meaningful at leaf level with own rate history)
+        var (snapshotProcessed, snapshotTotal) = ResolveProgressCounts(childSnapshots, childrenHaveProgress);
+        var (currentRpm, averageRpm) = ResolveRateMetrics(now, childSnapshots, childrenHaveProgress);
         var (projectedRemainingMs, projectedEndTimeUtc) = ComputeProjections(now, CalculateWindowRpm(), ComputeAverageRpm(now));
 
         return new OperationNode
@@ -193,6 +177,39 @@ internal sealed class OperationTreeNode
             return false;
 
         return childSnapshots.Any(c => c.TotalRecords.HasValue && c.TotalRecords.Value > 0);
+    }
+
+    private (int? ProcessedCount, int? TotalRecords) ResolveProgressCounts(
+        List<OperationNode>? childSnapshots, bool childrenHaveProgress)
+    {
+        if (childrenHaveProgress)
+        {
+            return AggregateChildCounts(childSnapshots!);
+        }
+
+        return (TotalRecords.HasValue ? ProcessedCount : null, TotalRecords);
+    }
+
+    private (double CurrentRpm, double AverageRpm) ResolveRateMetrics(
+        DateTime nowUtc, List<OperationNode>? childSnapshots, bool childrenHaveProgress)
+    {
+        var currentRpm = CalculateWindowRpm();
+        var averageRpm = ComputeAverageRpm(nowUtc);
+
+        if (childrenHaveProgress)
+        {
+            if (currentRpm <= 0)
+            {
+                currentRpm = RollUpChildRpm(childSnapshots!, c => c.CurrentRecordsPerMinute);
+            }
+
+            if (averageRpm <= 0)
+            {
+                averageRpm = RollUpChildRpm(childSnapshots!, c => c.AverageRecordsPerMinute);
+            }
+        }
+
+        return (currentRpm, averageRpm);
     }
 
     private static (int? ProcessedCount, int? TotalRecords) AggregateChildCounts(List<OperationNode> childSnapshots)

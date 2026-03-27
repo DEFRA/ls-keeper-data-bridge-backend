@@ -70,7 +70,11 @@ public sealed class PreloadedCtsSamDataService(
         // CTS and SAM collections are independent — load them in parallel
         await Task.WhenAll(
             LoadCtsGroupAsync(ct, collectionScopes[0], (int)counts[0], collectionScopes[1], (int)counts[1], isCancellationRequested),
-            LoadSamGroupAsync(ct, collectionScopes[2], (int)counts[2], collectionScopes[3], (int)counts[3], collectionScopes[4], (int)counts[4], isCancellationRequested));
+            LoadSamGroupAsync(ct,
+                (collectionScopes[2], (int)counts[2]),
+                (collectionScopes[3], (int)counts[3]),
+                (collectionScopes[4], (int)counts[4]),
+                isCancellationRequested));
 
         // Holders depend on both CTS + SAM CPH keys being populated
         await LoadSamCphHoldersAsync(ct, collectionScopes[5], (int)counts[5], isCancellationRequested);
@@ -199,14 +203,14 @@ public sealed class PreloadedCtsSamDataService(
     }
 
     private async Task LoadSamGroupAsync(CancellationToken ct,
-        OperationScope? holdingsScope = null, int? holdingsCount = null,
-        OperationScope? herdsScope = null, int? herdsCount = null,
-        OperationScope? partiesScope = null, int? partiesCount = null,
+        (OperationScope? Scope, int Count) holdings,
+        (OperationScope? Scope, int Count) herds,
+        (OperationScope? Scope, int Count) parties,
         Func<bool>? isCancellationRequested = null)
     {
-        await LoadSamCphHoldingsAsync(ct, holdingsScope, holdingsCount, isCancellationRequested);
-        await LoadSamHerdsAsync(ct, herdsScope, herdsCount, isCancellationRequested);
-        await LoadSamPartiesAsync(ct, partiesScope, partiesCount, isCancellationRequested);
+        await LoadSamCphHoldingsAsync(ct, holdings.Scope, holdings.Count, isCancellationRequested);
+        await LoadSamHerdsAsync(ct, herds.Scope, herds.Count, isCancellationRequested);
+        await LoadSamPartiesAsync(ct, parties.Scope, parties.Count, isCancellationRequested);
     }
 
     private async Task LoadCtsCphHoldingsAsync(CancellationToken ct, OperationScope? scope = null, int? totalRecords = null, Func<bool>? isCancellationRequested = null)
@@ -298,24 +302,19 @@ public sealed class PreloadedCtsSamDataService(
         {
             await foreach (var record in PageAllAsync(dataSetDefinitions.SamHerd.Name, ct, scope, isCancellationRequested))
             {
-                var cphh = record.GetValueOrDefault(SamHerd.Cphh)?.ToString();
-                if (!string.IsNullOrEmpty(cphh))
+                var cph = ParseCphFromCphh(record.GetValueOrDefault(SamHerd.Cphh)?.ToString());
+                if (cph is null)
                 {
-                    // CPHH is CC/PPP/HHHH/SS — strip the last segment to get the CPH
-                    var lastSlash = cphh.LastIndexOf('/');
-                    var cphValue = lastSlash > 0 ? cphh[..lastSlash] : cphh;
-                    var cph = Cph.TryParse(cphValue);
-                    if (cph is not null)
-                    {
-                        if (!_samHerdsByCph.TryGetValue(cph.Value, out var list))
-                        {
-                            list = [];
-                            _samHerdsByCph[cph.Value] = list;
-                        }
-                        list.Add(record);
-                        count++;
-                    }
+                    continue;
                 }
+
+                if (!_samHerdsByCph.TryGetValue(cph.Value, out var list))
+                {
+                    list = [];
+                    _samHerdsByCph[cph.Value] = list;
+                }
+                list.Add(record);
+                count++;
             }
         });
 
@@ -455,5 +454,20 @@ public sealed class PreloadedCtsSamDataService(
         Data = data,
         Count = data.Count
     };
+
+    /// <summary>
+    /// Extracts a CPH from a CPHH string (CC/PPP/HHHH/SS) by stripping the last segment.
+    /// </summary>
+    private static Cph? ParseCphFromCphh(string? cphh)
+    {
+        if (string.IsNullOrEmpty(cphh))
+        {
+            return null;
+        }
+
+        var lastSlash = cphh.LastIndexOf('/');
+        var cphValue = lastSlash > 0 ? cphh[..lastSlash] : cphh;
+        return Cph.TryParse(cphValue);
+    }
 
 }

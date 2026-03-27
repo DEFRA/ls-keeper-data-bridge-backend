@@ -171,6 +171,80 @@ public class OperationTreeTests
 
     #endregion
 
+    #region Fail
+
+    [Fact]
+    public void Fail_ShouldSetRootToFailed()
+    {
+        var tree = new OperationTree(_timeProvider);
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        tree.Fail();
+
+        var snapshot = tree.Snapshot();
+        snapshot.Status.Should().Be(OperationStatuses.Failed);
+        snapshot.ElapsedMs.Should().Be(60_000);
+    }
+
+    #endregion
+
+    #region Finalize
+
+    [Fact]
+    public void Finalize_WithCompleted_ShouldSetStatus()
+    {
+        var tree = new OperationTree(_timeProvider);
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        tree.Finalize(OperationStatuses.Completed);
+
+        var snapshot = tree.Snapshot();
+        snapshot.Status.Should().Be(OperationStatuses.Completed);
+        snapshot.ElapsedMs.Should().Be(10_000);
+    }
+
+    [Fact]
+    public void Finalize_WithCancelled_ShouldSetStatus()
+    {
+        var tree = new OperationTree(_timeProvider);
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+        tree.Finalize(OperationStatuses.Cancelled);
+
+        var snapshot = tree.Snapshot();
+        snapshot.Status.Should().Be(OperationStatuses.Cancelled);
+    }
+
+    [Fact]
+    public void Finalize_WithFailed_ShouldSetStatus()
+    {
+        var tree = new OperationTree(_timeProvider);
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+
+        tree.Finalize(OperationStatuses.Failed);
+
+        var snapshot = tree.Snapshot();
+        snapshot.Status.Should().Be(OperationStatuses.Failed);
+    }
+
+    [Fact]
+    public void Finalize_CalledTwice_ShouldNotAccumulateElapsed()
+    {
+        var tree = new OperationTree(_timeProvider);
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        tree.Finalize(OperationStatuses.Completed);
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+        tree.Finalize(OperationStatuses.Failed);
+
+        var snapshot = tree.Snapshot();
+        snapshot.Status.Should().Be(OperationStatuses.Failed);
+        // StartedAtUtc is cleared on first Finalize, so second call doesn't add elapsed
+        snapshot.ElapsedMs.Should().Be(10_000);
+    }
+
+    #endregion
+
     #region Snapshot
 
     [Fact]
@@ -203,6 +277,87 @@ public class OperationTreeTests
 
         var snapshot = tree.Snapshot();
         snapshot.ElapsedMs.Should().Be(300);
+    }
+
+    [Fact]
+    public void Snapshot_InProgressRoot_ShouldIncludeLiveElapsed()
+    {
+        var tree = new OperationTree(_timeProvider);
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        var snapshot = tree.Snapshot();
+
+        snapshot.Status.Should().Be(OperationStatuses.InProgress);
+        snapshot.ElapsedMs.Should().Be(15_000);
+    }
+
+    [Fact]
+    public void Snapshot_WithScopeProgress_ShouldRollUpProcessedAndTotal()
+    {
+        var tree = new OperationTree(_timeProvider);
+        var scope = tree.CreateScope("Phase1");
+        scope.Start(totalRecords: 100);
+        scope.UpdateProgress(50);
+
+        var snapshot = tree.Snapshot();
+
+        snapshot.ProcessedCount.Should().Be(50);
+        snapshot.TotalRecords.Should().Be(100);
+        snapshot.PercentComplete.Should().Be(50);
+    }
+
+    [Fact]
+    public void Snapshot_WithMultipleScopeProgress_ShouldAggregateAcrossChildren()
+    {
+        var tree = new OperationTree(_timeProvider);
+
+        var scope1 = tree.CreateScope("Phase1");
+        scope1.Start(totalRecords: 200);
+        scope1.UpdateProgress(100);
+
+        var scope2 = tree.CreateScope("Phase2");
+        scope2.Start(totalRecords: 300);
+        scope2.UpdateProgress(150);
+
+        var snapshot = tree.Snapshot();
+
+        snapshot.ProcessedCount.Should().Be(250);
+        snapshot.TotalRecords.Should().Be(500);
+        snapshot.PercentComplete.Should().Be(50);
+    }
+
+    [Fact]
+    public void Snapshot_CompletedScope_ShouldShowHundredPercent()
+    {
+        var tree = new OperationTree(_timeProvider);
+        var scope = tree.CreateScope("Phase1");
+        scope.Start(totalRecords: 100);
+        scope.UpdateProgress(100);
+        scope.Complete();
+
+        var snapshot = tree.Snapshot();
+        var child = snapshot.Children![0];
+
+        child.Status.Should().Be(OperationStatuses.Completed);
+        child.PercentComplete.Should().Be(100);
+    }
+
+    [Fact]
+    public void Snapshot_ScopeWithChildScopes_ShouldBuildHierarchy()
+    {
+        var tree = new OperationTree(_timeProvider);
+        var parent = tree.CreateScope("Analysis");
+        var child = parent.CreateChild("Preload");
+        child.Start(totalRecords: 50);
+        child.UpdateProgress(25);
+
+        var snapshot = tree.Snapshot();
+        var analysisNode = snapshot.Children![0];
+
+        analysisNode.Children.Should().HaveCount(1);
+        analysisNode.Children![0].Name.Should().Be("Preload");
+        analysisNode.Children![0].ProcessedCount.Should().Be(25);
+        analysisNode.Children![0].TotalRecords.Should().Be(50);
     }
 
     #endregion

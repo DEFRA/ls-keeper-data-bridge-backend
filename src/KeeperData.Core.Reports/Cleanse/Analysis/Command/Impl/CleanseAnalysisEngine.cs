@@ -4,6 +4,7 @@ using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Requests;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
+using KeeperData.Core.Reports.Operations;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 using KeeperData.Core.Throttling;
@@ -19,7 +20,7 @@ public class CleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIss
     private readonly RecordIdGenerator _recordIdGenerator = new();
     private readonly IPreloadedCtsSamDataService _dataService = dataService;
 
-    private async Task ProcessCtsPrimaryRecordInternalAsync(LidFullIdentifier lidFullIdentifier, string operationId, AnalysisMetrics metrics, CancellationToken ct)
+    private async Task ProcessCtsPrimaryRecordInternalAsync(LidFullIdentifier lidFullIdentifier, string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope)
     {
         Trace.TraceInformation($"KRDSBRIDGE | ProcessCtsPrimaryRecordInternal | BEGIN, lid={lidFullIdentifier.Value}, operationId={operationId}");
         var sw = Stopwatch.StartNew();
@@ -34,7 +35,7 @@ public class CleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIss
         {
             Trace.TraceInformation($"KRDSBRIDGE | ProcessCtsPrimaryRecordInternal | SAM CPH not found for lid={lidFullIdentifier.Value}");
             results.Add(RuleResult.Issue(RuleDescriptors.CtsCphNotInSam, lidFullIdentifier));
-            await RecordResultsAsync(lidFullIdentifier.Value, lidFullIdentifier.Cph, operationId, metrics, results, ct);
+            await RecordResultsAsync(lidFullIdentifier.Value, lidFullIdentifier.Cph, operationId, metrics, results, ct, scope);
             sw.Stop();
             Trace.TraceInformation($"KRDSBRIDGE | ProcessCtsPrimaryRecordInternal | END (missing SAM), lid={lidFullIdentifier.Value}, issues={results.Count}, duration={sw.ElapsedMilliseconds}ms");
             return;
@@ -45,7 +46,7 @@ public class CleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIss
             EvaluateCtsSamRules(ctsHolding, samCphHolding, results);
         }
 
-        await RecordResultsAsync(lidFullIdentifier.Value, lidFullIdentifier.Cph, operationId, metrics, results, ct);
+        await RecordResultsAsync(lidFullIdentifier.Value, lidFullIdentifier.Cph, operationId, metrics, results, ct, scope);
         sw.Stop();
         Trace.TraceInformation($"KRDSBRIDGE | ProcessCtsPrimaryRecordInternal | END, lid={lidFullIdentifier.Value}, issues={results.Count}, duration={sw.ElapsedMilliseconds}ms");
     }
@@ -153,7 +154,7 @@ public class CleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIss
             || !string.Equals(ctsHolding.LocationName, samCphHolding.LocationName, StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task ProcessSamPrimaryRecordInternalAsync(Cph cph, string operationId, AnalysisMetrics metrics, CancellationToken ct)
+    private async Task ProcessSamPrimaryRecordInternalAsync(Cph cph, string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope)
     {
         Trace.TraceInformation($"KRDSBRIDGE | ProcessSamPrimaryRecordInternal | BEGIN, cph={cph.Value}, operationId={operationId}");
         var sw = Stopwatch.StartNew();
@@ -167,18 +168,18 @@ public class CleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIss
             results.Add(RuleResult.Issue(RuleDescriptors.SamCphNotInCts, cph)); // PRIORITY 1B: RULE 2B - CPH present in SAM but missing in CTS
         }
 
-        await RecordResultsAsync(cph.Value, cph, operationId, metrics, results, ct);
+        await RecordResultsAsync(cph.Value, cph, operationId, metrics, results, ct, scope);
         sw.Stop();
         Trace.TraceInformation($"KRDSBRIDGE | ProcessSamPrimaryRecordInternal | END, cph={cph.Value}, issues={results.Count}, duration={sw.ElapsedMilliseconds}ms");
     }
 
-    protected override async Task ProcessCtsPrimaryRecordAsync(string id, string operationId, AnalysisMetrics metrics, CancellationToken ct)
+    protected override async Task ProcessCtsPrimaryRecordAsync(string id, string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null)
     {
         var lidFullIdentifier = LidFullIdentifier.TryParse(id);
 
         if (lidFullIdentifier is not null && IsValidCountyCode(lidFullIdentifier))
         {
-            await ProcessCtsPrimaryRecordInternalAsync(lidFullIdentifier, operationId, metrics, ct);
+            await ProcessCtsPrimaryRecordInternalAsync(lidFullIdentifier, operationId, metrics, ct, scope);
         }
         else
         {
@@ -186,13 +187,13 @@ public class CleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIss
         }
     }
 
-    protected override async Task ProcessSamPrimaryRecordAsync(string id, string operationId, AnalysisMetrics metrics, CancellationToken ct)
+    protected override async Task ProcessSamPrimaryRecordAsync(string id, string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null)
     {
         var cph = Cph.TryParse(id);
 
         if (cph is not null && IsValidCountyCode(cph))
         {
-            await ProcessSamPrimaryRecordInternalAsync(cph, operationId, metrics, ct);
+            await ProcessSamPrimaryRecordInternalAsync(cph, operationId, metrics, ct, scope);
         }
         else
         {
@@ -201,7 +202,7 @@ public class CleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIss
     }
 
     private async Task RecordResultsAsync(string primaryRecordId, Cph cph, string operationId,
-        AnalysisMetrics metrics, List<RuleResult> results, CancellationToken ct)
+        AnalysisMetrics metrics, List<RuleResult> results, CancellationToken ct, OperationScope? scope)
     {
         Trace.TraceInformation($"KRDSBRIDGE | RecordResultsAsync | BEGIN, primaryRecordId={primaryRecordId}, cph={cph.Value}, resultsCount={results.Count}");
         var rsw = Stopwatch.StartNew();
@@ -217,14 +218,16 @@ public class CleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIss
                 result.IssueContext?.CtsLidFullIdentifier,
                 result.IssueContext);
 
-            var recordResult = await IssueCommandService.RecordIssueAsync(command, ct);
+            var (recordResult, recordMs) = await Timed.RunAsync(() => IssueCommandService.RecordIssueAsync(command, ct));
+            scope?.TrackElapsed("issue_recording", recordMs);
 
             if (recordResult is IssueRecordResult.Created or IssueRecordResult.Reactivated)
             {
                 metrics.IssuesFound++;
             }
 
-            await Throttler.DelayAsync(Throttler.Settings.CleanseAnalysis.RecordIssueDelayMs, ct);
+            var throttleMs = await Timed.RunAsync(() => Throttler.DelayAsync(Throttler.Settings.CleanseAnalysis.RecordIssueDelayMs, ct));
+            scope?.TrackElapsed("throttle_wait", throttleMs);
         }
         rsw.Stop();
         Trace.TraceInformation($"KRDSBRIDGE | RecordResultsAsync | END, primaryRecordId={primaryRecordId}, resultsCount={results.Count}, duration={rsw.ElapsedMilliseconds}ms");

@@ -20,7 +20,7 @@ public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService data
     protected ILogger Logger { get; } = logger;
 
     protected delegate Task RecordProcessor(string id,
-        string operationId, AnalysisMetrics metrics, CancellationToken ct);
+        string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null);
 
     protected delegate Task<QueryResult> Fetch(int skip, int batchSize, CancellationToken ct);
 
@@ -36,10 +36,10 @@ public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService data
         Func<bool>? IsCancellationRequested = null);
 
     protected abstract Task ProcessCtsPrimaryRecordAsync(string id,
-        string operationId, AnalysisMetrics metrics, CancellationToken ct);
+        string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null);
 
     protected abstract Task ProcessSamPrimaryRecordAsync(string id,
-        string operationId, AnalysisMetrics metrics, CancellationToken ct);
+        string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null);
 
 
     protected async Task PumpAsync(PumpContext context, CancellationToken ct)
@@ -102,6 +102,11 @@ public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService data
         var totalRecords = ctsTotalRecords + samTotalRecords;
         Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | Counts retrieved, ctsRecords={ctsTotalRecords}, samRecords={samTotalRecords}, total={totalRecords}");
 
+        // Set the authoritative total on the Analysis scope now that preload counts are known.
+        // Includes preload records + pump records so progress is tracked across all phases.
+        var preloadRecordCount = dataService.GetTotalPreloadedRecordCount();
+        scope?.UpdateTotal(preloadRecordCount + totalRecords, "Analyzing records...");
+
         // iterate CTS CPH records
         Trace.TraceInformation("KRDSBRIDGE | ExecuteAsync | Starting CTS Pump");
         var ctsPumpScope = scope?.CreateChild("CTS Pump");
@@ -137,7 +142,7 @@ public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService data
             var id = record[context.IdFieldKey]?.ToString();
             if (id != null)
             {
-                await context.RecordProcessor(id, context.OperationId, context.Metrics, ct);
+                await context.RecordProcessor(id, context.OperationId, context.Metrics, ct, context.Scope);
             }
         }
     }

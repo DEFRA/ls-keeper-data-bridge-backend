@@ -217,7 +217,8 @@ public class OperationScopeTests
         snapshot.Children.Should().HaveCount(1);
         snapshot.Children![0].Name.Should().Be("fetching");
         snapshot.Children![0].ElapsedMs.Should().Be(500);
-        snapshot.Children![0].Status.Should().Be(OperationStatuses.Completed);
+        snapshot.Children![0].Status.Should().Be(OperationStatuses.NotStarted,
+            "timing-only children should not be marked completed until parent finalizes");
     }
 
     [Fact]
@@ -235,9 +236,9 @@ public class OperationScopeTests
         ctsPump.Status.Should().Be(OperationStatuses.NotStarted, "intermediate node should not be marked completed");
         ctsPump.Children.Should().HaveCount(2);
         ctsPump.Children![0].ElapsedMs.Should().Be(300);
-        ctsPump.Children![0].Status.Should().Be(OperationStatuses.Completed);
+        ctsPump.Children![0].Status.Should().Be(OperationStatuses.NotStarted);
         ctsPump.Children![1].ElapsedMs.Should().Be(200);
-        ctsPump.Children![1].Status.Should().Be(OperationStatuses.Completed);
+        ctsPump.Children![1].Status.Should().Be(OperationStatuses.NotStarted);
     }
 
     [Fact]
@@ -250,7 +251,7 @@ public class OperationScopeTests
 
         var snapshot = scope.Snapshot();
         snapshot.Children![0].ElapsedMs.Should().Be(300);
-        snapshot.Children![0].Status.Should().Be(OperationStatuses.Completed);
+        snapshot.Children![0].Status.Should().Be(OperationStatuses.NotStarted);
     }
 
     #endregion

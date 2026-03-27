@@ -21,6 +21,7 @@ public interface IPreloadedCtsSamDataService
     CtsCphHoldingModel? GetCtsCphHolding(LidFullIdentifier lidFullIdentifier);
     CtsCphHoldingModel? GetCtsCphHolding(Cph cph);
     int GetCtsCphHoldingsCount();
+    int GetTotalPreloadedRecordCount();
 
     SamCphHoldingModel? GetSamCphHolding(Cph cph);
     int GetSamCphHoldingsCount();

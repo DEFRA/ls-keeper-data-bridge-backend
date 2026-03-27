@@ -32,6 +32,7 @@ public sealed class PreloadedCtsSamDataService(
     private readonly Dictionary<string, List<Dictionary<string, object?>>> _samCphHoldersByCph = new(StringComparer.OrdinalIgnoreCase);
 
     private bool _loaded;
+    private int _totalPreloadedRecords;
 
     public async Task PreloadAsync(CancellationToken ct, OperationScope? scope = null, Func<bool>? isCancellationRequested = null)
     {
@@ -61,6 +62,7 @@ public sealed class PreloadedCtsSamDataService(
         scope?.TrackElapsed("counting", countMs);
 
         var totalRecords = counts.Sum();
+        _totalPreloadedRecords = (int)totalRecords;
         scope?.Start((int)totalRecords, $"Loading {totalRecords:N0} records from {collectionNames.Length} collections");
         Trace.TraceInformation($"KRDSBRIDGE | PreloadAsync | Counts retrieved: {string.Join(", ", collectionNames.Zip(counts, (n, c) => $"{n}={c}"))} total={totalRecords}, countDuration={countMs}ms");
 
@@ -125,6 +127,8 @@ public sealed class PreloadedCtsSamDataService(
     }
 
     public int GetCtsCphHoldingsCount() => _ctsCphHoldings.Count;
+
+    public int GetTotalPreloadedRecordCount() => _totalPreloadedRecords;
 
     public SamCphHoldingModel? GetSamCphHolding(Cph cph)
     {

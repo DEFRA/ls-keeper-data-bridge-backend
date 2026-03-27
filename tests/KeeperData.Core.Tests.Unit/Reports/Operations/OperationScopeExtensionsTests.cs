@@ -108,8 +108,11 @@ public class OperationScopeExtensionsTests
     public async Task RunAsync_NullScope_Success_ShouldNotThrow()
     {
         OperationScope? scope = null;
+        var executed = false;
 
-        await scope.RunAsync(() => Task.CompletedTask);
+        await scope.RunAsync(() => { executed = true; return Task.CompletedTask; });
+
+        executed.Should().BeTrue("the work delegate should still execute even with a null scope");
     }
 
     [Fact]

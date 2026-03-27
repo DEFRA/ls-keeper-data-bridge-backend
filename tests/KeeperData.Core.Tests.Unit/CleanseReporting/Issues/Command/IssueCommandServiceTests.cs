@@ -73,7 +73,7 @@ public class IssueCommandServiceTests
     [Fact]
     public async Task DeactivateStaleIssuesAsync_ShouldDelegateToRepository()
     {
-        _repoMock.Setup(r => r.DeactivateStaleAsync("op-1", It.IsAny<Func<int, int, Task>?>(), It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>()))
+        _repoMock.Setup(r => r.DeactivateStaleAsync("op-1", It.IsAny<Func<int, int, Task>?>(), It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>(), It.IsAny<Func<bool>?>()))
             .ReturnsAsync(3);
 
         var result = await _sut.DeactivateStaleIssuesAsync(new DeactivateStaleIssuesCommand("op-1"), null, CancellationToken.None);

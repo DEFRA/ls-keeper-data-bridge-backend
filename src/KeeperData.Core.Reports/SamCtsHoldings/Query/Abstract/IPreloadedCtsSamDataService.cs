@@ -15,7 +15,8 @@ public interface IPreloadedCtsSamDataService
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
     /// <param name="scope">Optional operation scope for unified progress tracking.</param>
-    Task PreloadAsync(CancellationToken ct, OperationScope? scope = null);
+    /// <param name="isCancellationRequested">Optional callback polled between batches for user-initiated cancellation.</param>
+    Task PreloadAsync(CancellationToken ct, OperationScope? scope = null, Func<bool>? isCancellationRequested = null);
 
     CtsCphHoldingModel? GetCtsCphHolding(LidFullIdentifier lidFullIdentifier);
     CtsCphHoldingModel? GetCtsCphHolding(Cph cph);

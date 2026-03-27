@@ -265,7 +265,7 @@ public class CleanseAnalysisEngineTests
             [DataFields.CtsCphHoldingFields.LidFullIdentifier] = lid
         }).ToList();
 
-        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>()))
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>(), It.IsAny<Func<bool>?>()))
             .Returns(Task.CompletedTask);
         _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount())
             .Returns(data.Count);

@@ -2641,7 +2641,7 @@ components:
           description: "Node name (e.g. \"total\", \"Analysis\", \"CTS Pump\", \"fetching\")."
         status:
           type: string
-          enum: [not-started, in-progress, completed, failed]
+          enum: [not-started, in-progress, completed, failed, cancelled]
           description: Current status of this node.
         description:
           type: string

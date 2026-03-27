@@ -136,10 +136,11 @@ public class CleanseAnalysisCommandService(
         using var trackerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var trackerTask = tracker.RunPeriodicFlushAsync(trackerCts.Token, operationTree);
 
+        var aggregateMetrics = new AnalysisMetrics();
+        string rootStatus = OperationStatuses.Completed;
+        string? failureMessage = null;
         try
         {
-            var aggregateMetrics = new AnalysisMetrics();
-
             var analysisScope = operationTree.CreateScope(OperationPhases.Analysis);
             var metrics = await RunAnalysisPhaseAsync(operation, aggregateMetrics, tracker, analysisScope, ct);
             aggregateMetrics.RecordsAnalyzed += metrics.RecordsAnalyzed;
@@ -147,48 +148,63 @@ public class CleanseAnalysisCommandService(
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | Analysis phase done, records={metrics.RecordsAnalyzed}, issues={metrics.IssuesFound}, elapsed={stopwatch.ElapsedMilliseconds}ms");
 
             var deactivationScope = operationTree.CreateScope(OperationPhases.Deactivation);
-            var deactivatedCount = await RunDeactivationPhaseAsync(operation, deactivationScope, ct);
+            var deactivatedCount = await RunDeactivationPhaseAsync(operation, deactivationScope, ct, () => tracker.IsCancellationRequested);
             aggregateMetrics.IssuesResolved += deactivatedCount;
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | Deactivation phase done, deactivated={deactivatedCount}, elapsed={stopwatch.ElapsedMilliseconds}ms");
 
             var exportScope = operationTree.CreateScope(OperationPhases.Export);
-            await RunExportPhaseAsync(operation, exportScope, ct);
+            await RunExportPhaseAsync(operation, exportScope, ct, () => tracker.IsCancellationRequested);
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | Export phase done, elapsed={stopwatch.ElapsedMilliseconds}ms");
 
-            stopwatch.Stop();
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | All phases completed, operationId={operation.Id}, totalDuration={stopwatch.ElapsedMilliseconds}ms");
-            await operationCommandService.CompleteOperationAsync(new CompleteOperationCommand(
-                operation.Id,
-                metrics.RecordsAnalyzed,
-                metrics.IssuesFound,
-                aggregateMetrics.IssuesResolved,
-                stopwatch.ElapsedMilliseconds), ct);
         }
         catch (OperationCanceledException)
         {
-            stopwatch.Stop();
+            rootStatus = OperationStatuses.Cancelled;
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | CANCELLED, operationId={operation.Id}, elapsed={stopwatch.ElapsedMilliseconds}ms");
             logger.LogInformation("Cleanse analysis cancelled (operationId={OperationId}), recording cancellation", operation.Id);
-            await operationCommandService.CancelOperationAsync(
-                new CancelOperationCommand(operation.Id), stopwatch.ElapsedMilliseconds, CancellationToken.None);
         }
         catch (Exception ex)
         {
-            stopwatch.Stop();
+            rootStatus = OperationStatuses.Failed;
+            failureMessage = ex.Message;
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisWithLockAsync | FAILED, operationId={operation.Id}, error={ex.Message}, elapsed={stopwatch.ElapsedMilliseconds}ms");
-            await operationCommandService.FailOperationAsync(new FailOperationCommand(
-                operation.Id,
-                ex.Message,
-                stopwatch.ElapsedMilliseconds), CancellationToken.None);
         }
         finally
         {
+            stopwatch.Stop();
+
             // Stop the periodic flusher and do a final flush
             await trackerCts.CancelAsync();
             try { await trackerTask; } catch (OperationCanceledException) { /* expected */ }
-            operationTree.Complete();
+
+            // Finalize tree and flush BEFORE persisting terminal status,
+            // so any observer that sees the terminal status also sees the finalized tree.
+            operationTree.Finalize(rootStatus);
             tracker.UpdateProgress(operationTree.Snapshot());
             await tracker.FlushAsync(CancellationToken.None);
+
+            if (rootStatus == OperationStatuses.Completed)
+            {
+                await operationCommandService.CompleteOperationAsync(new CompleteOperationCommand(
+                    operation.Id,
+                    aggregateMetrics.RecordsAnalyzed,
+                    aggregateMetrics.IssuesFound,
+                    aggregateMetrics.IssuesResolved,
+                    stopwatch.ElapsedMilliseconds), CancellationToken.None);
+            }
+            else if (rootStatus == OperationStatuses.Cancelled)
+            {
+                await operationCommandService.CancelOperationAsync(
+                    new CancelOperationCommand(operation.Id), stopwatch.ElapsedMilliseconds, CancellationToken.None);
+            }
+            else
+            {
+                await operationCommandService.FailOperationAsync(new FailOperationCommand(
+                    operation.Id,
+                    failureMessage!,
+                    stopwatch.ElapsedMilliseconds), CancellationToken.None);
+            }
 
             await renewalCts.CancelAsync();
             try { await renewalTask; } catch { /* Ignore cancellation */ }
@@ -220,6 +236,11 @@ public class CleanseAnalysisCommandService(
             Trace.TraceInformation($"KRDSBRIDGE | RunAnalysisPhaseAsync | END, operationId={operation.Id}, records={metrics.RecordsAnalyzed}, issues={metrics.IssuesFound}, duration={phaseStopwatch.ElapsedMilliseconds}ms");
             return metrics;
         }
+        catch (OperationCanceledException)
+        {
+            scope.Cancel("Analysis phase cancelled");
+            throw;
+        }
         catch
         {
             scope.Fail("Analysis phase failed");
@@ -228,7 +249,7 @@ public class CleanseAnalysisCommandService(
     }
 
     private async Task<int> RunDeactivationPhaseAsync(CleanseAnalysisOperationDto operation,
-        OperationScope scope, CancellationToken ct)
+        OperationScope scope, CancellationToken ct, Func<bool>? isCancellationRequested = null)
     {
         Trace.TraceInformation($"KRDSBRIDGE | RunDeactivationPhaseAsync | BEGIN, operationId={operation.Id}");
         var phaseStopwatch = Stopwatch.StartNew();
@@ -240,15 +261,20 @@ public class CleanseAnalysisCommandService(
                 new DeactivateStaleIssuesCommand(operation.Id),
                 null,
                 ct,
-                scope);
+                scope,
+                isCancellationRequested);
 
-            scope.Complete();
             logger.LogInformation("Phase completed: Deactivation (operationId={OperationId}, deactivated={Deactivated})",
                 operation.Id, deactivatedCount);
 
             phaseStopwatch.Stop();
             Trace.TraceInformation($"KRDSBRIDGE | RunDeactivationPhaseAsync | END, operationId={operation.Id}, deactivated={deactivatedCount}, duration={phaseStopwatch.ElapsedMilliseconds}ms");
             return deactivatedCount;
+        }
+        catch (OperationCanceledException)
+        {
+            scope.Cancel("Deactivation phase cancelled");
+            throw;
         }
         catch
         {
@@ -258,7 +284,7 @@ public class CleanseAnalysisCommandService(
     }
 
     private async Task RunExportPhaseAsync(CleanseAnalysisOperationDto operation,
-        OperationScope scope, CancellationToken ct)
+        OperationScope scope, CancellationToken ct, Func<bool>? isCancellationRequested = null)
     {
         Trace.TraceInformation($"KRDSBRIDGE | RunExportPhaseAsync | BEGIN, operationId={operation.Id}");
         var phaseStopwatch = Stopwatch.StartNew();
@@ -276,7 +302,8 @@ public class CleanseAnalysisCommandService(
                 options,
                 null,
                 ct,
-                scope);
+                scope,
+                isCancellationRequested);
 
             if (exportSucceeded)
             {
@@ -284,10 +311,14 @@ public class CleanseAnalysisCommandService(
                 logger.LogInformation("Recorded successful incremental export timestamp (operationId={OperationId})", operation.Id);
             }
 
-            scope.Complete();
             phaseStopwatch.Stop();
             Trace.TraceInformation($"KRDSBRIDGE | RunExportPhaseAsync | END, operationId={operation.Id}, duration={phaseStopwatch.ElapsedMilliseconds}ms");
             logger.LogInformation("Phase completed: Export (operationId={OperationId})", operation.Id);
+        }
+        catch (OperationCanceledException)
+        {
+            scope.Cancel("Export phase cancelled");
+            throw;
         }
         catch
         {

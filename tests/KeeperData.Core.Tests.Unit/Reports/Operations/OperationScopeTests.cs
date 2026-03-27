@@ -217,6 +217,7 @@ public class OperationScopeTests
         snapshot.Children.Should().HaveCount(1);
         snapshot.Children![0].Name.Should().Be("fetching");
         snapshot.Children![0].ElapsedMs.Should().Be(500);
+        snapshot.Children![0].Status.Should().Be(OperationStatuses.Completed);
     }
 
     [Fact]
@@ -231,9 +232,12 @@ public class OperationScopeTests
         snapshot.Children.Should().HaveCount(1);
 
         var ctsPump = snapshot.Children![0];
+        ctsPump.Status.Should().Be(OperationStatuses.NotStarted, "intermediate node should not be marked completed");
         ctsPump.Children.Should().HaveCount(2);
         ctsPump.Children![0].ElapsedMs.Should().Be(300);
+        ctsPump.Children![0].Status.Should().Be(OperationStatuses.Completed);
         ctsPump.Children![1].ElapsedMs.Should().Be(200);
+        ctsPump.Children![1].Status.Should().Be(OperationStatuses.Completed);
     }
 
     [Fact]
@@ -246,6 +250,7 @@ public class OperationScopeTests
 
         var snapshot = scope.Snapshot();
         snapshot.Children![0].ElapsedMs.Should().Be(300);
+        snapshot.Children![0].Status.Should().Be(OperationStatuses.Completed);
     }
 
     #endregion
@@ -383,6 +388,184 @@ public class OperationScopeTests
         var snapshot = scope.Snapshot();
         snapshot.ElapsedMs.Should().Be(30_000);
         snapshot.Elapsed.Should().Be("00:00:30.0");
+    }
+
+    #endregion
+
+    #region Parent with own TotalRecords and children with TotalRecords (aggregate roll-up)
+
+    [Fact]
+    public void ParentWithTotalRecords_ChildrenWithTotalRecords_ShouldPreferChildAggregate()
+    {
+        // Simulates the Preload scope: parent has TotalRecords = 1100 but ProcessedCount = 0 (stale).
+        // Children have live progress updates.
+        var tree = new OperationTree(_timeProvider);
+        var parent = tree.CreateScope("preload");
+        parent.Start(totalRecords: 1100, description: "Loading 1100 records");
+
+        var child1 = parent.CreateChild("collection_a");
+        child1.Start(totalRecords: 1000);
+        child1.UpdateProgress(500); // 50% of 1000
+
+        var child2 = parent.CreateChild("collection_b");
+        child2.Start(totalRecords: 100);
+        child2.Complete(); // 100% of 100
+
+        var snapshot = parent.Snapshot();
+
+        // Should use child-weighted aggregate, NOT parent's own 0/1100 = 0%
+        // Weighted: (50*1000 + 100*100) / 1100 = 60000/1100 ≈ 54.55%
+        snapshot.PercentComplete.Should().BeApproximately(54.55, 0.01);
+    }
+
+    [Fact]
+    public void ParentWithTotalRecords_ChildrenWithTotalRecords_ShouldRollUpCounts()
+    {
+        var tree = new OperationTree(_timeProvider);
+        var parent = tree.CreateScope("preload");
+        parent.Start(totalRecords: 300);
+
+        var child1 = parent.CreateChild("col_a");
+        child1.Start(totalRecords: 200);
+        child1.UpdateProgress(80);
+
+        var child2 = parent.CreateChild("col_b");
+        child2.Start(totalRecords: 100);
+        child2.UpdateProgress(50);
+
+        var snapshot = parent.Snapshot();
+
+        // Should aggregate from children, not show parent's own ProcessedCount (0)
+        snapshot.ProcessedCount.Should().Be(130); // 80 + 50
+        snapshot.TotalRecords.Should().Be(300);   // 200 + 100
+    }
+
+    [Fact]
+    public void ParentWithTotalRecords_ChildrenWithTotalRecords_ShouldRollUpRpm()
+    {
+        var tree = new OperationTree(_timeProvider);
+        var parent = tree.CreateScope("preload");
+        parent.Start(totalRecords: 2000);
+
+        // Child 1 actively processing — simulate windowed RPM
+        var child1 = parent.CreateChild("col_a");
+        child1.Start(totalRecords: 1000);
+        child1.UpdateProgress(100);
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+        child1.UpdateProgress(200); // → ~100 RPM over 1 min window
+
+        // Child 2 actively processing
+        var child2 = parent.CreateChild("col_b");
+        child2.Start(totalRecords: 1000);
+        child2.UpdateProgress(50);
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+        child2.UpdateProgress(100); // → ~50 RPM over 1 min window
+
+        var snapshot = parent.Snapshot();
+
+        // Parent should show summed RPM from children
+        snapshot.CurrentRecordsPerMinute.Should().NotBeNull();
+        snapshot.CurrentRecordsPerMinute.Should().Be(
+            snapshot.Children![0].CurrentRecordsPerMinute!.Value +
+            snapshot.Children![1].CurrentRecordsPerMinute!.Value);
+    }
+
+    [Fact]
+    public void ParentWithTotalRecords_MixedChildren_ShouldNotProjectEndTime()
+    {
+        // Projections should stay null at the parent level — only leaf nodes project
+        var tree = new OperationTree(_timeProvider);
+        var parent = tree.CreateScope("preload");
+        parent.Start(totalRecords: 500);
+
+        var child = parent.CreateChild("col_a");
+        child.Start(totalRecords: 500);
+        child.UpdateProgress(100);
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+        child.UpdateProgress(200);
+
+        var snapshot = parent.Snapshot();
+
+        snapshot.ProjectedRemainingMs.Should().BeNull();
+        snapshot.ProjectedEndTimeUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public void LeafWithTotalRecords_NoChildren_ShouldUseOwnProgress()
+    {
+        // Regression: a leaf node (like CTS Pump) should still use its own ProcessedCount
+        var scope = CreateScope("cts_pump");
+        scope.Start(totalRecords: 1000);
+        scope.UpdateProgress(250);
+
+        var snapshot = scope.Snapshot();
+
+        snapshot.PercentComplete.Should().Be(25.0);
+        snapshot.ProcessedCount.Should().Be(250);
+        snapshot.TotalRecords.Should().Be(1000);
+    }
+
+    [Fact]
+    public void ParentWithTotalRecords_ChildrenNotYetStarted_ShouldShowZeroPercent()
+    {
+        // All children created but not started — should show 0%
+        var tree = new OperationTree(_timeProvider);
+        var parent = tree.CreateScope("preload");
+        parent.Start(totalRecords: 500);
+
+        parent.CreateChild("col_a"); // not started, no totalRecords
+        parent.CreateChild("col_b"); // not started, no totalRecords
+
+        var snapshot = parent.Snapshot();
+
+        // Children lack TotalRecords → falls through to parent's own 0/500 = 0%
+        snapshot.PercentComplete.Should().Be(0);
+    }
+
+    #endregion
+
+    #region Cancel
+
+    [Fact]
+    public void Cancel_ShouldSetStatusToCancelled()
+    {
+        var scope = CreateScope();
+        scope.Start();
+        _timeProvider.Advance(TimeSpan.FromSeconds(7));
+
+        scope.Cancel("User requested cancellation");
+
+        var snapshot = scope.Snapshot();
+        snapshot.Status.Should().Be(OperationStatuses.Cancelled);
+        snapshot.Description.Should().Be("User requested cancellation");
+        snapshot.ElapsedMs.Should().Be(7_000);
+    }
+
+    [Fact]
+    public void Cancel_ShouldRecordElapsedTime()
+    {
+        var scope = CreateScope();
+        scope.Start();
+        _timeProvider.Advance(TimeSpan.FromSeconds(12));
+
+        scope.Cancel();
+
+        var snapshot = scope.Snapshot();
+        snapshot.ElapsedMs.Should().Be(12_000);
+    }
+
+    [Fact]
+    public void Cancel_WithoutDescription_ShouldNotOverwriteExisting()
+    {
+        var scope = CreateScope();
+        scope.Start(description: "Loading data...");
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+
+        scope.Cancel();
+
+        var snapshot = scope.Snapshot();
+        snapshot.Status.Should().Be(OperationStatuses.Cancelled);
+        snapshot.Description.Should().Be("Loading data...");
     }
 
     #endregion

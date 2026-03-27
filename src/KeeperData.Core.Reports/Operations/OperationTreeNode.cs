@@ -111,15 +111,27 @@ internal sealed class OperationTreeNode
             }
         }
 
-        // Compute progress percentage
-        double? percentComplete = ComputePercentComplete(childSnapshots);
+        // Check whether children carry deterministic progress (their own TotalRecords)
+        var childrenHaveProgress = HasChildrenWithProgress(childSnapshots);
 
-        // Compute rate metrics
+        // Compute progress percentage — prefer child aggregate when children have TotalRecords
+        double? percentComplete = ComputePercentComplete(childSnapshots, childrenHaveProgress);
+
+        // Roll up ProcessedCount / TotalRecords from children when applicable
+        var (snapshotProcessed, snapshotTotal) = childrenHaveProgress
+            ? AggregateChildCounts(childSnapshots!)
+            : (TotalRecords.HasValue ? ProcessedCount : (int?)null, TotalRecords);
+
+        // Compute rate metrics — roll up from children when the parent has no ring buffer data
         var currentRpm = CalculateWindowRpm();
         var averageRpm = ComputeAverageRpm(now);
+        if (currentRpm <= 0 && childrenHaveProgress)
+            currentRpm = RollUpChildRpm(childSnapshots!, c => c.CurrentRecordsPerMinute);
+        if (averageRpm <= 0 && childrenHaveProgress)
+            averageRpm = RollUpChildRpm(childSnapshots!, c => c.AverageRecordsPerMinute);
 
-        // Compute projections
-        var (projectedRemainingMs, projectedEndTimeUtc) = ComputeProjections(now, currentRpm, averageRpm);
+        // Compute projections (only meaningful at leaf level with own rate history)
+        var (projectedRemainingMs, projectedEndTimeUtc) = ComputeProjections(now, CalculateWindowRpm(), ComputeAverageRpm(now));
 
         return new OperationNode
         {
@@ -127,8 +139,8 @@ internal sealed class OperationTreeNode
             Status = Status,
             Description = Description,
             PercentComplete = percentComplete,
-            ProcessedCount = TotalRecords.HasValue ? ProcessedCount : null,
-            TotalRecords = TotalRecords,
+            ProcessedCount = snapshotProcessed,
+            TotalRecords = snapshotTotal,
             ElapsedMs = elapsedMs > 0 ? elapsedMs : RollUpChildElapsed(childSnapshots),
             Elapsed = OperationNode.FormatElapsed(elapsedMs > 0 ? elapsedMs : RollUpChildElapsed(childSnapshots)),
             ProjectedRemainingMs = projectedRemainingMs,
@@ -139,33 +151,71 @@ internal sealed class OperationTreeNode
         };
     }
 
-    private double? ComputePercentComplete(List<OperationNode>? childSnapshots)
+    private double? ComputePercentComplete(List<OperationNode>? childSnapshots, bool childrenHaveProgress)
     {
-        // Leaf node with own totalRecords
+        // When children carry deterministic progress, prefer the weighted aggregate
+        // over the parent's own (potentially stale) ProcessedCount.
+        if (childrenHaveProgress)
+            return ComputeWeightedChildPercent(childSnapshots!);
+
+        // Leaf node with own totalRecords (no children with progress)
         if (TotalRecords.HasValue && TotalRecords.Value > 0)
             return Math.Round(100.0 * ProcessedCount / TotalRecords.Value, 2);
 
         if (Status == OperationStatuses.Completed)
             return 100;
 
-        // Parent: weighted average by each child's totalRecords
+        // Parent with children that lack TotalRecords — use equal weight
         if (childSnapshots is { Count: > 0 })
-        {
-            var totalWeight = 0L;
-            var weightedSum = 0.0;
-
-            foreach (var child in childSnapshots)
-            {
-                var weight = child.TotalRecords ?? 1;
-                totalWeight += weight;
-                weightedSum += (child.PercentComplete ?? 0) * weight;
-            }
-
-            if (totalWeight > 0)
-                return Math.Round(weightedSum / totalWeight, 2);
-        }
+            return ComputeWeightedChildPercent(childSnapshots);
 
         return null;
+    }
+
+    private static double? ComputeWeightedChildPercent(List<OperationNode> childSnapshots)
+    {
+        var totalWeight = 0L;
+        var weightedSum = 0.0;
+
+        foreach (var child in childSnapshots)
+        {
+            var weight = child.TotalRecords ?? 1;
+            totalWeight += weight;
+            weightedSum += (child.PercentComplete ?? 0) * weight;
+        }
+
+        return totalWeight > 0 ? Math.Round(weightedSum / totalWeight, 2) : null;
+    }
+
+    private static bool HasChildrenWithProgress(List<OperationNode>? childSnapshots)
+    {
+        if (childSnapshots is not { Count: > 0 })
+            return false;
+
+        return childSnapshots.Any(c => c.TotalRecords.HasValue && c.TotalRecords.Value > 0);
+    }
+
+    private static (int? ProcessedCount, int? TotalRecords) AggregateChildCounts(List<OperationNode> childSnapshots)
+    {
+        var totalRecords = 0;
+        var processedCount = 0;
+
+        foreach (var child in childSnapshots)
+        {
+            totalRecords += child.TotalRecords ?? 0;
+            processedCount += child.ProcessedCount ?? 0;
+        }
+
+        return (processedCount, totalRecords > 0 ? totalRecords : null);
+    }
+
+    private static double RollUpChildRpm(List<OperationNode> childSnapshots, Func<OperationNode, double?> selector)
+    {
+        var sum = 0.0;
+        foreach (var child in childSnapshots)
+            sum += selector(child) ?? 0;
+
+        return Math.Round(sum, 2);
     }
 
     private double ComputeAverageRpm(DateTime nowUtc)
@@ -203,5 +253,31 @@ internal sealed class OperationTreeNode
             return 0;
 
         return children.Sum(c => c.ElapsedMs);
+    }
+
+    /// <summary>
+    /// Walks or creates child nodes along <paramref name="segments"/> and accumulates
+    /// elapsed time on the leaf. Must be called under the parent's <see cref="Lock"/>.
+    /// </summary>
+    internal static void TrackSegments(OperationTreeNode parent, string[] segments, int index, long elapsedMs, bool markLeafComplete)
+    {
+        var name = segments[index];
+        var child = parent.Children.Find(c => c.Name == name);
+        if (child is null)
+        {
+            child = new OperationTreeNode(name);
+            parent.Children.Add(child);
+        }
+
+        if (index == segments.Length - 1)
+        {
+            child.ElapsedMs += elapsedMs;
+            if (markLeafComplete)
+                child.Status = OperationStatuses.Completed;
+        }
+        else
+        {
+            TrackSegments(child, segments, index + 1, elapsedMs, markLeafComplete);
+        }
     }
 }

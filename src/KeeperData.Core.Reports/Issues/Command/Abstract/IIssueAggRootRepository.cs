@@ -25,8 +25,9 @@ public interface IIssueAggRootRepository
     /// <param name="onBatchProcessed">Optional callback invoked after each batch with (deactivatedSoFar, totalStale).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <param name="scope">Optional operation scope for unified progress tracking.</param>
+    /// <param name="isCancellationRequested">Optional callback polled between batches to detect DB-level cancellation.</param>
     /// <returns>The number of issues deactivated.</returns>
-    Task<int> DeactivateStaleAsync(string currentOperationId, Func<int, int, Task>? onBatchProcessed, CancellationToken ct = default, OperationScope? scope = null);
+    Task<int> DeactivateStaleAsync(string currentOperationId, Func<int, int, Task>? onBatchProcessed, CancellationToken ct = default, OperationScope? scope = null, Func<bool>? isCancellationRequested = null);
 
     /// <summary>
     /// Deletes all issues.

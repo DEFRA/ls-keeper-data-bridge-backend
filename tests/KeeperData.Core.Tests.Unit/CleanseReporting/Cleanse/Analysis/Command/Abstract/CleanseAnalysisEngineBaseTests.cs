@@ -145,7 +145,7 @@ public class CleanseAnalysisEngineBaseTests
     [Fact]
     public async Task ExecuteAsync_ShouldProcessBothCtsAndSamRecords()
     {
-        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>())).Returns(Task.CompletedTask);
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>(), It.IsAny<Func<bool>?>())).Returns(Task.CompletedTask);
         _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount()).Returns(1);
         _dataServiceMock.Setup(s => s.GetSamCphHoldingsCount()).Returns(1);
 
@@ -180,7 +180,7 @@ public class CleanseAnalysisEngineBaseTests
     [Fact]
     public async Task ExecuteAsync_WithEmptyData_ShouldReturnZeroMetrics()
     {
-        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>())).Returns(Task.CompletedTask);
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>(), It.IsAny<Func<bool>?>())).Returns(Task.CompletedTask);
         _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount()).Returns(0);
         _dataServiceMock.Setup(s => s.GetSamCphHoldingsCount()).Returns(0);
         _dataServiceMock.Setup(s => s.ListCtsCphHoldings(It.IsAny<int>(), It.IsAny<int>()))
@@ -202,7 +202,7 @@ public class CleanseAnalysisEngineBaseTests
         const int ctsCount = 3;
         const int samCount = 2;
 
-        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>())).Returns(Task.CompletedTask);
+        _dataServiceMock.Setup(s => s.PreloadAsync(It.IsAny<CancellationToken>(), It.IsAny<OperationScope?>(), It.IsAny<Func<bool>?>())).Returns(Task.CompletedTask);
         _dataServiceMock.Setup(s => s.GetCtsCphHoldingsCount()).Returns(ctsCount);
         _dataServiceMock.Setup(s => s.GetSamCphHoldingsCount()).Returns(samCount);
 

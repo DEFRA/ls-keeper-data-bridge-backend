@@ -80,19 +80,10 @@ public sealed class OperationScope
     /// </summary>
     public void Complete(string? description = null)
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        FinalizeScope(OperationStatuses.Completed, description);
+
         lock (_node.Lock)
         {
-            _node.Status = OperationStatuses.Completed;
-            if (description is not null)
-                _node.Description = description;
-
-            if (_node.StartedAtUtc.HasValue)
-            {
-                _node.ElapsedMs += (long)(now - _node.StartedAtUtc.Value).TotalMilliseconds;
-                _node.StartedAtUtc = null;
-            }
-
             if (_node.TotalRecords.HasValue)
                 _node.ProcessedCount = _node.TotalRecords.Value;
         }
@@ -103,10 +94,23 @@ public sealed class OperationScope
     /// </summary>
     public void Fail(string? description = null)
     {
+        FinalizeScope(OperationStatuses.Failed, description);
+    }
+
+    /// <summary>
+    /// Marks this scope as cancelled.
+    /// </summary>
+    public void Cancel(string? description = null)
+    {
+        FinalizeScope(OperationStatuses.Cancelled, description);
+    }
+
+    private void FinalizeScope(string status, string? description)
+    {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         lock (_node.Lock)
         {
-            _node.Status = OperationStatuses.Failed;
+            _node.Status = status;
             if (description is not null)
                 _node.Description = description;
 
@@ -131,22 +135,6 @@ public sealed class OperationScope
 
     private static void TrackSegments(OperationTreeNode parent, string[] segments, int index, long elapsedMs)
     {
-        var name = segments[index];
-        var child = parent.Children.Find(c => c.Name == name);
-        if (child is null)
-        {
-            child = new OperationTreeNode(name);
-            parent.Children.Add(child);
-        }
-
-        if (index == segments.Length - 1)
-        {
-            // Leaf — accumulate elapsed
-            child.ElapsedMs += elapsedMs;
-        }
-        else
-        {
-            TrackSegments(child, segments, index + 1, elapsedMs);
-        }
+        OperationTreeNode.TrackSegments(parent, segments, index, elapsedMs, markLeafComplete: true);
     }
 }

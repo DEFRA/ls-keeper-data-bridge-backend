@@ -1,4 +1,3 @@
-using Amazon.Runtime.Internal.Util;
 using CsvHelper;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
@@ -57,13 +56,13 @@ public class CleanseReportExportCommandService(
         RuleIds.SAM_CATTLE_RELATED_CPHs      // Rule 3
     ];
 
-    public async Task<bool> ExportReportAsync(string operationId, ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct, OperationScope? scope = null)
+    public async Task<bool> ExportReportAsync(string operationId, ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct, OperationScope? scope = null, Func<bool>? isCancellationRequested = null)
     {
         try
         {
             logger.LogInformation("Starting report export for operation {OperationId} (since={Since})", operationId, options.Since);
 
-            var exportResult = await ExportAndUploadAsync(options, onProgress, ct, scope);
+            var exportResult = await ExportAndUploadAsync(options, onProgress, ct, scope, isCancellationRequested);
 
             if (exportResult.Success && !string.IsNullOrEmpty(exportResult.ReportUrl) && !string.IsNullOrEmpty(exportResult.ObjectKey))
             {
@@ -74,7 +73,8 @@ public class CleanseReportExportCommandService(
 
                 if (options.SendNotification)
                 {
-                    await SendNotificationAsync(operationId, exportResult.ReportUrl, ct);
+                    var notifMs = await Timed.RunAsync(() => SendNotificationAsync(operationId, exportResult.ReportUrl, ct));
+                    scope?.TrackElapsed("notification", notifMs);
                 }
 
                 return true;
@@ -85,6 +85,7 @@ public class CleanseReportExportCommandService(
                 operationId, exportResult.Error ?? "Unknown error");
             return false;
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             logger.LogError(ex, "Exception during report export for operation {OperationId}", operationId);
@@ -93,9 +94,9 @@ public class CleanseReportExportCommandService(
     }
 
     /// <inheritdoc />
-    public async Task<CleanseReportExportResult> ExportToStorageAsync(ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct, OperationScope? scope = null)
+    public async Task<CleanseReportExportResult> ExportToStorageAsync(ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct, OperationScope? scope = null, Func<bool>? isCancellationRequested = null)
     {
-        return await ExportAndUploadAsync(options, onProgress, ct, scope);
+        return await ExportAndUploadAsync(options, onProgress, ct, scope, isCancellationRequested);
     }
 
     /// <inheritdoc />
@@ -166,14 +167,13 @@ public class CleanseReportExportCommandService(
     }
 
     /// <inheritdoc />
-    private async Task<CleanseReportExportResult> ExportAndUploadAsync(ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct = default, OperationScope? scope = null)
+    private async Task<CleanseReportExportResult> ExportAndUploadAsync(ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct = default, OperationScope? scope = null, Func<bool>? isCancellationRequested = null)
     {
         var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
         var zipFileName = $"cleanse-report_{timestamp}.zip";
 
         string? tempCsvPath = null;
         string? tempZipPath = null;
-        var sw = new Stopwatch();
 
         try
         {
@@ -182,17 +182,15 @@ public class CleanseReportExportCommandService(
                 timestamp, options.Since);
 
             // Get total count for progress reporting (filtered if incremental)
-            sw.Restart();
-            var totalRecords = options.Since.HasValue
+            var (totalRecords, countMs) = await Timed.RunAsync(async () => options.Since.HasValue
                 ? (int)await issueQueries.GetActiveIssuesCountAsync(options.Since.Value, ct)
-                : (int)await issueQueries.GetActiveIssuesCountAsync(ct);
-            sw.Stop();
-            scope?.TrackElapsed("counting", sw.ElapsedMilliseconds);
+                : (int)await issueQueries.GetActiveIssuesCountAsync(ct));
+            scope?.TrackElapsed("counting", countMs);
             scope?.Start(totalRecords, "Streaming issues to CSV");
 
             // Step 1: Stream issues from MongoDB directly to CSV file
             tempCsvPath = Path.GetRandomFileName();
-            var recordCount = await StreamIssuesToCsvAsync(tempCsvPath, totalRecords, options.Since, onProgress, ct, scope);
+            var recordCount = await StreamIssuesToCsvAsync(tempCsvPath, totalRecords, options.Since, onProgress, ct, scope, isCancellationRequested);
             logger.LogInformation("Streamed {RecordCount} issues to CSV file at {TempPath}", recordCount, tempCsvPath);
 
             // Step 2: Create zip file
@@ -201,11 +199,9 @@ public class CleanseReportExportCommandService(
                 await onProgress(totalRecords, totalRecords, "Compressing report");
             }
             scope?.UpdateProgress(totalRecords, "Compressing report");
-            sw.Restart();
             tempZipPath = Path.GetRandomFileName();
-            CreateZipFile(tempCsvPath, tempZipPath, CsvFileName);
-            sw.Stop();
-            scope?.TrackElapsed("compression", sw.ElapsedMilliseconds);
+            var compressionMs = Timed.Run(() => CreateZipFile(tempCsvPath, tempZipPath, CsvFileName));
+            scope?.TrackElapsed("compression", compressionMs);
             logger.LogInformation("Created zip file at {ZipPath}", tempZipPath);
 
             // Step 3: Upload to S3 (using the cleanse reports blob service which has the correct prefix)
@@ -214,12 +210,13 @@ public class CleanseReportExportCommandService(
                 await onProgress(totalRecords, totalRecords, "Uploading report to S3");
             }
             scope?.UpdateProgress(totalRecords, "Uploading report to S3");
-            sw.Restart();
             var blobService = blobStorageServiceFactory.GetCleanseReportsBlobService();
-            var zipContent = await File.ReadAllBytesAsync(tempZipPath, ct);
-            await blobService.UploadAsync(zipFileName, zipContent, "application/zip", cancellationToken: ct);
-            sw.Stop();
-            scope?.TrackElapsed("upload", sw.ElapsedMilliseconds);
+            var uploadMs = await Timed.RunAsync(async () =>
+            {
+                var zipContent = await File.ReadAllBytesAsync(tempZipPath, ct);
+                await blobService.UploadAsync(zipFileName, zipContent, "application/zip", cancellationToken: ct);
+            });
+            scope?.TrackElapsed("upload", uploadMs);
             logger.LogInformation("Uploaded report to S3 with key {ObjectKey}", zipFileName);
 
             // Step 4: Generate presigned URL (using the zip file name as the key - blob service handles the prefix)
@@ -235,6 +232,11 @@ public class CleanseReportExportCommandService(
                 ReportUrl = presignedUrl,
                 ObjectKey = zipFileName
             };
+        }
+        catch (OperationCanceledException)
+        {
+            scope?.Cancel("Export cancelled");
+            throw;
         }
         catch (Exception ex)
         {
@@ -259,10 +261,9 @@ public class CleanseReportExportCommandService(
     /// Issues are grouped by rule priority order, sorted by CPH within each group.
     /// Memory footprint is O(batch_size) instead of O(total_records).
     /// </summary>
-    private async Task<int> StreamIssuesToCsvAsync(string filePath, int totalRecords, DateTime? since, Func<int, int, string, Task>? onProgress, CancellationToken ct, OperationScope? scope = null)
+    private async Task<int> StreamIssuesToCsvAsync(string filePath, int totalRecords, DateTime? since, Func<int, int, string, Task>? onProgress, CancellationToken ct, OperationScope? scope = null, Func<bool>? isCancellationRequested = null)
     {
         var recordCount = 0;
-        var sw = new Stopwatch();
 
         // Read batch size once to start the cursor; the cursor's batch size is fixed for its lifetime.
         var initialBatchSize = throttler.Settings.CleanseExport.StreamBatchSize;
@@ -292,10 +293,8 @@ public class CleanseReportExportCommandService(
             var exportSettings = throttler.Settings.CleanseExport;
             if (recordCount % exportSettings.StreamBatchSize == 0)
             {
-                sw.Restart();
-                await csv.FlushAsync();
-                sw.Stop();
-                scope?.TrackElapsed("streaming", sw.ElapsedMilliseconds);
+                var flushMs = await Timed.RunAsync(() => csv.FlushAsync());
+                scope?.TrackElapsed("streaming", flushMs);
                 scope?.UpdateProgress(recordCount, $"Streaming issues to CSV: {recordCount} of {totalRecords}");
                 logger.LogDebug("Streamed {RecordCount} records to CSV...", recordCount);
 
@@ -304,10 +303,11 @@ public class CleanseReportExportCommandService(
                     await onProgress(recordCount, totalRecords, $"Streaming issues to CSV: {recordCount} of {totalRecords}");
                 }
 
-                sw.Restart();
-                await throttler.DelayAsync(exportSettings.ThrottlingDelayMs, ct);
-                sw.Stop();
-                scope?.TrackElapsed("throttle_wait", sw.ElapsedMilliseconds);
+                var delayMs = await Timed.RunAsync(() => throttler.DelayAsync(exportSettings.ThrottlingDelayMs, ct));
+                scope?.TrackElapsed("throttle_wait", delayMs);
+
+                if (isCancellationRequested?.Invoke() == true)
+                    throw new OperationCanceledException("Cancellation requested via progress tracker.");
             }
         }
 

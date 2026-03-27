@@ -142,6 +142,35 @@ public class OperationTreeTests
 
     #endregion
 
+    #region Cancel
+
+    [Fact]
+    public void Cancel_ShouldSetRootToCancelled()
+    {
+        var tree = new OperationTree(_timeProvider);
+        _timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        tree.Cancel();
+
+        var snapshot = tree.Snapshot();
+        snapshot.Status.Should().Be(OperationStatuses.Cancelled);
+        snapshot.ElapsedMs.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Cancel_ShouldRecordElapsedTime()
+    {
+        var tree = new OperationTree(_timeProvider);
+        _timeProvider.Advance(TimeSpan.FromSeconds(45));
+
+        tree.Cancel();
+
+        var snapshot = tree.Snapshot();
+        snapshot.ElapsedMs.Should().Be(45_000);
+    }
+
+    #endregion
+
     #region Snapshot
 
     [Fact]

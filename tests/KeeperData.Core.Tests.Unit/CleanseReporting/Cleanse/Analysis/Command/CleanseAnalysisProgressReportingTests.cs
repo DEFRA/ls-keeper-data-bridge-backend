@@ -408,9 +408,10 @@ public sealed class CleanseAnalysisProgressReportingTests
                 It.IsAny<string>(),
                 It.IsAny<Func<int, int, Task>?>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<OperationScope?>()))
-            .Returns<string, Func<int, int, Task>?, CancellationToken, OperationScope?>(
-                async (_, onBatch, ct, scope) =>
+                It.IsAny<OperationScope?>(),
+                It.IsAny<Func<bool>?>()))
+            .Returns<string, Func<int, int, Task>?, CancellationToken, OperationScope?, Func<bool>?>(
+                async (_, onBatch, ct, scope, _) =>
                 {
                     const int staleCount = 5;
                     scope?.Start(staleCount, $"Deactivating {staleCount} stale issues");

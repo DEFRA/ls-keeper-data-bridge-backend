@@ -61,12 +61,27 @@ public sealed class OperationTree
     /// <summary>
     /// Marks the root as completed.
     /// </summary>
-    public void Complete()
+    public void Complete() => Finalize(OperationStatuses.Completed);
+
+    /// <summary>
+    /// Marks the root as failed.
+    /// </summary>
+    public void Fail() => Finalize(OperationStatuses.Failed);
+
+    /// <summary>
+    /// Marks the root as cancelled.
+    /// </summary>
+    public void Cancel() => Finalize(OperationStatuses.Cancelled);
+
+    /// <summary>
+    /// Marks the root with the given terminal status and records elapsed time.
+    /// </summary>
+    public void Finalize(string status)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         lock (_root.Lock)
         {
-            _root.Status = OperationStatuses.Completed;
+            _root.Status = status;
             if (_root.StartedAtUtc.HasValue)
             {
                 _root.ElapsedMs += (long)(now - _root.StartedAtUtc.Value).TotalMilliseconds;
@@ -77,21 +92,6 @@ public sealed class OperationTree
 
     private static void TrackSegments(OperationTreeNode parent, string[] segments, int index, long elapsedMs)
     {
-        var name = segments[index];
-        var child = parent.Children.Find(c => c.Name == name);
-        if (child is null)
-        {
-            child = new OperationTreeNode(name);
-            parent.Children.Add(child);
-        }
-
-        if (index == segments.Length - 1)
-        {
-            child.ElapsedMs += elapsedMs;
-        }
-        else
-        {
-            TrackSegments(child, segments, index + 1, elapsedMs);
-        }
+        OperationTreeNode.TrackSegments(parent, segments, index, elapsedMs, markLeafComplete: false);
     }
 }

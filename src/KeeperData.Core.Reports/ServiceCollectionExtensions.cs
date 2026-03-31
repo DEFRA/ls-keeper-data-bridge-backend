@@ -63,9 +63,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIssueQueries, IssueQueries>();
         services.AddScoped<ICleanseExportOperationQueries, CleanseExportOperationQueries>();
 
-        // Register run stats service (singleton - holds in-memory sliding window state)
-        services.AddSingleton<ICleanseRunStatsService, CleanseRunStatsService>();
-
         // Register index managers and initialisation
         services.AddSingleton<IIssueIndexManager, IssueIndexManager>();
         services.AddSingleton<IIssueHistoryIndexManager, IssueHistoryIndexManager>();
@@ -75,6 +72,7 @@ public static class ServiceCollectionExtensions
 
         // Register query services for CTS/SAM data
         services.AddScoped<ICtsSamQueryService, CtsSamQueryService>();
+        services.AddScoped<IPreloadedCtsSamDataService, PreloadedCtsSamDataService>();
 
         // Register engine
         services.AddScoped<ICleanseAnalysisEngine, CleanseAnalysisEngine>();

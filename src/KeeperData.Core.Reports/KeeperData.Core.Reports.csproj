@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="KeeperData.Core.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="Cleanse\Export\Command\Commands\**" />
     <Compile Remove="Cleanse\Export\Query\**" />
     <Compile Remove="Issues\Abstract\**" />

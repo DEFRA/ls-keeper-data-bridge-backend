@@ -1,5 +1,6 @@
 using KeeperData.Core.Reports.Cleanse.Export.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Results;
+using KeeperData.Core.Reports.Operations;
 
 namespace KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
 
@@ -16,8 +17,10 @@ public interface ICleanseReportExportCommandService
     /// <param name="options">Export options controlling date filtering and notification behaviour.</param>
     /// <param name="onProgress">Optional callback invoked with (recordsProcessed, totalRecords, stepDescription).</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="scope">Optional operation scope for unified progress tracking.</param>
+    /// <param name="isCancellationRequested">Optional callback polled between batches to detect DB-level cancellation.</param>
     /// <returns>True if the export completed successfully; false otherwise.</returns>
-    Task<bool> ExportReportAsync(string operationId, ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct);
+    Task<bool> ExportReportAsync(string operationId, ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct, OperationScope? scope = null, Func<bool>? isCancellationRequested = null);
 
     /// <summary>
     /// Core export mechanics: streams issues to CSV, zips, uploads to S3 and returns the result.
@@ -26,7 +29,9 @@ public interface ICleanseReportExportCommandService
     /// <param name="options">Export options controlling date filtering.</param>
     /// <param name="onProgress">Optional callback invoked with (recordsProcessed, totalRecords, stepDescription).</param>
     /// <param name="ct">Cancellation token.</param>
-    Task<CleanseReportExportResult> ExportToStorageAsync(ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct);
+    /// <param name="scope">Optional operation scope for unified progress tracking.</param>
+    /// <param name="isCancellationRequested">Optional callback polled between batches to detect DB-level cancellation.</param>
+    Task<CleanseReportExportResult> ExportToStorageAsync(ExportOptions options, Func<int, int, string, Task>? onProgress, CancellationToken ct, OperationScope? scope = null, Func<bool>? isCancellationRequested = null);
 
     /// <summary>
     /// Regenerates the presigned URL for an analysis operation's report.

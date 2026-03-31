@@ -111,7 +111,8 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
         // Step 2: Run first cleanse analysis
         // ----------------------------------------------------------------
         _output.WriteLine("\n--- Step 2: Running first cleanse analysis ---");
-        var analysisService = _serviceProvider!.GetRequiredService<ICleanseAnalysisCommandService>();
+        using var firstScope = _serviceProvider!.CreateScope();
+        var analysisService = firstScope.ServiceProvider.GetRequiredService<ICleanseAnalysisCommandService>();
         var firstResult = await analysisService.RunAnalysisAsync(ct);
 
         firstResult.Should().NotBeNull("First analysis should complete successfully");
@@ -242,10 +243,12 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
         _output.WriteLine("✓ Step 5 complete: fix data ingested");
 
         // ----------------------------------------------------------------
-        // Step 6: Run second cleanse analysis
+        // Step 6: Run second cleanse analysis (new scope for fresh preloaded data)
         // ----------------------------------------------------------------
         _output.WriteLine("\n--- Step 6: Running second cleanse analysis ---");
-        var secondResult = await analysisService.RunAnalysisAsync(ct);
+        using var secondScope = _serviceProvider!.CreateScope();
+        var secondAnalysisService = secondScope.ServiceProvider.GetRequiredService<ICleanseAnalysisCommandService>();
+        var secondResult = await secondAnalysisService.RunAnalysisAsync(ct);
 
         secondResult.Should().NotBeNull("Second analysis should complete successfully");
         secondResult!.Status.Should().Be(CleanseAnalysisStatus.Completed);
@@ -622,6 +625,7 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
 
         // CtsSamQueryService (used by the cleanse engine)
         services.AddScoped<ICtsSamQueryService, CtsSamQueryService>();
+        services.AddScoped<IPreloadedCtsSamDataService, PreloadedCtsSamDataService>();
 
         // Distributed lock (used by CleanseAnalysisCommandService)
         services.AddSingleton<IDistributedLock, MongoDistributedLock>();

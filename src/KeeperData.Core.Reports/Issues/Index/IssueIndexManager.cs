@@ -17,6 +17,12 @@ public interface IIssueIndexManager
     /// Idempotent - safe to call multiple times.
     /// </summary>
     Task EnsureIndexesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resets cached state and re-creates all indexes.
+    /// Call after dropping/recreating the collection.
+    /// </summary>
+    Task ForceRecreateIndexesAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -75,6 +81,21 @@ public class IssueIndexManager : IIssueIndexManager
         {
             _initLock.Release();
         }
+    }
+
+    public async Task ForceRecreateIndexesAsync(CancellationToken cancellationToken = default)
+    {
+        await _initLock.WaitAsync(cancellationToken);
+        try
+        {
+            _indexesCreated = false;
+        }
+        finally
+        {
+            _initLock.Release();
+        }
+
+        await EnsureIndexesAsync(cancellationToken);
     }
 
     /// <summary>

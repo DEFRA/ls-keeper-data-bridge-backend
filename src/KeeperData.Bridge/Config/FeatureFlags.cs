@@ -8,4 +8,5 @@ public class FeatureFlags
     public const string SectionName = "FeatureFlags";
 
     public bool AuthenticationEnabled { get; set; } = true;
+    public bool UseZeroThrottle { get; set; }
 }

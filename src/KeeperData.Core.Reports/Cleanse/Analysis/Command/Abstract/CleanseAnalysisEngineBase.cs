@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
-using KeeperData.Core.Reports.Cleanse.Operations.Queries.Abstract;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
+using KeeperData.Core.Reports.Operations;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Abstract;
 using KeeperData.Core.Reports.SamCtsHoldings.Query.Domain;
 using KeeperData.Core.Throttling;
@@ -10,23 +10,17 @@ using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 
-public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService, IIssueCommandService issueCommandService,
-    IThrottler throttler, ICleanseRunStatsService runStatsService, ILogger logger)
+public abstract class CleanseAnalysisEngineBase(IPreloadedCtsSamDataService dataService, IIssueCommandService issueCommandService,
+    IThrottler throttler, ILogger logger)
 {
     private const string DateTimeFormat = "yyyy-MM-dd HH:mm:ss";
 
     protected IIssueCommandService IssueCommandService { get; } = issueCommandService;
     protected IThrottler Throttler { get; } = throttler;
-    protected ICleanseRunStatsService RunStatsService { get; } = runStatsService;
-
-    /// <summary>
-    /// In-memory lookup mapping CPH values to their full LID_FULL_IDENTIFIER strings.
-    /// Populated before the SAM pump runs so that CPH→LID resolution avoids regex queries on MongoDB.
-    /// </summary>
-    protected Dictionary<string, string> CphToLidLookup { get; private set; } = [];
+    protected ILogger Logger { get; } = logger;
 
     protected delegate Task RecordProcessor(string id,
-        string operationId, AnalysisMetrics metrics, CancellationToken ct);
+        string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null);
 
     protected delegate Task<QueryResult> Fetch(int skip, int batchSize, CancellationToken ct);
 
@@ -34,80 +28,110 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
         int TotalRecords,
         string OperationId,
         AnalysisMetrics Metrics,
-        ProgressCallback ProgressCallback,
         Fetch Fetcher,
         RecordProcessor RecordProcessor,
-        string IdFieldKey);
+        string IdFieldKey,
+        string PumpName = "Pump",
+        OperationScope? Scope = null,
+        Func<bool>? IsCancellationRequested = null);
 
     protected abstract Task ProcessCtsPrimaryRecordAsync(string id,
-        string operationId, AnalysisMetrics metrics, CancellationToken ct);
+        string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null);
 
     protected abstract Task ProcessSamPrimaryRecordAsync(string id,
-        string operationId, AnalysisMetrics metrics, CancellationToken ct);
+        string operationId, AnalysisMetrics metrics, CancellationToken ct, OperationScope? scope = null);
 
 
     protected async Task PumpAsync(PumpContext context, CancellationToken ct)
     {
+        Trace.TraceInformation($"KRDSBRIDGE | PumpAsync | BEGIN, pump={context.PumpName}, totalRecords={context.TotalRecords}, operationId={context.OperationId}");
+        var pumpStopwatch = Stopwatch.StartNew();
         var skip = 0;
         var baseRecordsAnalyzed = context.Metrics.RecordsAnalyzed;
+        var scope = context.Scope;
+
         while (!ct.IsCancellationRequested)
         {
             var settings = Throttler.Settings.CleanseAnalysis;
-            var batch = await context.Fetcher(skip, settings.PumpBatchSize, ct);
+
+            var (batch, fetchMs) = await Timed.RunAsync(() => context.Fetcher(skip, settings.PumpBatchSize, ct));
+            scope?.TrackElapsed("fetching", fetchMs);
+            Trace.TraceInformation($"KRDSBRIDGE | PumpAsync | {context.PumpName} | Fetched batch, skip={skip}, batchSize={batch.Data.Count}, fetchDuration={fetchMs}ms");
 
             if (batch.Data.Count == 0)
             {
                 break;
             }
 
-            await ProcessBatchAsync(batch, context, ct);
+            var processMs = await Timed.RunAsync(() => ProcessBatchAsync(batch, context, ct));
+            scope?.TrackElapsed("record_processing", processMs);
+            Trace.TraceInformation($"KRDSBRIDGE | PumpAsync | {context.PumpName} | Batch processed, count={batch.Data.Count}, processingDuration={processMs}ms");
 
             skip += batch.Data.Count;
             context.Metrics.RecordsAnalyzed = baseRecordsAnalyzed + skip;
+            scope?.UpdateProgress(skip);
 
-            RunStatsService.RecordSnapshot(context.OperationId, context.Metrics.RecordsAnalyzed);
-
-            if (context.Metrics.RecordsAnalyzed % settings.ProgressUpdateInterval == 0)
+            // Check for external cancellation requests (e.g. user-initiated)
+            if (context.IsCancellationRequested?.Invoke() == true)
             {
-                await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
+                throw new OperationCanceledException("Cancellation requested by user.");
             }
-
-            await Throttler.DelayAsync(settings.PumpDelayMs, ct);
         }
 
-        // Always fire a final progress update so the description and phase counters
-        // reflect the actual totals even when the last batch didn't align with the
-        // progressUpdateInterval.
-        if (skip > 0)
-        {
-            await context.ProgressCallback(context.Metrics.RecordsAnalyzed, context.TotalRecords, context.Metrics.IssuesFound, context.Metrics.IssuesResolved);
-        }
+        pumpStopwatch.Stop();
+        Trace.TraceInformation($"KRDSBRIDGE | PumpAsync | END, pump={context.PumpName}, recordsProcessed={skip}, totalAnalyzed={context.Metrics.RecordsAnalyzed}, issues={context.Metrics.IssuesFound}, duration={pumpStopwatch.ElapsedMilliseconds}ms");
     }
 
-    public async Task<AnalysisMetrics> ExecuteAsync(string operationId, ProgressCallback progressCallback, CancellationToken ct)
+    public async Task<AnalysisMetrics> ExecuteAsync(string operationId, CancellationToken ct,
+        OperationScope? scope = null, Func<bool>? isCancellationRequested = null)
     {
+        Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | BEGIN, operationId={operationId}");
+        var executeStopwatch = Stopwatch.StartNew();
         var metrics = new AnalysisMetrics();
 
-        var ctsTotalRecords = await dataService.GetCtsCphHoldingsCountAsync(ct);
-        var samTotalRecords = await dataService.GetSamCphHoldingsCountAsync(ct);
-        var totalRecords = ctsTotalRecords + samTotalRecords;
+        // Pre-load all CTS and SAM data into memory before pumping
+        Trace.TraceInformation("KRDSBRIDGE | ExecuteAsync | Starting data preload");
+        var preloadScope = scope?.CreateChild(OperationPhases.Preload);
+        await preloadScope.RunAsync(
+            () => dataService.PreloadAsync(ct, preloadScope, isCancellationRequested),
+            "Preload cancelled", "Preload failed");
+        Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | Preload complete, elapsed={executeStopwatch.ElapsedMilliseconds}ms");
 
-        await progressCallback(0, totalRecords, 0, 0);
+        var ctsTotalRecords = dataService.GetCtsCphHoldingsCount();
+        var samTotalRecords = dataService.GetSamCphHoldingsCount();
+        var totalRecords = ctsTotalRecords + samTotalRecords;
+        Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | Counts retrieved, ctsRecords={ctsTotalRecords}, samRecords={samTotalRecords}, total={totalRecords}");
+
+        // Set the authoritative total on the Analysis scope now that preload counts are known.
+        // Includes preload records + pump records so progress is tracked across all phases.
+        var preloadRecordCount = dataService.GetTotalPreloadedRecordCount();
+        scope?.UpdateTotal(preloadRecordCount + totalRecords, "Analyzing records...");
 
         // iterate CTS CPH records
-        await PumpAsync(new PumpContext(totalRecords, operationId, metrics, progressCallback,
-            dataService.ListCtsCphHoldingsAsync, ProcessCtsPrimaryRecordAsync,
-            DataFields.CtsCphHoldingFields.LidFullIdentifier), ct);
-
-        // Pre-load all CTS LID_FULL_IDENTIFIER values so CPH→LID resolution
-        // can be done in-memory instead of via regex queries on MongoDB.
-        CphToLidLookup = await BuildCphToLidLookupAsync(ct);
+        Trace.TraceInformation("KRDSBRIDGE | ExecuteAsync | Starting CTS Pump");
+        var ctsPumpScope = scope?.CreateChild("CTS Pump");
+        ctsPumpScope?.Start(ctsTotalRecords, "Processing CTS records");
+        await ctsPumpScope.RunAsync(
+            () => PumpAsync(new PumpContext(totalRecords, operationId, metrics,
+                (skip, batchSize, token) => Task.FromResult(dataService.ListCtsCphHoldings(skip, batchSize)),
+                ProcessCtsPrimaryRecordAsync,
+                DataFields.CtsCphHoldingFields.LidFullIdentifier, "CTS Pump", ctsPumpScope, isCancellationRequested), ct),
+            "CTS Pump cancelled", "CTS Pump failed");
+        Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | CTS Pump complete, elapsed={executeStopwatch.ElapsedMilliseconds}ms");
 
         // iterate SAM CPH records
-        await PumpAsync(new PumpContext(totalRecords, operationId, metrics, progressCallback,
-            dataService.ListSamCphHoldingsAsync, ProcessSamPrimaryRecordAsync,
-            DataFields.SamCphHoldingFields.Cph), ct);
+        Trace.TraceInformation("KRDSBRIDGE | ExecuteAsync | Starting SAM Pump");
+        var samPumpScope = scope?.CreateChild("SAM Pump");
+        samPumpScope?.Start(samTotalRecords, "Processing SAM records");
+        await samPumpScope.RunAsync(
+            () => PumpAsync(new PumpContext(totalRecords, operationId, metrics,
+                (skip, batchSize, token) => Task.FromResult(dataService.ListSamCphHoldings(skip, batchSize)),
+                ProcessSamPrimaryRecordAsync,
+                DataFields.SamCphHoldingFields.Cph, "SAM Pump", samPumpScope, isCancellationRequested), ct),
+            "SAM Pump cancelled", "SAM Pump failed");
 
+        executeStopwatch.Stop();
+        Trace.TraceInformation($"KRDSBRIDGE | ExecuteAsync | END, operationId={operationId}, records={metrics.RecordsAnalyzed}, issues={metrics.IssuesFound}, duration={executeStopwatch.ElapsedMilliseconds}ms");
         return metrics;
     }
 
@@ -118,7 +142,7 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
             var id = record[context.IdFieldKey]?.ToString();
             if (id != null)
             {
-                await context.RecordProcessor(id, context.OperationId, context.Metrics, ct);
+                await context.RecordProcessor(id, context.OperationId, context.Metrics, ct, context.Scope);
             }
         }
     }
@@ -142,47 +166,4 @@ public abstract class CleanseAnalysisEngineBase(ICtsSamQueryService dataService,
             var effectiveTo => effectiveTo > DateTime.UtcNow
         };
 
-
-    /// <summary>
-    /// Pages through all CTS CPH Holding records in throttled batches,
-    /// building a dictionary that maps each CPH value to its full LID_FULL_IDENTIFIER.
-    /// </summary>
-    private async Task<Dictionary<string, string>> BuildCphToLidLookupAsync(CancellationToken ct)
-    {
-        logger.LogInformation("Building CPH to LID lookup: starting");
-        var stopwatch = Stopwatch.StartNew();
-
-        var lookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var skip = 0;
-
-        while (!ct.IsCancellationRequested)
-        {
-            var settings = Throttler.Settings.CleanseAnalysis;
-            var batch = await dataService.ListCtsCphHoldingsAsync(skip, settings.PumpBatchSize, ct);
-
-            if (batch.Data.Count == 0)
-            {
-                break;
-            }
-
-            foreach (var record in batch.Data)
-            {
-                var lid = LidFullIdentifier.TryParse(record[DataFields.CtsCphHoldingFields.LidFullIdentifier]?.ToString());
-                if (lid is not null)
-                {
-                    lookup.TryAdd(lid.Cph.Value, lid.Value);
-                }
-            }
-
-            skip += batch.Data.Count;
-            await Throttler.DelayAsync(settings.PumpDelayMs, ct);
-        }
-
-        stopwatch.Stop();
-        logger.LogInformation("Building CPH to LID lookup: completed. Records={RecordCount}, Duration={DurationMs}ms ({DurationSeconds}s)",
-            lookup.Count, stopwatch.ElapsedMilliseconds, stopwatch.Elapsed.TotalSeconds);
-
-        return lookup;
-    }
-
-    }
+}

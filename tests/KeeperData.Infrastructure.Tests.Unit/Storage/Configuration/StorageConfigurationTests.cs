@@ -112,6 +112,7 @@ public class StorageWithCredentialsConfigurationTests
         config.BucketName.Should().BeEmpty();
         config.AccessKeySecretName.Should().BeEmpty();
         config.SecretKeySecretName.Should().BeEmpty();
+        config.ServiceUrl.Should().BeNull();
     }
 
     [Fact]
@@ -122,13 +123,15 @@ public class StorageWithCredentialsConfigurationTests
             HealthcheckEnabled = true,
             BucketName = "my-bucket",
             AccessKeySecretName = "my-access-key",
-            SecretKeySecretName = "my-secret-key"
+            SecretKeySecretName = "my-secret-key",
+            ServiceUrl = "https://vpce-example.s3.eu-west-2.vpce.amazonaws.com"
         };
 
         config.HealthcheckEnabled.Should().BeTrue();
         config.BucketName.Should().Be("my-bucket");
         config.AccessKeySecretName.Should().Be("my-access-key");
         config.SecretKeySecretName.Should().Be("my-secret-key");
+        config.ServiceUrl.Should().Be("https://vpce-example.s3.eu-west-2.vpce.amazonaws.com");
     }
 
     [Fact]

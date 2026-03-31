@@ -11,4 +11,7 @@ public record StorageConfiguration
     public required string SourceExternalPrefix { get; init; }
     public required string SourceInternalPrefix { get; init; }
     public required string TargetInternalPrefix { get; init; }
+
+    public bool UseFileSystem { get; init; }
+    public string? FileSystemBasePath { get; init; }
 }

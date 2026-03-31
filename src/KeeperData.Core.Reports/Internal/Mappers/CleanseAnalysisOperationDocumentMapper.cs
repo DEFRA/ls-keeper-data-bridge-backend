@@ -3,6 +3,7 @@ using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Operations.Command.AggregateRoots;
 using KeeperData.Core.Reports.Cleanse.Operations.Queries.Dtos;
 using KeeperData.Core.Reports.Internal.Documents;
+using KeeperData.Core.Reports.Operations;
 
 namespace KeeperData.Core.Reports.Internal.Mappers;
 
@@ -31,8 +32,7 @@ internal static class CleanseAnalysisOperationDocumentMapper
         FinalAverageRpm = operation.FinalAverageRpm,
         CancellationRequested = operation.CancellationRequested,
         CancelledAtUtc = operation.CancelledAtUtc,
-        CurrentPhase = operation.CurrentPhase,
-        Phases = operation.Phases.Select(ToPhaseDocument).ToList()
+        Progress = operation.Progress is not null ? ToOperationNodeDocument(operation.Progress) : null
     };
 
     public static CleanseAnalysisOperation ToAggregateRoot(this CleanseAnalysisOperationDocument doc) => new()
@@ -54,8 +54,7 @@ internal static class CleanseAnalysisOperationDocumentMapper
         FinalAverageRpm = doc.FinalAverageRpm,
         CancellationRequested = doc.CancellationRequested,
         CancelledAtUtc = doc.CancelledAtUtc,
-        CurrentPhase = doc.CurrentPhase,
-        Phases = doc.Phases.Select(ToPhaseProgress).ToList()
+        Progress = doc.Progress is not null ? ToOperationNode(doc.Progress) : null
     };
 
     public static CleanseAnalysisOperationDto ToDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -76,8 +75,7 @@ internal static class CleanseAnalysisOperationDocumentMapper
         ReportUrl = doc.ReportUrl,
         FinalAverageRpm = doc.FinalAverageRpm,
         CancelledAtUtc = doc.CancelledAtUtc,
-        CurrentPhase = doc.CurrentPhase,
-        Phases = doc.Phases.Count > 0 ? doc.Phases.Select(ToPhaseProgress).ToList() : null
+        Progress = doc.Progress is not null ? ToOperationNode(doc.Progress) : null
     };
 
     public static CleanseAnalysisOperationSummaryDto ToSummaryDto(this CleanseAnalysisOperationDocument doc) => new()
@@ -95,33 +93,40 @@ internal static class CleanseAnalysisOperationDocumentMapper
         ReportObjectKey = doc.ReportObjectKey,
         ReportUrl = doc.ReportUrl,
         FinalAverageRpm = doc.FinalAverageRpm,
-        CancelledAtUtc = doc.CancelledAtUtc,
-        CurrentPhase = doc.CurrentPhase
+        CancelledAtUtc = doc.CancelledAtUtc
     };
 
-    private static OperationPhaseProgressDocument ToPhaseDocument(OperationPhaseProgress p) => new()
+    private static OperationNodeDocument ToOperationNodeDocument(OperationNode node) => new()
     {
-        Name = p.Name,
-        Status = p.Status,
-        Percentage = p.Percentage,
-        Description = p.Description,
-        RecordsProcessed = p.RecordsProcessed,
-        TotalRecords = p.TotalRecords,
-        StartedAtUtc = p.StartedAtUtc,
-        CompletedAtUtc = p.CompletedAtUtc,
-        DurationMs = p.DurationMs
+        Name = node.Name,
+        Status = node.Status,
+        Description = node.Description,
+        PercentComplete = node.PercentComplete,
+        ProcessedCount = node.ProcessedCount,
+        TotalRecords = node.TotalRecords,
+        ElapsedMs = node.ElapsedMs,
+        Elapsed = node.Elapsed,
+        ProjectedRemainingMs = node.ProjectedRemainingMs,
+        ProjectedEndTimeUtc = node.ProjectedEndTimeUtc,
+        CurrentRecordsPerMinute = node.CurrentRecordsPerMinute,
+        AverageRecordsPerMinute = node.AverageRecordsPerMinute,
+        Children = node.Children?.Select(ToOperationNodeDocument).ToList()
     };
 
-    private static OperationPhaseProgress ToPhaseProgress(OperationPhaseProgressDocument d) => new()
+    private static OperationNode ToOperationNode(OperationNodeDocument doc) => new()
     {
-        Name = d.Name,
-        Status = d.Status,
-        Percentage = d.Percentage,
-        Description = d.Description,
-        RecordsProcessed = d.RecordsProcessed,
-        TotalRecords = d.TotalRecords,
-        StartedAtUtc = d.StartedAtUtc,
-        CompletedAtUtc = d.CompletedAtUtc,
-        DurationMs = d.DurationMs
+        Name = doc.Name,
+        Status = doc.Status,
+        Description = doc.Description,
+        PercentComplete = doc.PercentComplete,
+        ProcessedCount = doc.ProcessedCount,
+        TotalRecords = doc.TotalRecords,
+        ElapsedMs = doc.ElapsedMs,
+        Elapsed = doc.Elapsed,
+        ProjectedRemainingMs = doc.ProjectedRemainingMs,
+        ProjectedEndTimeUtc = doc.ProjectedEndTimeUtc,
+        CurrentRecordsPerMinute = doc.CurrentRecordsPerMinute,
+        AverageRecordsPerMinute = doc.AverageRecordsPerMinute,
+        Children = doc.Children?.Select(ToOperationNode).ToList()
     };
 }

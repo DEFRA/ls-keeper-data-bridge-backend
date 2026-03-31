@@ -1,4 +1,5 @@
 using KeeperData.Core.Reports.Issues.Command.AggregateRoots;
+using KeeperData.Core.Reports.Operations;
 
 namespace KeeperData.Core.Reports.Issues.Command.Abstract;
 
@@ -23,8 +24,10 @@ public interface IIssueAggRootRepository
     /// <param name="currentOperationId">The current operation identifier.</param>
     /// <param name="onBatchProcessed">Optional callback invoked after each batch with (deactivatedSoFar, totalStale).</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="scope">Optional operation scope for unified progress tracking.</param>
+    /// <param name="isCancellationRequested">Optional callback polled between batches to detect DB-level cancellation.</param>
     /// <returns>The number of issues deactivated.</returns>
-    Task<int> DeactivateStaleAsync(string currentOperationId, Func<int, int, Task>? onBatchProcessed, CancellationToken ct = default);
+    Task<int> DeactivateStaleAsync(string currentOperationId, Func<int, int, Task>? onBatchProcessed, CancellationToken ct = default, OperationScope? scope = null, Func<bool>? isCancellationRequested = null);
 
     /// <summary>
     /// Deletes all issues.

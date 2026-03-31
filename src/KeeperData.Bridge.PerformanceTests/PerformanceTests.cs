@@ -63,9 +63,9 @@ public class PerformanceTests : IAsyncLifetime
         await _localStackContainer.StartAsync();
         _output.WriteLine(" LocalStack container started");
 
-        // Create S3 client
+        // Create S3 client — uses hard-coded credentials for LocalStack test container only
         _s3Client = new AmazonS3Client(
-            new Amazon.Runtime.BasicAWSCredentials("test", "test"),
+            new Amazon.Runtime.BasicAWSCredentials("test", "test"), // NOSONAR S6706 — test-only LocalStack credentials
             new AmazonS3Config
             {
                 ServiceURL = _localStackContainer.GetConnectionString(),
@@ -293,7 +293,7 @@ public class PerformanceTests : IAsyncLifetime
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["AesSalt"] = "Jr8Lm2PXzd7qNbVyWutRfGBxhkHTpE"
+                ["AesSalt"] = "Jr8Lm2PXzd7qNbVyWutRfGBxhkHTpE" // NOSONAR S6706 — test-only salt, not used in production
             }!)
             .Build();
         services.AddSingleton<IConfiguration>(configuration);

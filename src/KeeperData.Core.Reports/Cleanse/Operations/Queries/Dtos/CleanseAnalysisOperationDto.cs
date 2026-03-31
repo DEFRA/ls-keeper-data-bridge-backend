@@ -1,4 +1,5 @@
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
+using KeeperData.Core.Reports.Operations;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
@@ -94,20 +95,8 @@ public class CleanseAnalysisOperationDto
     public DateTime? CancelledAtUtc { get; set; }
 
     /// <summary>
-    /// Gets or sets the name of the currently executing phase.
+    /// Gets or sets the unified operation tree progress snapshot.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? CurrentPhase { get; set; }
-
-    /// <summary>
-    /// Gets or sets the per-phase progress breakdown.
-    /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<OperationPhaseProgress>? Phases { get; set; }
-
-    /// <summary>
-    /// Gets or sets live performance statistics. Only populated for running operations.
-    /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public CleanseRunStatsDto? Stats { get; set; }
+    public OperationNode? Progress { get; set; }
 }

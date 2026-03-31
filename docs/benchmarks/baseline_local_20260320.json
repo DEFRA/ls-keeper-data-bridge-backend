@@ -1,0 +1,729 @@
+{
+  "environment": "DESKTOP-1P63P70",
+  "timestampUtc": "2026-03-20T17:09:33.54663Z",
+  "config": {
+    "seedCount": 1000,
+    "concurrency": 2,
+    "duration": "00:00:08",
+    "throttleDelay": "00:00:00.0050000",
+    "collectionPrefix": "_benchmark_"
+  },
+  "status": "Completed",
+  "totalElapsedSeconds": 40.3,
+  "datasetFingerprints": [
+    {
+      "collectionName": "_benchmark_source",
+      "documentCount": 1000,
+      "avgDocumentSizeBytes": 355.3,
+      "p95DocumentSizeBytes": 400
+    },
+    {
+      "collectionName": "_benchmark_lookup",
+      "documentCount": 200,
+      "avgDocumentSizeBytes": 69.45,
+      "p95DocumentSizeBytes": 70
+    },
+    {
+      "collectionName": "_benchmark_write",
+      "documentCount": 0,
+      "avgDocumentSizeBytes": 0,
+      "p95DocumentSizeBytes": 0
+    }
+  ],
+  "indexFingerprints": [
+    {
+      "collectionName": "_benchmark_source",
+      "indexName": "_id_",
+      "keyDefinition": {
+        "_id": 1
+      },
+      "isUnique": false
+    },
+    {
+      "collectionName": "_benchmark_source",
+      "indexName": "ix_createdAt_status",
+      "keyDefinition": {
+        "createdAt": 1,
+        "status": 1
+      },
+      "isUnique": false
+    },
+    {
+      "collectionName": "_benchmark_source",
+      "indexName": "ix_status_category",
+      "keyDefinition": {
+        "status": 1,
+        "category": 1
+      },
+      "isUnique": false
+    },
+    {
+      "collectionName": "_benchmark_source",
+      "indexName": "ix_referenceId",
+      "keyDefinition": {
+        "referenceId": 1
+      },
+      "isUnique": false
+    },
+    {
+      "collectionName": "_benchmark_lookup",
+      "indexName": "_id_",
+      "keyDefinition": {
+        "_id": 1
+      },
+      "isUnique": false
+    },
+    {
+      "collectionName": "_benchmark_write",
+      "indexName": "_id_",
+      "keyDefinition": {
+        "_id": 1
+      },
+      "isUnique": false
+    },
+    {
+      "collectionName": "_benchmark_write",
+      "indexName": "ix_sourceId",
+      "keyDefinition": {
+        "sourceId": 1
+      },
+      "isUnique": false
+    }
+  ],
+  "scenarioResults": [
+    {
+      "scenarioName": "PointLookup",
+      "totalOperations": 22486,
+      "errorCount": 0,
+      "elapsedSeconds": 8,
+      "opsPerSecond": 2810.64,
+      "effectiveOpsPerSecond": 1409.98,
+      "latency": {
+        "avgMs": 0.71,
+        "p50Ms": 0.7,
+        "p95Ms": 0.76,
+        "p99Ms": 1.04,
+        "minMs": 0.48,
+        "maxMs": 7.74
+      }
+    },
+    {
+      "scenarioName": "RangeQuery",
+      "totalOperations": 20155,
+      "errorCount": 0,
+      "elapsedSeconds": 8,
+      "opsPerSecond": 2519.13,
+      "effectiveOpsPerSecond": 1263.86,
+      "latency": {
+        "avgMs": 0.79,
+        "p50Ms": 0.78,
+        "p95Ms": 0.86,
+        "p99Ms": 1.21,
+        "minMs": 0.59,
+        "maxMs": 8.41
+      }
+    },
+    {
+      "scenarioName": "Aggregation",
+      "totalOperations": 11803,
+      "errorCount": 0,
+      "elapsedSeconds": 8,
+      "opsPerSecond": 1475.23,
+      "effectiveOpsPerSecond": 739,
+      "latency": {
+        "avgMs": 1.35,
+        "p50Ms": 1.34,
+        "p95Ms": 1.48,
+        "p99Ms": 1.94,
+        "minMs": 1.13,
+        "maxMs": 3.61
+      }
+    },
+    {
+      "scenarioName": "BulkWrite",
+      "totalOperations": 359,
+      "errorCount": 0,
+      "elapsedSeconds": 8.03,
+      "opsPerSecond": 44.68,
+      "effectiveOpsPerSecond": 22.36,
+      "latency": {
+        "avgMs": 44.72,
+        "p50Ms": 45.43,
+        "p95Ms": 46.52,
+        "p99Ms": 48.07,
+        "minMs": 40.76,
+        "maxMs": 48.7
+      }
+    },
+    {
+      "scenarioName": "MiniETL",
+      "totalOperations": 7392,
+      "errorCount": 0,
+      "elapsedSeconds": 8,
+      "opsPerSecond": 923.79,
+      "effectiveOpsPerSecond": 462.46,
+      "latency": {
+        "avgMs": 2.16,
+        "p50Ms": 2.14,
+        "p95Ms": 2.34,
+        "p99Ms": 3.24,
+        "minMs": 1.71,
+        "maxMs": 7.79
+      }
+    }
+  ],
+  "driverMetrics": {
+    "commandLatency": {
+      "explain": {
+        "avgMs": 0.85,
+        "p50Ms": 0.87,
+        "p95Ms": 1.08,
+        "p99Ms": 1.1,
+        "minMs": 0.59,
+        "maxMs": 1.1
+      },
+      "isMaster": {
+        "avgMs": 4.1,
+        "p50Ms": 4.1,
+        "p95Ms": 5.56,
+        "p99Ms": 5.69,
+        "minMs": 2.47,
+        "maxMs": 5.72
+      },
+      "createIndexes": {
+        "avgMs": 36.77,
+        "p50Ms": 36.77,
+        "p95Ms": 54.04,
+        "p99Ms": 55.58,
+        "minMs": 17.57,
+        "maxMs": 55.96
+      },
+      "aggregate": {
+        "avgMs": 0.9,
+        "p50Ms": 0.72,
+        "p95Ms": 1.31,
+        "p99Ms": 1.53,
+        "minMs": 0.51,
+        "maxMs": 3.52
+      },
+      "update": {
+        "avgMs": 2.68,
+        "p50Ms": 0.63,
+        "p95Ms": 1.05,
+        "p99Ms": 45.59,
+        "minMs": 0.44,
+        "maxMs": 59.84
+      },
+      "find": {
+        "avgMs": 0.62,
+        "p50Ms": 0.62,
+        "p95Ms": 0.67,
+        "p99Ms": 0.82,
+        "minMs": 0.4,
+        "maxMs": 2.04
+      },
+      "listIndexes": {
+        "avgMs": 0.54,
+        "p50Ms": 0.52,
+        "p95Ms": 0.58,
+        "p99Ms": 0.59,
+        "minMs": 0.51,
+        "maxMs": 0.59
+      },
+      "saslContinue": {
+        "avgMs": 0.67,
+        "p50Ms": 0.67,
+        "p95Ms": 0.68,
+        "p99Ms": 0.68,
+        "minMs": 0.66,
+        "maxMs": 0.68
+      }
+    },
+    "commandFailures": {},
+    "connectionCheckoutWait": {
+      "avgMs": 0,
+      "p50Ms": 0,
+      "p95Ms": 0,
+      "p99Ms": 0,
+      "minMs": 0,
+      "maxMs": 11.05
+    },
+    "checkoutFailures": 0,
+    "connectionsCreated": 2,
+    "connectionsClosed": 0,
+    "poolClearedEvents": 0
+  },
+  "explainResults": [
+    {
+      "queryName": "PointLookup",
+      "winningPlan": "{ \u0022stage\u0022 : \u0022IDHACK\u0022 }",
+      "totalDocsExamined": 1,
+      "totalKeysExamined": 1,
+      "nReturned": 1,
+      "rawExplain": {
+        "explainVersion": "1",
+        "queryPlanner": {
+          "namespace": "benchmark-test-db._benchmark_source",
+          "indexFilterSet": false,
+          "parsedQuery": {
+            "_id": {
+              "$eq": "bench-00000001"
+            }
+          },
+          "queryHash": "869CED4F",
+          "planCacheKey": "333C0A17",
+          "optimizationTimeMillis": 0,
+          "maxIndexedOrSolutionsReached": false,
+          "maxIndexedAndSolutionsReached": false,
+          "maxScansToExplodeReached": false,
+          "winningPlan": {
+            "stage": "IDHACK"
+          },
+          "rejectedPlans": []
+        },
+        "executionStats": {
+          "executionSuccess": true,
+          "nReturned": 1,
+          "executionTimeMillis": 0,
+          "totalKeysExamined": 1,
+          "totalDocsExamined": 1,
+          "executionStages": {
+            "stage": "IDHACK",
+            "nReturned": 1,
+            "executionTimeMillisEstimate": 0,
+            "works": 2,
+            "advanced": 1,
+            "needTime": 0,
+            "needYield": 0,
+            "saveState": 0,
+            "restoreState": 0,
+            "isEOF": 1,
+            "keysExamined": 1,
+            "docsExamined": 1
+          }
+        },
+        "command": {
+          "find": "_benchmark_source",
+          "filter": {
+            "_id": "bench-00000001"
+          },
+          "$db": "benchmark-test-db"
+        },
+        "serverInfo": {
+          "host": "1854d1e99367",
+          "port": 27017,
+          "version": "7.0.28",
+          "gitVersion": "cfc346c59d2cc3dbc903507fc642e22e3097f362"
+        },
+        "serverParameters": {
+          "internalQueryFacetBufferSizeBytes": 104857600,
+          "internalQueryFacetMaxOutputDocSizeBytes": 104857600,
+          "internalLookupStageIntermediateDocumentMaxSizeBytes": 104857600,
+          "internalDocumentSourceGroupMaxMemoryBytes": 104857600,
+          "internalQueryMaxBlockingSortMemoryUsageBytes": 104857600,
+          "internalQueryProhibitBlockingMergeOnMongoS": 0,
+          "internalQueryMaxAddToSetBytes": 104857600,
+          "internalDocumentSourceSetWindowFieldsMaxMemoryBytes": 104857600,
+          "internalQueryFrameworkControl": "forceClassicEngine"
+        },
+        "ok": 1
+      }
+    },
+    {
+      "queryName": "RangeQuery",
+      "winningPlan": "{ \u0022stage\u0022 : \u0022FETCH\u0022, \u0022inputStage\u0022 : { \u0022stage\u0022 : \u0022IXSCAN\u0022, \u0022keyPattern\u0022 : { \u0022createdAt\u0022 : 1, \u0022status\u0022 : 1 }, \u0022indexName\u0022 : \u0022ix_createdAt_status\u0022, \u0022isMultiKey\u0022 : false, \u0022multiKeyPaths\u0022 : { \u0022createdAt\u0022 : [], \u0022status\u0022 : [] }, \u0022isUnique\u0022 : false, \u0022isSparse\u0022 : false, \u0022isPartial\u0022 : false, \u0022indexVersion\u0022 : 2, \u0022direction\u0022 : \u0022forward\u0022, \u0022indexBounds\u0022 : { \u0022createdAt\u0022 : [\u0022[new Date(1704067200000), new Date(1704153600000))\u0022], \u0022status\u0022 : [\u0022[\\\u0022Active\\\u0022, \\\u0022Active\\\u0022]\u0022] } } }",
+      "totalDocsExamined": 34,
+      "totalKeysExamined": 35,
+      "nReturned": 34,
+      "rawExplain": {
+        "explainVersion": "1",
+        "queryPlanner": {
+          "namespace": "benchmark-test-db._benchmark_source",
+          "indexFilterSet": false,
+          "parsedQuery": {
+            "$and": [
+              {
+                "status": {
+                  "$eq": "Active"
+                }
+              },
+              {
+                "createdAt": {
+                  "$lt": "2024-01-02T00:00:00Z"
+                }
+              },
+              {
+                "createdAt": {
+                  "$gte": "2024-01-01T00:00:00Z"
+                }
+              }
+            ]
+          },
+          "queryHash": "0ED1FFA5",
+          "planCacheKey": "52FAA529",
+          "optimizationTimeMillis": 0,
+          "maxIndexedOrSolutionsReached": false,
+          "maxIndexedAndSolutionsReached": false,
+          "maxScansToExplodeReached": false,
+          "winningPlan": {
+            "stage": "FETCH",
+            "inputStage": {
+              "stage": "IXSCAN",
+              "keyPattern": {
+                "createdAt": 1,
+                "status": 1
+              },
+              "indexName": "ix_createdAt_status",
+              "isMultiKey": false,
+              "multiKeyPaths": {
+                "createdAt": [],
+                "status": []
+              },
+              "isUnique": false,
+              "isSparse": false,
+              "isPartial": false,
+              "indexVersion": 2,
+              "direction": "forward",
+              "indexBounds": {
+                "createdAt": [
+                  "[new Date(1704067200000), new Date(1704153600000))"
+                ],
+                "status": [
+                  "[\u0022Active\u0022, \u0022Active\u0022]"
+                ]
+              }
+            }
+          },
+          "rejectedPlans": [
+            {
+              "stage": "FETCH",
+              "filter": {
+                "$and": [
+                  {
+                    "createdAt": {
+                      "$lt": "2024-01-02T00:00:00Z"
+                    }
+                  },
+                  {
+                    "createdAt": {
+                      "$gte": "2024-01-01T00:00:00Z"
+                    }
+                  }
+                ]
+              },
+              "inputStage": {
+                "stage": "IXSCAN",
+                "keyPattern": {
+                  "status": 1,
+                  "category": 1
+                },
+                "indexName": "ix_status_category",
+                "isMultiKey": false,
+                "multiKeyPaths": {
+                  "status": [],
+                  "category": []
+                },
+                "isUnique": false,
+                "isSparse": false,
+                "isPartial": false,
+                "indexVersion": 2,
+                "direction": "forward",
+                "indexBounds": {
+                  "status": [
+                    "[\u0022Active\u0022, \u0022Active\u0022]"
+                  ],
+                  "category": [
+                    "[MinKey, MaxKey]"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "executionStats": {
+          "executionSuccess": true,
+          "nReturned": 34,
+          "executionTimeMillis": 0,
+          "totalKeysExamined": 35,
+          "totalDocsExamined": 34,
+          "executionStages": {
+            "stage": "FETCH",
+            "nReturned": 34,
+            "executionTimeMillisEstimate": 0,
+            "works": 36,
+            "advanced": 34,
+            "needTime": 0,
+            "needYield": 0,
+            "saveState": 0,
+            "restoreState": 0,
+            "isEOF": 1,
+            "docsExamined": 34,
+            "alreadyHasObj": 0,
+            "inputStage": {
+              "stage": "IXSCAN",
+              "nReturned": 34,
+              "executionTimeMillisEstimate": 0,
+              "works": 35,
+              "advanced": 34,
+              "needTime": 0,
+              "needYield": 0,
+              "saveState": 0,
+              "restoreState": 0,
+              "isEOF": 1,
+              "keyPattern": {
+                "createdAt": 1,
+                "status": 1
+              },
+              "indexName": "ix_createdAt_status",
+              "isMultiKey": false,
+              "multiKeyPaths": {
+                "createdAt": [],
+                "status": []
+              },
+              "isUnique": false,
+              "isSparse": false,
+              "isPartial": false,
+              "indexVersion": 2,
+              "direction": "forward",
+              "indexBounds": {
+                "createdAt": [
+                  "[new Date(1704067200000), new Date(1704153600000))"
+                ],
+                "status": [
+                  "[\u0022Active\u0022, \u0022Active\u0022]"
+                ]
+              },
+              "keysExamined": 35,
+              "seeks": 1,
+              "dupsTested": 0,
+              "dupsDropped": 0
+            }
+          }
+        },
+        "command": {
+          "find": "_benchmark_source",
+          "filter": {
+            "createdAt": {
+              "$gte": "2024-01-01T00:00:00Z",
+              "$lt": "2024-01-02T00:00:00Z"
+            },
+            "status": "Active"
+          },
+          "$db": "benchmark-test-db"
+        },
+        "serverInfo": {
+          "host": "1854d1e99367",
+          "port": 27017,
+          "version": "7.0.28",
+          "gitVersion": "cfc346c59d2cc3dbc903507fc642e22e3097f362"
+        },
+        "serverParameters": {
+          "internalQueryFacetBufferSizeBytes": 104857600,
+          "internalQueryFacetMaxOutputDocSizeBytes": 104857600,
+          "internalLookupStageIntermediateDocumentMaxSizeBytes": 104857600,
+          "internalDocumentSourceGroupMaxMemoryBytes": 104857600,
+          "internalQueryMaxBlockingSortMemoryUsageBytes": 104857600,
+          "internalQueryProhibitBlockingMergeOnMongoS": 0,
+          "internalQueryMaxAddToSetBytes": 104857600,
+          "internalDocumentSourceSetWindowFieldsMaxMemoryBytes": 104857600,
+          "internalQueryFrameworkControl": "forceClassicEngine"
+        },
+        "ok": 1
+      }
+    },
+    {
+      "queryName": "Aggregation",
+      "winningPlan": "N/A",
+      "totalDocsExamined": 0,
+      "totalKeysExamined": 0,
+      "nReturned": 0,
+      "rawExplain": {
+        "explainVersion": "1",
+        "stages": [
+          {
+            "$cursor": {
+              "queryPlanner": {
+                "namespace": "benchmark-test-db._benchmark_source",
+                "indexFilterSet": false,
+                "parsedQuery": {
+                  "status": {
+                    "$eq": "Active"
+                  }
+                },
+                "queryHash": "96BD56D3",
+                "planCacheKey": "FB887040",
+                "optimizationTimeMillis": 0,
+                "maxIndexedOrSolutionsReached": false,
+                "maxIndexedAndSolutionsReached": false,
+                "maxScansToExplodeReached": false,
+                "winningPlan": {
+                  "stage": "PROJECTION_COVERED",
+                  "transformBy": {
+                    "category": 1,
+                    "_id": 0
+                  },
+                  "inputStage": {
+                    "stage": "IXSCAN",
+                    "keyPattern": {
+                      "status": 1,
+                      "category": 1
+                    },
+                    "indexName": "ix_status_category",
+                    "isMultiKey": false,
+                    "multiKeyPaths": {
+                      "status": [],
+                      "category": []
+                    },
+                    "isUnique": false,
+                    "isSparse": false,
+                    "isPartial": false,
+                    "indexVersion": 2,
+                    "direction": "forward",
+                    "indexBounds": {
+                      "status": [
+                        "[\u0022Active\u0022, \u0022Active\u0022]"
+                      ],
+                      "category": [
+                        "[MinKey, MaxKey]"
+                      ]
+                    }
+                  }
+                },
+                "rejectedPlans": []
+              },
+              "executionStats": {
+                "executionSuccess": true,
+                "nReturned": 334,
+                "executionTimeMillis": 0,
+                "totalKeysExamined": 334,
+                "totalDocsExamined": 0,
+                "executionStages": {
+                  "stage": "PROJECTION_COVERED",
+                  "nReturned": 334,
+                  "executionTimeMillisEstimate": 0,
+                  "works": 335,
+                  "advanced": 334,
+                  "needTime": 0,
+                  "needYield": 0,
+                  "saveState": 1,
+                  "restoreState": 1,
+                  "isEOF": 1,
+                  "transformBy": {
+                    "category": 1,
+                    "_id": 0
+                  },
+                  "inputStage": {
+                    "stage": "IXSCAN",
+                    "nReturned": 334,
+                    "executionTimeMillisEstimate": 0,
+                    "works": 335,
+                    "advanced": 334,
+                    "needTime": 0,
+                    "needYield": 0,
+                    "saveState": 1,
+                    "restoreState": 1,
+                    "isEOF": 1,
+                    "keyPattern": {
+                      "status": 1,
+                      "category": 1
+                    },
+                    "indexName": "ix_status_category",
+                    "isMultiKey": false,
+                    "multiKeyPaths": {
+                      "status": [],
+                      "category": []
+                    },
+                    "isUnique": false,
+                    "isSparse": false,
+                    "isPartial": false,
+                    "indexVersion": 2,
+                    "direction": "forward",
+                    "indexBounds": {
+                      "status": [
+                        "[\u0022Active\u0022, \u0022Active\u0022]"
+                      ],
+                      "category": [
+                        "[MinKey, MaxKey]"
+                      ]
+                    },
+                    "keysExamined": 334,
+                    "seeks": 1,
+                    "dupsTested": 0,
+                    "dupsDropped": 0
+                  }
+                }
+              }
+            },
+            "nReturned": 334,
+            "executionTimeMillisEstimate": 0
+          },
+          {
+            "$group": {
+              "_id": "$category",
+              "count": {
+                "$sum": {
+                  "$const": 1
+                }
+              }
+            },
+            "maxAccumulatorMemoryUsageBytes": {
+              "count": 480
+            },
+            "totalOutputDataSizeBytes": 1225,
+            "usedDisk": false,
+            "spills": 0,
+            "spilledDataStorageSize": 0,
+            "numBytesSpilledEstimate": 0,
+            "spilledRecords": 0,
+            "nReturned": 5,
+            "executionTimeMillisEstimate": 0
+          }
+        ],
+        "serverInfo": {
+          "host": "1854d1e99367",
+          "port": 27017,
+          "version": "7.0.28",
+          "gitVersion": "cfc346c59d2cc3dbc903507fc642e22e3097f362"
+        },
+        "serverParameters": {
+          "internalQueryFacetBufferSizeBytes": 104857600,
+          "internalQueryFacetMaxOutputDocSizeBytes": 104857600,
+          "internalLookupStageIntermediateDocumentMaxSizeBytes": 104857600,
+          "internalDocumentSourceGroupMaxMemoryBytes": 104857600,
+          "internalQueryMaxBlockingSortMemoryUsageBytes": 104857600,
+          "internalQueryProhibitBlockingMergeOnMongoS": 0,
+          "internalQueryMaxAddToSetBytes": 104857600,
+          "internalDocumentSourceSetWindowFieldsMaxMemoryBytes": 104857600,
+          "internalQueryFrameworkControl": "forceClassicEngine"
+        },
+        "command": {
+          "aggregate": "_benchmark_source",
+          "pipeline": [
+            {
+              "$match": {
+                "status": "Active"
+              }
+            },
+            {
+              "$group": {
+                "_id": "$category",
+                "count": {
+                  "$sum": 1
+                }
+              }
+            }
+          ],
+          "cursor": {},
+          "$db": "benchmark-test-db"
+        },
+        "ok": 1
+      }
+    }
+  ],
+  "noisyNeighbourAnalysis": {
+    "hasRedFlags": false,
+    "overallRisk": "None",
+    "probableCause": null,
+    "flags": []
+  }
+}

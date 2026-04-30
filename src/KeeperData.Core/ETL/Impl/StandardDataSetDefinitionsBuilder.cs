@@ -12,6 +12,13 @@ public static class StandardDataSetDefinitionsBuilder
         var samHerd = list.With(new DataSetDefinition("sam_herd", "LITP_SAMHERD_{0}", ["CPHH", "HERDMARK", "ANIMAL_PURPOSE_CODE"], ChangeType.HeaderName, []));
         var samParty = list.With(new DataSetDefinition("sam_party", "LITP_SAMPARTY_{0}", ["PARTY_ID"], ChangeType.HeaderName, []));
 
+        var samTla = list.With(new DataSetDefinition("sam_tla", "LITP_SAMTLA_{0}", ["TEMP_CPH", "TEMP_LAND_OS_MAP_REFERENCE", "PERMANENT_CPH"], ChangeType.HeaderName, []));
+        var amls2CommonLand = list.With(new DataSetDefinition("amls2_common_land", "LITP_AMLS2COMMONLAND_{0}", ["MAIN_CPH", "COMMON_CPH"], ChangeType.HeaderName, []));
+        var amls2Port = list.With(new DataSetDefinition("amls2_port", "LITP_AMLS2PORT_{0}", ["CPH"], ChangeType.HeaderName, []));
+        var ctsAgent = list.With(new DataSetDefinition("cts_agent", "LITP_CTSAGENT_{0}", ["PAR_ID", "LID_FULL_IDENTIFIER"], ChangeType.HeaderName, []));
+        var amesHaulier = list.With(new DataSetDefinition("ames_haulier", "LITP_AMESHAULIER_{0}", ["DISPLAY_LICENCE_NUMBER"], ChangeType.HeaderName, [])); // no PK defined in the spec, but 'DISPLAY_LICENCE_NUMBER' is the only unique field in the data - and field cannot be null.
+        var samShowground = list.With(new DataSetDefinition("sam_showground", "LITP_SAMSHOWGROUND_{0}", ["CPH"], ChangeType.HeaderName, []));
+
         return new DataSetDefinitions
         {
             SamCPHHolding = samCPHHolding,
@@ -20,6 +27,14 @@ public static class StandardDataSetDefinitionsBuilder
             SamCPHHolder = samCPHHolder,
             SamHerd = samHerd,
             SamParty = samParty,
+
+            SamTla = samTla,
+            Amls2CommonLand = amls2CommonLand,
+            Amls2Port = amls2Port,
+            CtsAgent = ctsAgent,
+            AmesHaulier = amesHaulier,
+            SamShowground = samShowground,
+            
             All = [.. list]
         };
     }

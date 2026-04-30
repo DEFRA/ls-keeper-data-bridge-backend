@@ -20,6 +20,20 @@ public class DataSetDefinitions : IDataSetDefinitions
 
     public required DataSetDefinition SamParty { get; init; }
 
+
+    public required DataSetDefinition SamTla { get; init; }
+    
+    public required DataSetDefinition Amls2CommonLand { get; init; }
+
+    public required DataSetDefinition Amls2Port { get; init; }
+
+    public required DataSetDefinition CtsAgent { get; init; }
+
+    public required DataSetDefinition AmesHaulier { get; init; }
+
+    public required DataSetDefinition SamShowground { get; init; }
+
+
     public ImmutableArray<DataSetDefinition> All { get; init; }
 
 }

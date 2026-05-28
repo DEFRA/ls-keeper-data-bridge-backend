@@ -486,6 +486,21 @@ public class IngestionPipeline(
                 continue;
             }
 
+            // Validate CPH format for amls2_port collection
+            if (collectionName == "amls2_port")
+            {
+                var cphValue = csv.GetField("CPH");
+                if (!IsValid5DigitCph(cphValue))
+                {
+                    var primaryKeyValue = string.Join(EtlConstants.CompositeKeyDelimiter, headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty));
+                    Debug.WriteLine($"[keepetl] Invalid CPH format '{cphValue}' (expected 5 digits) for record with primary key '{primaryKeyValue}' in file {fileKey}, skipping record");
+                    logger.LogWarning("Invalid CPH format '{CPH}' (expected 5 digits) for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
+                        cphValue, primaryKeyValue, fileKey);
+                    fileMetrics.RecordsSkipped++;
+                    continue;
+                }
+            }
+
             var document = CreateDocumentFromCsvRecord(csv, headers, definition);
             batch.Add((document, changeType));
 
@@ -603,6 +618,17 @@ public class IngestionPipeline(
         return changeType == ChangeType.Delete ||
                changeType == ChangeType.Update ||
                changeType == ChangeType.Insert;
+    }
+
+    private static bool IsValid5DigitCph(string? cphValue)
+    {
+        if (string.IsNullOrWhiteSpace(cphValue))
+        {
+            return false;
+        }
+
+        // CPH should be exactly 5 digits
+        return cphValue.Length == 5 && cphValue.All(char.IsDigit);
     }
 
     private void LogProgressIfNeeded(int recordsProcessed, string fileKey)

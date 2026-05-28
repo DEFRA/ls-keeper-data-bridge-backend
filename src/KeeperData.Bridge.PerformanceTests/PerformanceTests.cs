@@ -323,6 +323,12 @@ public class PerformanceTests : IAsyncLifetime
             SamCPHHolder = dataSetDefinition,
             SamHerd = dataSetDefinition,
             SamParty = dataSetDefinition,
+            SamTla = dataSetDefinition,
+            Amls2CommonLand = dataSetDefinition,
+            Amls2Port = dataSetDefinition,
+            CtsAgent = dataSetDefinition,
+            AmesHaulier = dataSetDefinition,
+            SamShowground = dataSetDefinition,
             All = [dataSetDefinition]
         };
         services.AddSingleton<Core.ETL.Abstract.IDataSetDefinitions>(dataSetDefinitions);

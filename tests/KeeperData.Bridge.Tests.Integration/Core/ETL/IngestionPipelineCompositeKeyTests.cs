@@ -548,6 +548,12 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
             SamCPHHolder = dataSetDefinition,
             SamHerd = dataSetDefinition,
             SamParty = dataSetDefinition,
+            SamTla = dataSetDefinition,
+            Amls2CommonLand = dataSetDefinition,
+            Amls2Port = dataSetDefinition,
+            CtsAgent = dataSetDefinition,
+            AmesHaulier = dataSetDefinition,
+            SamShowground = dataSetDefinition,
             All = [dataSetDefinition]
         };
 

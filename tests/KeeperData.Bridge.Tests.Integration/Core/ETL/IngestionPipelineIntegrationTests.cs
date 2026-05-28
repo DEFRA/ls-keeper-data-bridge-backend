@@ -844,6 +844,123 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task StartAsync_WithInvalidCphForAmls2Port_ShouldSkipInvalidRecords()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+
+        // CSV with mix of valid and invalid CPH values for amls2_port collection
+        // Valid CPH: exactly 5 digits
+        // Invalid CPH: wrong length, contains letters, null/empty
+        var csvContent = "CPH|PortName|Location|CHANGE_TYPE\n"
+            + "12345|Valid Port 1|Location A|I\n"           // Valid: 5 digits
+            + "67890|Valid Port 2|Location B|I\n"           // Valid: 5 digits
+            + "1234|Invalid Port 3|Location C|I\n"          // Invalid: 4 digits
+            + "123456|Invalid Port 4|Location D|I\n"        // Invalid: 6 digits
+            + "12A45|Invalid Port 5|Location E|I\n"         // Invalid: contains letter
+            + "12-45|Invalid Port 6|Location F|I\n"         // Invalid: contains hyphen
+            + "|Invalid Port 7|Location G|I\n"              // Invalid: empty CPH
+            + "00000|Valid Port 3|Location H|I\n"           // Valid: 5 zeros (edge case)
+            + "ABC12|Invalid Port 8|Location I|I\n";        // Invalid: starts with letters
+
+        var fileName = $"LITP_AMLS2PORT_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
+
+        var importId = Guid.NewGuid();
+
+        // Act
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("amls2_port");
+
+        var documents = await collection.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync();
+
+        // Should only have 3 valid records (12345, 67890, 00000)
+        documents.Should().HaveCount(3, "only records with exactly 5 digits should be ingested");
+
+        // Verify the valid records
+        var validCphs = documents.Select(d => d["CPH"].AsString).ToList();
+        validCphs.Should().BeEquivalentTo(new[] { "12345", "67890", "00000" },
+            "only valid 5-digit CPH values should be in the database");
+
+        // Verify first valid record
+        var port1 = documents.FirstOrDefault(d => d["CPH"] == "12345");
+        port1.Should().NotBeNull();
+        port1!["PortName"].Should().Be("Valid Port 1");
+        port1["Location"].Should().Be("Location A");
+        port1.Contains("CreatedAtUtc").Should().BeTrue();
+        port1.Contains("UpdatedAtUtc").Should().BeTrue();
+
+        // Verify edge case (all zeros)
+        var port3 = documents.FirstOrDefault(d => d["CPH"] == "00000");
+        port3.Should().NotBeNull();
+        port3!["PortName"].Should().Be("Valid Port 3");
+
+        // Verify logs contain warnings about skipped records
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Invalid CPH format") && v.ToString()!.Contains("expected 5 digits")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.AtLeast(6),
+            "should log warnings for each invalid CPH record");
+
+        _testOutputHelper.WriteLine($"Successfully ingested {documents.Count} valid records and skipped 6 invalid records");
+    }
+
+    [Fact]
+    public async Task StartAsync_WithInvalidCphForAmls2Port_ShouldNotAffectOtherCollections()
+    {
+        // Arrange
+        var testDate = new DateOnly(2024, 12, 15);
+
+        // Test that CPH validation ONLY applies to amls2_port, not other collections
+        // sam_cph_holdings should accept non-5-digit CPH values
+        var csvContent = "CPH|FarmName|Owner|Address|CHANGE_TYPE\n"
+            + "1234|Farm One|Owner A|Address 1|I\n"         // 4 digits - should be accepted for sam_cph_holdings
+            + "123456|Farm Two|Owner B|Address 2|I\n"       // 6 digits - should be accepted for sam_cph_holdings
+            + "12A45|Farm Three|Owner C|Address 3|I\n";     // Contains letter - should be accepted for sam_cph_holdings
+
+        var fileName = $"LITP_SAMCPHHOLDING_{testDate:yyyyMMdd}120000.csv";
+        await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
+
+        var importId = Guid.NewGuid();
+
+        // Act
+        await _ingestionPipeline.StartAsync(CreateImportReport(importId), CancellationToken.None);
+
+        // Assert
+        var database = _mongoClient.GetDatabase(_testDatabaseName);
+        var collection = database.GetCollection<BsonDocument>("sam_cph_holdings");
+
+        var documents = await collection.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync();
+
+        // All 3 records should be ingested (CPH validation only applies to amls2_port)
+        documents.Should().HaveCount(3, "sam_cph_holdings should accept any CPH format");
+
+        var cphs = documents.Select(d => d["CPH"].AsString).ToList();
+        cphs.Should().BeEquivalentTo(new[] { "1234", "123456", "12A45" },
+            "CPH validation should not apply to collections other than amls2_port");
+
+        // Verify no warnings were logged about CPH format (only applies to amls2_port)
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Invalid CPH format") && v.ToString()!.Contains("expected 5 digits")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Never,
+            "should not log CPH validation warnings for collections other than amls2_port");
+
+        _testOutputHelper.WriteLine($"Successfully verified CPH validation only applies to amls2_port collection");
+    }
+
+    [Fact]
     public async Task StartAsync_WithEmptyAccumulatorFieldsOnFirstImport_ShouldCreateEmptyArrays()
     {
         // Arrange
@@ -935,7 +1052,16 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             SamCPHHolder = new DataSetDefinition("sam_cph_holder", "LITP_SAMCPHHOLDER_{0}", ["PARTY_ID"], ChangeType.HeaderName, []),
             SamHerd = new DataSetDefinition("sam_herd", "LITP_SAMHERD_{0}", ["CPHH", "HERDMARK", "ANIMAL_PURPOSE_CODE"], ChangeType.HeaderName, []),
             SamParty = new DataSetDefinition("sam_party", "LITP_SAMPARTY_{0}", ["PARTY_ID"], ChangeType.HeaderName, []),
-            All = [new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", ["CPH"], ChangeType.HeaderName, ["ADDRESS_PK", "DISEASE_TYPE", "ANIMAL_SPECIES_CODE"])]
+            SamTla = new DataSetDefinition("sam_tla", "LITP_SAMTLA_{0}", ["TEMP_CPH"], ChangeType.HeaderName, []),
+            Amls2CommonLand = new DataSetDefinition("amls2_common_land", "LITP_AMLS2COMMONLAND_{0}", ["MAIN_CPH"], ChangeType.HeaderName, []),
+            Amls2Port = new DataSetDefinition("amls2_port", "LITP_AMLS2PORT_{0}", ["CPH"], ChangeType.HeaderName, []),
+            CtsAgent = new DataSetDefinition("cts_agent", "LITP_CTSAGENT_{0}", ["PAR_ID"], ChangeType.HeaderName, []),
+            AmesHaulier = new DataSetDefinition("ames_haulier", "LITP_AMESHAULIER_{0}", ["DISPLAY_LICENCE_NUMBER"], ChangeType.HeaderName, []),
+            SamShowground = new DataSetDefinition("sam_showground", "LITP_SAMSHOWGROUND_{0}", ["CPH"], ChangeType.HeaderName, []),
+            All = [
+                new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", ["CPH"], ChangeType.HeaderName, ["ADDRESS_PK", "DISEASE_TYPE", "ANIMAL_SPECIES_CODE"]),
+                new DataSetDefinition("amls2_port", "LITP_AMLS2PORT_{0}", ["CPH"], ChangeType.HeaderName, [])
+            ]
         };
 
         factory.Setup(x => x.Create(It.IsAny<IBlobStorageServiceReadOnly>()))

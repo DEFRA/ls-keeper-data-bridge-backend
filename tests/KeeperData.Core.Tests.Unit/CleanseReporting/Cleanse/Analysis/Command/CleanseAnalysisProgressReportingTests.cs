@@ -275,7 +275,13 @@ public sealed class CleanseAnalysisProgressReportingTests
             SamCPHHolding = Def("sam_cph_holding"),
             SamHerd = Def("sam_herd"),
             SamParty = Def("sam_party"),
-            SamCPHHolder = Def("sam_cph_holder")
+            SamCPHHolder = Def("sam_cph_holder"),
+            SamTla = Def("sam_tla"),
+            Amls2CommonLand = Def("amls2_common_land"),
+            Amls2Port = Def("amls2_port"),
+            CtsAgent = Def("cts_agent"),
+            AmesHaulier = Def("ames_haulier"),
+            SamShowground = Def("sam_showground")
         };
     }
 

@@ -56,6 +56,12 @@ public class ODataQueryServiceIntegrationTests : IAsyncLifetime
             SamCPHHolder = new DataSetDefinition(_testCollectionName, "TEST_PRODUCTS_{0}", ["ProductId"], "CHANGETYPE", []),
             SamHerd = new DataSetDefinition(_testCollectionName, "TEST_PRODUCTS_{0}", ["ProductId"], "CHANGETYPE", []),
             SamParty = new DataSetDefinition(_testCollectionName, "TEST_PARTY_{0}", ["PartyId"], "CHANGETYPE", []),
+            SamTla = new DataSetDefinition("sam_tla", "LITP_SAMTLA_{0}", ["TEMP_CPH"], "CHANGETYPE", []),
+            Amls2CommonLand = new DataSetDefinition("amls2_common_land", "LITP_AMLS2COMMONLAND_{0}", ["MAIN_CPH"], "CHANGETYPE", []),
+            Amls2Port = new DataSetDefinition("amls2_port", "LITP_AMLS2PORT_{0}", ["CPH"], "CHANGETYPE", []),
+            CtsAgent = new DataSetDefinition("cts_agent", "LITP_CTSAGENT_{0}", ["PAR_ID"], "CHANGETYPE", []),
+            AmesHaulier = new DataSetDefinition("ames_haulier", "LITP_AMESHAULIER_{0}", ["DISPLAY_LICENCE_NUMBER"], "CHANGETYPE", []),
+            SamShowground = new DataSetDefinition("sam_showground", "LITP_SAMSHOWGROUND_{0}", ["CPH"], "CHANGETYPE", []),
             All =
             [
                 new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", ["CPH"], "CHANGETYPE", []),

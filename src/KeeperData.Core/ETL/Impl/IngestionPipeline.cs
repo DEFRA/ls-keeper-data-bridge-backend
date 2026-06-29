@@ -567,15 +567,15 @@ public class IngestionPipeline(
                changeType == ChangeType.Insert;
     }
 
-    private static bool IsValid5DigitCph(string? cphValue)
+    private static bool IsValid5CharAlphaCph(string? cphValue)
     {
         if (string.IsNullOrWhiteSpace(cphValue))
         {
             return false;
         }
 
-        // CPH should be exactly 5 digits
-        return cphValue.Length == 5 && cphValue.All(char.IsDigit);
+        // CPH should be exactly 5 alpha characters
+        return cphValue.Length == 5 && cphValue.All(char.IsLetter);
     }
 
     private bool TryValidateRecord(
@@ -602,12 +602,12 @@ public class IngestionPipeline(
         if (collectionName == "amls2_port")
         {
             var cphValue = csv.GetField("CPH");
-            if (!IsValid5DigitCph(cphValue))
+            if (!IsValid5CharAlphaCph(cphValue))
             {
                 var primaryKeyValue = string.Join(EtlConstants.CompositeKeyDelimiter,
                     headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty));
-                Debug.WriteLine($"[keepetl] Invalid CPH format '{cphValue}' (expected 5 digits) for record with primary key '{primaryKeyValue}' in file {fileKey}, skipping record");
-                logger.LogWarning("Invalid CPH format '{CPH}' (expected 5 digits) for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
+                Debug.WriteLine($"[keepetl] Invalid CPH format '{cphValue}' (expected 5 alpha characters) for record with primary key '{primaryKeyValue}' in file {fileKey}, skipping record");
+                logger.LogWarning("Invalid CPH format '{CPH}' (expected 5 alpha characters) for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
                     cphValue, primaryKeyValue, fileKey);
                 fileMetrics.RecordsSkipped++;
                 return false;

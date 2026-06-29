@@ -5,6 +5,22 @@ namespace KeeperData.Bridge.Tests.Integration.Helpers;
 
 public class DuckDbStubGeneratorTests : IDisposable
 {
+    private static readonly string[] ExpectedColumns =
+    [
+        "BATCH_ID", "CHANGE_TYPE", "CPH", "FEATURE_NAME", "CPH_TYPE",
+        "ADDRESS_PK", "SAON_START_NUMBER", "SAON_START_NUMBER_SUFFIX",
+        "SAON_END_NUMBER", "SAON_END_NUMBER_SUFFIX", "PAON_START_NUMBER",
+        "PAON_START_NUMBER_SUFFIX", "PAON_END_NUMBER", "PAON_END_NUMBER_SUFFIX",
+        "STREET", "TOWN", "LOCALITY", "UK_INTERNAL_CODE", "POSTCODE",
+        "COUNTRY_CODE", "UDPRN", "EASTING", "NORTHING", "OS_MAP_REFERENCE",
+        "DISEASE_TYPE", "INTERVAL", "INTERVAL_UNIT_OF_TIME",
+        "FEATURE_ADDRESS_FROM_DATE", "FEATURE_ADDRESS_TO_DATE",
+        "CPH_RELATIONSHIP_TYPE", "SECONDARY_CPH", "FACILITY_BUSINSS_ACTVTY_CODE",
+        "FACILITY_TYPE_CODE", "FCLTY_SUB_BSNSS_ACTVTY_CODE",
+        "FEATURE_STATUS_CODE", "MOVEMENT_RSTRCTN_RSN_CODE",
+        "ANIMAL_SPECIES_CODE", "ANIMAL_PRODUCTION_USAGE_CODE"
+    ];
+
     private readonly string _tempDir;
 
     public DuckDbStubGeneratorTests()
@@ -131,12 +147,9 @@ public class DuckDbStubGeneratorTests : IDisposable
         while (reader.Read())
             columns.Add((reader.GetString(0), reader.GetString(1)));
 
-        columns.Should().BeEquivalentTo([
-            ("CPH", "VARCHAR"),
-            ("FEATURE_NAME", "VARCHAR"),
-            ("SECONDARY_CPH", "VARCHAR"),
-            ("ANIMAL_SPECIES_CODE", "VARCHAR")
-        ]);
+        columns.Should().HaveCount(38);
+        columns.Select(c => c.Name).Should().BeEquivalentTo(ExpectedColumns, options => options.WithStrictOrdering());
+        columns.Should().OnlyContain(c => c.Type == "VARCHAR");
     }
 
     [Fact]
@@ -189,17 +202,16 @@ public class DuckDbStubGeneratorTests : IDisposable
         conn.Open();
 
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT CPH, FEATURE_NAME, SECONDARY_CPH, ANIMAL_SPECIES_CODE FROM sam_cph_holdings";
+        cmd.CommandText = "SELECT * FROM sam_cph_holdings";
         using var reader = cmd.ExecuteReader();
 
         var rows = new List<string>();
         while (reader.Read())
         {
-            var cph = reader.IsDBNull(0) ? "NULL" : reader.GetString(0);
-            var feature = reader.IsDBNull(1) ? "NULL" : reader.GetString(1);
-            var secondary = reader.IsDBNull(2) ? "NULL" : reader.GetString(2);
-            var species = reader.IsDBNull(3) ? "NULL" : reader.GetString(3);
-            rows.Add($"{cph}|{feature}|{secondary}|{species}");
+            var values = new string[reader.FieldCount];
+            for (var i = 0; i < reader.FieldCount; i++)
+                values[i] = reader.IsDBNull(i) ? "NULL" : reader.GetString(i);
+            rows.Add(string.Join("|", values));
         }
 
         return rows;

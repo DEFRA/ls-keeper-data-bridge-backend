@@ -199,7 +199,7 @@ public static class DuckDbStubGenerator
         row.AppendValue("1");                                                // BATCH_ID
         row.AppendValue("I");                                                // CHANGE_TYPE
         row.AppendNullValue();                                               // CPH (null edge case)
-        row.AppendValue(faker.PickRandom(new[] { "Feature Null" }));         // FEATURE_NAME
+        row.AppendValue("Feature Null");                                     // FEATURE_NAME
         row.AppendValue("MAIN");                                             // CPH_TYPE
         row.AppendNullValue();                                               // ADDRESS_PK
         row.AppendNullValue();                                               // SAON_START_NUMBER

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Amazon.S3.Model;
 using DuckDB.NET.Data;
 using FluentAssertions;
@@ -10,8 +11,10 @@ namespace KeeperData.Bridge.Tests.Integration.Helpers;
 /// and can be downloaded and queried — the same flow Phase II export code will use.
 /// </summary>
 [Collection("LocalStackAndDuckDb"), Trait("Dependence", "docker")]
-public class DuckDbStubFixtureIntegrationTests : IAsyncLifetime
+public partial class DuckDbStubFixtureIntegrationTests : IAsyncLifetime
 {
+    [GeneratedRegex(@"^\d{2}/\d{3}/\d{4}$")]
+    private static partial Regex CphFormatRegex();
     private readonly ITestOutputHelper _output;
     private readonly LocalStackFixture _localStackFixture;
     private readonly DuckDbStubFixture _duckDbStubFixture;
@@ -99,7 +102,7 @@ public class DuckDbStubFixtureIntegrationTests : IAsyncLifetime
                 cphs.Add(reader.GetString(0));
 
             cphs.Should().NotBeEmpty();
-            cphs.Should().OnlyContain(c => System.Text.RegularExpressions.Regex.IsMatch(c, @"^\d{2}/\d{3}/\d{4}$"));
+            cphs.Should().OnlyContain(c => CphFormatRegex().IsMatch(c));
             _output.WriteLine($"Found {cphs.Count} distinct CPHs after S3 round-trip");
         }
         finally

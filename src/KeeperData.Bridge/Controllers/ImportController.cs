@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using CsvHelper;
-using KeeperData.Bridge.Worker.Tasks;
+using KeeperData.Bridge.Worker.Coordination;
 using KeeperData.Core.Database;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Utils;
@@ -18,7 +18,7 @@ namespace KeeperData.Bridge.Controllers;
 [Route("api/[controller]")]
 [ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
 public class ImportController(
-    ITaskProcessBulkFiles taskProcessBulkFiles,
+    IIngestionRunCoordinator coordinator,
     IImportReportingService importReportingService,
     ILogger<ImportController> logger,
     ICollectionManagementService collectionManagementService,
@@ -77,7 +77,7 @@ public class ImportController(
 
         try
         {
-            var importId = await taskProcessBulkFiles.StartAsync(sourceType, cancellationToken);
+            var importId = await coordinator.StartAsync(sourceType, cancellationToken);
 
             if (importId == null)
             {

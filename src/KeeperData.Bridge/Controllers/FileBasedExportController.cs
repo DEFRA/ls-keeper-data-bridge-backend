@@ -77,6 +77,68 @@ public class FileBasedExportController(
         }
     }
 
+    /// <summary>
+    /// Gets the current status of a CPH export operation.
+    /// Returns the full status including progress, result path, and any error details.
+    /// </summary>
+    /// <param name="exportId">The export ID returned by the trigger endpoint</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    [HttpGet("{exportId:guid}")]
+    [ProducesResponseType(typeof(CphExportStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(CphExportErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(CphExportErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetExportStatus(Guid exportId, CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Received request to get export status for {ExportId}", exportId);
+
+        try
+        {
+            var status = await cphExportStatusService.GetAsync(exportId, cancellationToken);
+
+            if (status is null)
+            {
+                logger.LogWarning("Export status not found for {ExportId}", exportId);
+                return NotFound(new CphExportErrorResponse
+                {
+                    Message = $"Export not found: {exportId}",
+                    ExportId = exportId,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            return Ok(new CphExportStatusResponse
+            {
+                ExportId = status.ExportId,
+                Status = status.Status.ToString(),
+                RequestedAt = status.RequestedAt,
+                StartedAt = status.StartedAt,
+                CompletedAt = status.CompletedAt,
+                SourceDuckDbPath = status.SourceDuckDbPath,
+                SqlitePath = status.SqlitePath,
+                RowCount = status.RowCount,
+                ErrorMessage = status.ErrorMessage
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogWarning("Get export status request was cancelled for {ExportId}", exportId);
+            return StatusCode(499, new CphExportErrorResponse
+            {
+                Message = "Request was cancelled.",
+                Timestamp = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error getting export status for {ExportId}", exportId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new CphExportErrorResponse
+            {
+                Message = "An unexpected error occurred while retrieving the export status.",
+                Timestamp = DateTime.UtcNow
+            });
+        }
+    }
+
     private async Task ExecuteExportInBackground(Guid exportId)
     {
         await using var scope = serviceScopeFactory.CreateAsyncScope();
@@ -142,6 +204,20 @@ public record CphExportAcceptedResponse
     public required string Status { get; init; }
     public required string Message { get; init; }
     public DateTime RequestedAt { get; init; }
+}
+
+[ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]
+public record CphExportStatusResponse
+{
+    public required Guid ExportId { get; init; }
+    public required string Status { get; init; }
+    public required DateTime RequestedAt { get; init; }
+    public DateTime? StartedAt { get; init; }
+    public DateTime? CompletedAt { get; init; }
+    public required string SourceDuckDbPath { get; init; }
+    public string? SqlitePath { get; init; }
+    public int? RowCount { get; init; }
+    public string? ErrorMessage { get; init; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "DTO record - no logic to test.")]

@@ -155,6 +155,8 @@ public class CphExportService : ICphExportService
         }
 
         transaction.Commit();
+        connection.Close();
+        SqliteConnection.ClearPool(connection);
     }
 
     private static string ExtractTimestamp(string duckDbKey)

@@ -90,24 +90,29 @@ public class CphExportServiceTests : IDisposable
 
         CphExportService.WriteSqlite(sqlitePath, cphs);
 
-        using var connection = new SqliteConnection($"Data Source={sqlitePath};Mode=ReadOnly");
-        connection.Open();
-
-        using var countCmd = connection.CreateCommand();
-        countCmd.CommandText = "SELECT COUNT(*) FROM cphs";
-        var count = (long)countCmd.ExecuteScalar()!;
-        count.Should().Be(3);
-
-        using var selectCmd = connection.CreateCommand();
-        selectCmd.CommandText = "SELECT CPH FROM cphs ORDER BY CPH";
-        var reader = selectCmd.ExecuteReader();
-        var readCphs = new List<string>();
-        while (reader.Read())
+        using (var connection = new SqliteConnection($"Data Source={sqlitePath};Mode=ReadOnly"))
         {
-            readCphs.Add(reader.GetString(0));
+            connection.Open();
+
+            using var countCmd = connection.CreateCommand();
+            countCmd.CommandText = "SELECT COUNT(*) FROM cphs";
+            var count = (long)countCmd.ExecuteScalar()!;
+            count.Should().Be(3);
+
+            using var selectCmd = connection.CreateCommand();
+            selectCmd.CommandText = "SELECT CPH FROM cphs ORDER BY CPH";
+            var reader = selectCmd.ExecuteReader();
+            var readCphs = new List<string>();
+            while (reader.Read())
+            {
+                readCphs.Add(reader.GetString(0));
+            }
+
+            readCphs.Should().BeEquivalentTo(cphs);
+            connection.Close();
         }
 
-        readCphs.Should().BeEquivalentTo(cphs);
+        SqliteConnection.ClearAllPools();
     }
 
     [Fact]
@@ -117,13 +122,18 @@ public class CphExportServiceTests : IDisposable
 
         CphExportService.WriteSqlite(sqlitePath, []);
 
-        using var connection = new SqliteConnection($"Data Source={sqlitePath};Mode=ReadOnly");
-        connection.Open();
+        using (var connection = new SqliteConnection($"Data Source={sqlitePath};Mode=ReadOnly"))
+        {
+            connection.Open();
 
-        using var countCmd = connection.CreateCommand();
-        countCmd.CommandText = "SELECT COUNT(*) FROM cphs";
-        var count = (long)countCmd.ExecuteScalar()!;
-        count.Should().Be(0);
+            using var countCmd = connection.CreateCommand();
+            countCmd.CommandText = "SELECT COUNT(*) FROM cphs";
+            var count = (long)countCmd.ExecuteScalar()!;
+            count.Should().Be(0);
+            connection.Close();
+        }
+
+        SqliteConnection.ClearAllPools();
     }
 
     [Fact]

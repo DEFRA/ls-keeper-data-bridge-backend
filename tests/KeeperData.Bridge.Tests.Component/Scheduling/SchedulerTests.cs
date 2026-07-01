@@ -1,5 +1,5 @@
+using KeeperData.Bridge.Worker.Coordination;
 using KeeperData.Bridge.Worker.Jobs;
-using KeeperData.Bridge.Worker.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
@@ -14,9 +14,9 @@ public class SchedulerTests
     {
         var jobDidRun = new ManualResetEventSlim(false);
 
-        var taskProcessBulkFilesMock = new Mock<ITaskProcessBulkFiles>();
+        var coordinatorMock = new Mock<IIngestionRunCoordinator>();
 
-        taskProcessBulkFilesMock.Setup(x => x.RunAsync(It.IsAny<CancellationToken>()))
+        coordinatorMock.Setup(x => x.RunAsync(It.IsAny<CancellationToken>()))
             .Returns(() =>
             {
                 jobDidRun.Set();
@@ -26,7 +26,7 @@ public class SchedulerTests
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices((hostContext, services) =>
             {
-                services.AddScoped(_ => taskProcessBulkFilesMock.Object);
+                services.AddScoped(_ => coordinatorMock.Object);
                 services.AddScoped<ImportBulkFilesJob>();
 
                 services.AddQuartz(q =>
@@ -51,6 +51,6 @@ public class SchedulerTests
         await host.StopAsync();
 
         Assert.True(completedInTime, "The job did not complete in the expected time.");
-        taskProcessBulkFilesMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
+        coordinatorMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

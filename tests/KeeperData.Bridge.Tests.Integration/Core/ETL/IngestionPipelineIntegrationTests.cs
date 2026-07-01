@@ -850,18 +850,18 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
         var testDate = new DateOnly(2024, 12, 15);
 
         // CSV with mix of valid and invalid CPH values for amls2_port collection
-        // Valid CPH: exactly 5 digits
-        // Invalid CPH: wrong length, contains letters, null/empty
+        // Valid CPH: exactly 5 alpha characters
+        // Invalid CPH: wrong length, contains digits, null/empty
         var csvContent = "CPH|PortName|Location|CHANGE_TYPE\n"
-            + "12345|Valid Port 1|Location A|I\n"           // Valid: 5 digits
-            + "67890|Valid Port 2|Location B|I\n"           // Valid: 5 digits
-            + "1234|Invalid Port 3|Location C|I\n"          // Invalid: 4 digits
-            + "123456|Invalid Port 4|Location D|I\n"        // Invalid: 6 digits
-            + "12A45|Invalid Port 5|Location E|I\n"         // Invalid: contains letter
-            + "12-45|Invalid Port 6|Location F|I\n"         // Invalid: contains hyphen
+            + "ABRDD|Valid Port 1|Location A|I\n"           // Valid: 5 alpha chars
+            + "PORTS|Valid Port 2|Location B|I\n"           // Valid: 5 alpha chars
+            + "ABCD|Invalid Port 3|Location C|I\n"          // Invalid: 4 chars
+            + "ABCDEF|Invalid Port 4|Location D|I\n"        // Invalid: 6 chars
+            + "AB1CD|Invalid Port 5|Location E|I\n"         // Invalid: contains digit
+            + "AB-CD|Invalid Port 6|Location F|I\n"         // Invalid: contains hyphen
             + "|Invalid Port 7|Location G|I\n"              // Invalid: empty CPH
-            + "00000|Valid Port 3|Location H|I\n"           // Valid: 5 zeros (edge case)
-            + "ABC12|Invalid Port 8|Location I|I\n";        // Invalid: starts with letters
+            + "XYZAB|Valid Port 3|Location H|I\n"           // Valid: 5 alpha chars
+            + "12345|Invalid Port 8|Location I|I\n";        // Invalid: all digits
 
         var fileName = $"LITP_AMLS2PORT_{testDate:yyyyMMdd}120000.csv";
         await UploadCsvToS3($"{DestinationFolder}/{fileName}", csvContent);
@@ -877,24 +877,24 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
 
         var documents = await collection.Find(FilterDefinition<BsonDocument>.Empty).ToListAsync();
 
-        // Should only have 3 valid records (12345, 67890, 00000)
-        documents.Should().HaveCount(3, "only records with exactly 5 digits should be ingested");
+        // Should only have 3 valid records (ABRDD, PORTS, XYZAB)
+        documents.Should().HaveCount(3, "only records with exactly 5 alpha characters should be ingested");
 
         // Verify the valid records
         var validCphs = documents.Select(d => d["CPH"].AsString).ToList();
-        validCphs.Should().BeEquivalentTo(new[] { "12345", "67890", "00000" },
-            "only valid 5-digit CPH values should be in the database");
+        validCphs.Should().BeEquivalentTo(new[] { "ABRDD", "PORTS", "XYZAB" },
+            "only valid 5-alpha-character CPH values should be in the database");
 
         // Verify first valid record
-        var port1 = documents.FirstOrDefault(d => d["CPH"] == "12345");
+        var port1 = documents.FirstOrDefault(d => d["CPH"] == "ABRDD");
         port1.Should().NotBeNull();
         port1!["PortName"].Should().Be("Valid Port 1");
         port1["Location"].Should().Be("Location A");
         port1.Contains("CreatedAtUtc").Should().BeTrue();
         port1.Contains("UpdatedAtUtc").Should().BeTrue();
 
-        // Verify edge case (all zeros)
-        var port3 = documents.FirstOrDefault(d => d["CPH"] == "00000");
+        // Verify third valid record
+        var port3 = documents.FirstOrDefault(d => d["CPH"] == "XYZAB");
         port3.Should().NotBeNull();
         port3!["PortName"].Should().Be("Valid Port 3");
 
@@ -903,7 +903,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             x => x.Log(
                 LogLevel.Warning,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Invalid CPH format") && v.ToString()!.Contains("expected 5 digits")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Invalid CPH format") && v.ToString()!.Contains("expected 5 alpha characters")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.AtLeast(6),
@@ -951,7 +951,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             x => x.Log(
                 LogLevel.Warning,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Invalid CPH format") && v.ToString()!.Contains("expected 5 digits")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Invalid CPH format") && v.ToString()!.Contains("expected 5 alpha characters")),
                 It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Never,

@@ -51,29 +51,24 @@ public sealed class IngestionRunExecutor(
         ).Unwrap();
     }
 
-    public async Task RunWithRenewalAsync(IDistributedLockHandle lockHandle, Guid runId, string sourceType, CancellationToken externalCancellationToken)
+    public async Task RunWithRenewalAsync(IDistributedLockHandle lockHandle, Guid runId, string sourceType, CancellationToken cancellationToken)
     {
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellationToken);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var renewalTask = RenewLockPeriodicallyAsync(lockHandle, linkedCts.Token, runId);
 
         try
         {
             await legacyImport.RunImportAsync(runId, sourceType, linkedCts.Token);
         }
-        catch (OperationCanceledException) when (externalCancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             logger.LogInformation("Run was cancelled at {endTime}, (runId={runId})", DateTime.UtcNow, runId);
             throw;
         }
-        catch (OperationCanceledException) when (linkedCts.IsCancellationRequested && !externalCancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (linkedCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             logger.LogError("Run was stopped due to lock renewal failure at {endTime}, (runId={runId})", DateTime.UtcNow, runId);
             throw new InvalidOperationException("Run was cancelled due to lock renewal failure");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error occurred during run execution (runId={runId})", runId);
-            throw;
         }
         finally
         {
@@ -88,6 +83,7 @@ public sealed class IngestionRunExecutor(
             }
             catch (OperationCanceledException)
             {
+                // Expected: the renewal loop is cancelled once the run completes.
             }
             catch (Exception ex)
             {

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using KeeperData.Bridge.Worker.Tasks;
 using KeeperData.Core.Locking;
 using KeeperData.Infrastructure.Storage;
@@ -51,6 +52,16 @@ public sealed class IngestionRunCoordinator(
 
         logger.LogInformation("Lock acquired for {LockName}. Starting run in background with sourceType={sourceType} (runId={runId}).", _options.LockName, sourceType, runId);
 
+        StartRunInBackground(@lock, runId, sourceType, cancellationToken);
+
+        return runId;
+    }
+
+    // Fire-and-forget dispatch onto a background thread. Excluded from coverage because it is
+    // timing/threading bound and not unit-testable without real delays; exercised by integration tests.
+    [ExcludeFromCodeCoverage(Justification = "Background dispatch - exercised by integration tests, not unit-testable without real delays.")]
+    private void StartRunInBackground(IDistributedLockHandle @lock, Guid runId, string sourceType, CancellationToken cancellationToken)
+    {
         var stoppingToken = applicationLifetime.ApplicationStopping;
 
         _ = Task.Factory.StartNew(
@@ -77,8 +88,6 @@ public sealed class IngestionRunCoordinator(
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default
         ).Unwrap();
-
-        return runId;
     }
 
     private async Task ExecuteWithRenewalAsync(IDistributedLockHandle lockHandle, Guid runId, string sourceType, CancellationToken externalCancellationToken)
@@ -126,6 +135,9 @@ public sealed class IngestionRunCoordinator(
         }
     }
 
+    // Timer-driven lock renewal. Excluded from coverage because it depends on real delays and
+    // cannot be unit-tested deterministically without a time abstraction; exercised by integration tests.
+    [ExcludeFromCodeCoverage(Justification = "Timer-driven renewal loop - not unit-testable without real delays.")]
     private async Task RenewLockPeriodicallyAsync(IDistributedLockHandle lockHandle, CancellationToken cancellationToken, Guid runId)
     {
         logger.LogDebug("Starting lock renewal task for {LockName} with interval {RenewalInterval} (runId={runId})", _options.LockName, _options.RenewalInterval, runId);

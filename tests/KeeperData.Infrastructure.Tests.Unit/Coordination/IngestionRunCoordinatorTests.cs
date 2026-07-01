@@ -1,7 +1,5 @@
 using KeeperData.Bridge.Worker.Coordination;
-using KeeperData.Bridge.Worker.Tasks;
 using KeeperData.Core.Locking;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -11,79 +9,71 @@ namespace KeeperData.Infrastructure.Tests.Unit.Coordination
     public class IngestionRunCoordinatorTests
     {
         private readonly Mock<IDistributedLock> _distributedLock = new();
-        private readonly Mock<ITaskProcessBulkFiles> _legacyImport = new();
-        private readonly Mock<IHostApplicationLifetime> _lifetime = new();
+        private readonly Mock<IIngestionRunExecutor> _executor = new();
         private readonly IngestionRunCoordinator _sut;
 
         public IngestionRunCoordinatorTests()
         {
-            _lifetime.Setup(l => l.ApplicationStopping).Returns(CancellationToken.None);
-
             _sut = new IngestionRunCoordinator(
                 Mock.Of<ILogger<IngestionRunCoordinator>>(),
                 _distributedLock.Object,
-                _legacyImport.Object,
-                _lifetime.Object,
+                _executor.Object,
                 Options.Create(new IngestionRunOptions()));
         }
 
-        [Fact]
-        public async Task RunAsync_WhenLockNotAcquired_DoesNotRunImport()
-        {
+        private void SetupLock(IDistributedLockHandle? handle) =>
             _distributedLock
                 .Setup(l => l.TryAcquireAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((IDistributedLockHandle?)null);
+                .ReturnsAsync(handle);
+
+        [Fact]
+        public async Task RunAsync_WhenLockNotAcquired_DoesNotExecute()
+        {
+            SetupLock(null);
 
             await _sut.RunAsync(CancellationToken.None);
 
-            _legacyImport.Verify(
-                x => x.RunImportAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            _executor.Verify(
+                x => x.RunWithRenewalAsync(It.IsAny<IDistributedLockHandle>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
 
         [Fact]
-        public async Task RunAsync_WhenLockAcquired_RunsImportOnce()
+        public async Task RunAsync_WhenLockAcquired_ExecutesOnce()
         {
-            var handle = new Mock<IDistributedLockHandle>();
-            _distributedLock
-                .Setup(l => l.TryAcquireAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(handle.Object);
+            SetupLock(Mock.Of<IDistributedLockHandle>());
 
             await _sut.RunAsync(CancellationToken.None);
 
-            _legacyImport.Verify(
-                x => x.RunImportAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            _executor.Verify(
+                x => x.RunWithRenewalAsync(It.IsAny<IDistributedLockHandle>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 
         [Fact]
-        public async Task StartAsync_WhenLockNotAcquired_ReturnsNullAndDoesNotRunImport()
+        public async Task StartAsync_WhenLockNotAcquired_ReturnsNullAndDoesNotExecute()
         {
-            _distributedLock
-                .Setup(l => l.TryAcquireAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((IDistributedLockHandle?)null);
+            SetupLock(null);
 
             var result = await _sut.StartAsync("external", CancellationToken.None);
 
             Assert.Null(result);
-            _legacyImport.Verify(
-                x => x.RunImportAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            _executor.Verify(
+                x => x.StartInBackground(It.IsAny<IDistributedLockHandle>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
 
         [Fact]
-        public async Task StartAsync_WhenLockAcquired_ReturnsRunId()
+        public async Task StartAsync_WhenLockAcquired_ReturnsRunIdAndStartsBackgroundRun()
         {
-            var handle = new Mock<IDistributedLockHandle>();
-            _distributedLock
-                .Setup(l => l.TryAcquireAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(handle.Object);
+            SetupLock(Mock.Of<IDistributedLockHandle>());
 
             var result = await _sut.StartAsync("external", CancellationToken.None);
 
-            // StartAsync's contract is synchronous: acquire the lock and return the run id.
-            // The background run itself is fire-and-forget and covered by integration tests.
             Assert.NotNull(result);
+            _executor.Verify(
+                x => x.StartInBackground(It.IsAny<IDistributedLockHandle>(), It.IsAny<Guid>(), "external", It.IsAny<CancellationToken>()),
+                Times.Once);
         }
     }
 }

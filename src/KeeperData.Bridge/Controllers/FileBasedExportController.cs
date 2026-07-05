@@ -34,12 +34,7 @@ public class FileBasedExportController(
                 logger.LogWarning("CPH export conflict — export {ExportId} is already {Status}",
                     runningExport.ExportId, runningExport.Status);
 
-                return Conflict(new CphExportErrorResponse
-                {
-                    Message = $"An export is already {runningExport.Status.ToString().ToLowerInvariant()}. Please wait for it to complete.",
-                    ExportId = runningExport.ExportId,
-                    Timestamp = DateTime.UtcNow
-                });
+                return BuildConflictResponse(runningExport);
             }
 
             var exportId = Guid.NewGuid();
@@ -49,31 +44,17 @@ public class FileBasedExportController(
 
             logger.LogInformation("CPH export {ExportId} accepted and queued for background execution", exportId);
 
-            return Accepted(new CphExportAcceptedResponse
-            {
-                ExportId = exportId,
-                Status = status.Status.ToString(),
-                Message = "CPH export queued and will run in the background.",
-                RequestedAt = status.RequestedAt
-            });
+            return BuildAcceptedResponse(exportId, status);
         }
         catch (OperationCanceledException)
         {
             logger.LogWarning("CPH export trigger request was cancelled");
-            return StatusCode(499, new CphExportErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
+            return CancelledResponse();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error triggering CPH export");
-            return StatusCode(StatusCodes.Status500InternalServerError, new CphExportErrorResponse
-            {
-                Message = "An unexpected error occurred while triggering the export.",
-                Timestamp = DateTime.UtcNow
-            });
+            return InternalErrorResponse("An unexpected error occurred while triggering the export.");
         }
     }
 
@@ -98,53 +79,63 @@ public class FileBasedExportController(
             if (status is null)
             {
                 logger.LogWarning("Export status not found for {ExportId}", exportId);
-                return NotFound(new CphExportErrorResponse
-                {
-                    Message = $"Export not found: {exportId}",
-                    ExportId = exportId,
-                    Timestamp = DateTime.UtcNow
-                });
+                return NotFound(ErrorResponse($"Export not found: {exportId}", exportId));
             }
 
-            return Ok(new CphExportStatusResponse
-            {
-                ExportId = status.ExportId,
-                Status = status.Status.ToString(),
-                RequestedAt = status.RequestedAt,
-                StartedAt = status.StartedAt,
-                CompletedAt = status.CompletedAt,
-                SourceDuckDbPath = status.SourceDuckDbPath,
-                SqlitePath = status.SqlitePath,
-                RowCount = status.RowCount,
-                ErrorMessage = status.ErrorMessage
-            });
+            return Ok(MapToStatusResponse(status));
         }
         catch (OperationCanceledException)
         {
             logger.LogWarning("Get export status request was cancelled for {ExportId}", exportId);
-            return StatusCode(499, new CphExportErrorResponse
-            {
-                Message = "Request was cancelled.",
-                Timestamp = DateTime.UtcNow
-            });
+            return CancelledResponse();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error getting export status for {ExportId}", exportId);
-            return StatusCode(StatusCodes.Status500InternalServerError, new CphExportErrorResponse
-            {
-                Message = "An unexpected error occurred while retrieving the export status.",
-                Timestamp = DateTime.UtcNow
-            });
+            return InternalErrorResponse("An unexpected error occurred while retrieving the export status.");
         }
     }
+
+    private static CphExportErrorResponse ErrorResponse(string message, Guid? exportId = null) =>
+        new() { Message = message, ExportId = exportId, Timestamp = DateTime.UtcNow };
+
+    private IActionResult BuildConflictResponse(CphExportStatus runningExport) =>
+        Conflict(ErrorResponse(
+            $"An export is already {runningExport.Status.ToString().ToLowerInvariant()}. Please wait for it to complete.",
+            runningExport.ExportId));
+
+    private IActionResult BuildAcceptedResponse(Guid exportId, CphExportStatus status) =>
+        Accepted(new CphExportAcceptedResponse
+        {
+            ExportId = exportId,
+            Status = status.Status.ToString(),
+            Message = "CPH export queued and will run in the background.",
+            RequestedAt = status.RequestedAt
+        });
+
+    private IActionResult CancelledResponse() =>
+        StatusCode(499, ErrorResponse("Request was cancelled."));
+
+    private IActionResult InternalErrorResponse(string message) =>
+        StatusCode(StatusCodes.Status500InternalServerError, ErrorResponse(message));
+
+    private static CphExportStatusResponse MapToStatusResponse(CphExportStatus status) => new()
+    {
+        ExportId = status.ExportId,
+        Status = status.Status.ToString(),
+        RequestedAt = status.RequestedAt,
+        StartedAt = status.StartedAt,
+        CompletedAt = status.CompletedAt,
+        SourceDuckDbPath = status.SourceDuckDbPath,
+        SqlitePath = status.SqlitePath,
+        RowCount = status.RowCount,
+        ErrorMessage = status.ErrorMessage
+    };
 
     private async Task ExecuteExportInBackground(Guid exportId)
     {
         await using var scope = serviceScopeFactory.CreateAsyncScope();
-        var scopedExportService = scope.ServiceProvider.GetRequiredService<ICphExportService>();
-        var scopedStatusService = scope.ServiceProvider.GetRequiredService<ICphExportStatusService>();
-        var scopedLogger = scope.ServiceProvider.GetRequiredService<ILogger<FileBasedExportController>>();
+        var (scopedExportService, scopedStatusService, scopedLogger) = GetScopedServices(scope);
 
         try
         {
@@ -163,11 +154,7 @@ public class FileBasedExportController(
 
             var result = await scopedExportService.ExportAsync();
 
-            status.Status = ExportStatusType.Succeeded;
-            status.CompletedAt = DateTime.UtcNow;
-            status.SqlitePath = result.SqliteKey;
-            status.RowCount = result.RowCount;
-            await scopedStatusService.UpdateAsync(status);
+            await UpdateSuccessStatus(scopedStatusService, status, result);
 
             scopedLogger.LogInformation("CPH export {ExportId} succeeded — {RowCount} rows exported to {SqliteKey}",
                 exportId, result.RowCount, result.SqliteKey);
@@ -175,22 +162,55 @@ public class FileBasedExportController(
         catch (Exception ex)
         {
             scopedLogger.LogError(ex, "CPH export {ExportId} failed", exportId);
+            await UpdateExceptionStatus(scopedStatusService, exportId, ex, scopedLogger);
+        }
+    }
 
-            try
+    private static async Task UpdateExceptionStatus(ICphExportStatusService scopedStatusService, Guid exportId, Exception ex, ILogger<FileBasedExportController> scopedLogger)
+    {
+        try
+        {
+            await UpdateStatusAsync(scopedStatusService, exportId, s =>
             {
-                var status = await scopedStatusService.GetAsync(exportId);
-                if (status is not null)
-                {
-                    status.Status = ExportStatusType.Failed;
-                    status.CompletedAt = DateTime.UtcNow;
-                    status.ErrorMessage = ex.Message;
-                    await scopedStatusService.UpdateAsync(status);
-                }
-            }
-            catch (Exception updateEx)
-            {
-                scopedLogger.LogError(updateEx, "Failed to update export status {ExportId} after error", exportId);
-            }
+                s.Status = ExportStatusType.Failed;
+                s.CompletedAt = DateTime.UtcNow;
+                s.ErrorMessage = ex.Message;
+            });
+        }
+        catch (Exception updateEx)
+        {
+            scopedLogger.LogError(updateEx, "Failed to update export status {ExportId} after error", exportId);
+        }
+    }
+
+    private static (ICphExportService, ICphExportStatusService, ILogger<FileBasedExportController>) GetScopedServices(
+        IServiceScope scope) => (
+            scope.ServiceProvider.GetRequiredService<ICphExportService>(),
+            scope.ServiceProvider.GetRequiredService<ICphExportStatusService>(),
+            scope.ServiceProvider.GetRequiredService<ILogger<FileBasedExportController>>());
+
+    private static async Task UpdateSuccessStatus(
+        ICphExportStatusService statusService,
+        CphExportStatus status,
+        CphExportResult result)
+    {
+        status.Status = ExportStatusType.Succeeded;
+        status.CompletedAt = DateTime.UtcNow;
+        status.SqlitePath = result.SqliteKey;
+        status.RowCount = result.RowCount;
+        await statusService.UpdateAsync(status);
+    }
+
+    private static async Task UpdateStatusAsync(
+        ICphExportStatusService statusService,
+        Guid exportId,
+        Action<CphExportStatus> mutate)
+    {
+        var status = await statusService.GetAsync(exportId);
+        if (status is not null)
+        {
+            mutate(status);
+            await statusService.UpdateAsync(status);
         }
     }
 }

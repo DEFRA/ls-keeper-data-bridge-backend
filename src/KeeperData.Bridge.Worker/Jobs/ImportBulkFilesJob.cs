@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using KeeperData.Bridge.Worker.Tasks;
+using KeeperData.Bridge.Worker.Coordination;
 using Microsoft.Extensions.Logging;
 using Quartz;
 
@@ -8,7 +8,7 @@ namespace KeeperData.Bridge.Worker.Jobs;
 [DisallowConcurrentExecution]
 [ExcludeFromCodeCoverage(Justification = "Quartz job wrapper - covered by integration tests.")]
 public class ImportBulkFilesJob(
-    ITaskProcessBulkFiles taskProcessBulkFiles,
+    IIngestionRunCoordinator coordinator,
     ILogger<ImportBulkFilesJob> logger) : IJob
 {
     public async Task Execute(IJobExecutionContext context)
@@ -17,7 +17,7 @@ public class ImportBulkFilesJob(
 
         try
         {
-            await taskProcessBulkFiles.RunAsync(context.CancellationToken);
+            await coordinator.RunAsync(context.CancellationToken);
 
             logger.LogInformation("ImportBulkFilesJob completed at {endTime}", DateTime.UtcNow);
         }

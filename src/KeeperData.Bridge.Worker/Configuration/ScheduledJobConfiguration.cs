@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace KeeperData.Bridge.Worker.Configuration;
 
+[ExcludeFromCodeCoverage(Justification = "Configuration DTO - bound from settings, no logic to test.")]
 public class ScheduledJobConfiguration
 {
     public string JobType { get; set; } = string.Empty;

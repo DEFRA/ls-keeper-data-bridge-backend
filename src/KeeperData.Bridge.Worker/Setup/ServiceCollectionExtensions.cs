@@ -1,4 +1,5 @@
 using KeeperData.Bridge.Worker.Configuration;
+using KeeperData.Bridge.Worker.Coordination;
 using KeeperData.Bridge.Worker.Jobs;
 using KeeperData.Bridge.Worker.Tasks;
 using KeeperData.Bridge.Worker.Tasks.Implementations;
@@ -18,6 +19,8 @@ public static class ServiceCollectionExtensions
             .AddQuartz(configuration)
             .AddJobs()
             .AddTasks();
+
+        services.Configure<IngestionRunOptions>(configuration.GetSection(IngestionRunOptions.SectionName));
     }
 
     private static IServiceCollection AddQuartz(this IServiceCollection services, IConfiguration configuration)
@@ -67,6 +70,8 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddTasks(this IServiceCollection services)
     {
+        services.AddScoped<IIngestionRunCoordinator, IngestionRunCoordinator>();
+        services.AddScoped<IIngestionRunExecutor, IngestionRunExecutor>();
         services.AddScoped<ITaskProcessBulkFiles, TaskProcessBulkFiles>();
         services.AddScoped<ITaskRunCleanseReport, TaskRunCleanseReport>();
 

@@ -15,7 +15,7 @@ public sealed class PipelineExecutor(ILogger<PipelineExecutor> logger) : IPipeli
         logger.LogInformation(
             "Pipeline starting with {StageCount} stage(s): {Stages}",
             pipeline.Steps.Count,
-            string.Join(" -> ", pipeline.StageNames));
+            string.Join(" -> ", pipeline.GetStageNames()));
 
         try
         {
@@ -47,8 +47,8 @@ public sealed class PipelineExecutor(ILogger<PipelineExecutor> logger) : IPipeli
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Pipeline failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-            throw;
+            throw new PipelineExecutionException(
+                $"Pipeline failed after {stopwatch.ElapsedMilliseconds}ms.", ex);
         }
 
         stopwatch.Stop();
@@ -76,5 +76,12 @@ public sealed class PipelineExecutor(ILogger<PipelineExecutor> logger) : IPipeli
             yield return item;
         }
         await Task.CompletedTask;
+    }
+}
+
+public class PipelineExecutionException : Exception
+{
+    public PipelineExecutionException(string message, Exception exception) : base(message, exception)
+    {
     }
 }

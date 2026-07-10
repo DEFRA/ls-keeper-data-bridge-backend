@@ -15,5 +15,5 @@ public sealed class PipelineDefinition
     }
 
     /// <summary>Stage names in order (useful for inspection and tests).</summary>
-    public IReadOnlyList<string> StageNames => Steps.Select(s => s.Name).ToList();
+    public IReadOnlyList<string> GetStageNames() => Steps.Select(s => s.Name).ToList();
 }

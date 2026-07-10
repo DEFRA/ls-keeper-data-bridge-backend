@@ -23,7 +23,7 @@ public class PipelineFrameworkTests
             .Then(new SumStage())
             .Build();
 
-        definition.StageNames.Should().Equal("double", "sum");
+        definition.GetStageNames().Should().Equal("double", "sum");
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public class PipelineFrameworkTests
 
         Func<Task> act = () => Executor().RunAsync(definition, Context(), CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<PipelineExecutionException>();
     }
 
     [Fact]

@@ -149,7 +149,7 @@ public static class DuckDbStubGenerator
         }
     }
 
-    private static void AppendNormalRow(DuckDBAppenderRow row, Faker faker, List<string> cphPool, int index)
+    private static void AppendNormalRow(IDuckDBAppenderRow row, Faker faker, List<string> cphPool, int index)
     {
         var cph = faker.PickRandom(cphPool);
         var addressPk = (25000000 + index + 1).ToString();
@@ -194,7 +194,7 @@ public static class DuckDbStubGenerator
         row.AppendValue(faker.PickRandom(AnimalProductionUsageCodes));        // ANIMAL_PRODUCTION_USAGE_CODE
     }
 
-    private static void AppendNullCphRow(DuckDBAppenderRow row, Faker faker)
+    private static void AppendNullCphRow(IDuckDBAppenderRow row, Faker faker)
     {
         row.AppendValue("1");                                                // BATCH_ID
         row.AppendValue("I");                                                // CHANGE_TYPE
@@ -236,7 +236,7 @@ public static class DuckDbStubGenerator
         row.AppendValue(faker.PickRandom(AnimalProductionUsageCodes));        // ANIMAL_PRODUCTION_USAGE_CODE
     }
 
-    private static void AppendEmptyCphRow(DuckDBAppenderRow row, Faker faker)
+    private static void AppendEmptyCphRow(IDuckDBAppenderRow row, Faker faker)
     {
         row.AppendValue("1");                                                // BATCH_ID
         row.AppendValue("I");                                                // CHANGE_TYPE

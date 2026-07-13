@@ -10,6 +10,7 @@ using KeeperData.Infrastructure.Benchmarking.Setup;
 using KeeperData.Infrastructure.Config;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Database.Setup;
+using KeeperData.Infrastructure.ETL.Setup;
 using KeeperData.Infrastructure.Extensions;
 using KeeperData.Infrastructure.Json;
 using KeeperData.Infrastructure.Messaging.Setup;
@@ -55,6 +56,8 @@ namespace KeeperData.Bridge.Setup
             services.AddStorageDependencies(configuration);
 
             services.AddEtlDependencies(configuration);
+
+            services.AddFileBasedEtlServices();
 
             services.AddCrypto(configuration);
 

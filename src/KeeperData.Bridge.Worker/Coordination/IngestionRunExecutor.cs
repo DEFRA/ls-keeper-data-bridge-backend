@@ -1,5 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using KeeperData.Bridge.Worker.Tasks;
+using KeeperData.Core.Pipeline;
+using KeeperData.Core.EtlPipeline;
+using KeeperData.Core;
 using KeeperData.Core.Locking;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -16,11 +19,14 @@ namespace KeeperData.Bridge.Worker.Coordination;
 public sealed class IngestionRunExecutor(
     ILogger<IngestionRunExecutor> logger,
     ITaskProcessBulkFiles legacyImport,
+    IEtlPipelineFactory etlPipelineFactory,
+    IPipelineExecutor pipelineExecutor,
     IHostApplicationLifetime applicationLifetime,
     IOptions<IngestionRunOptions> options) : IIngestionRunExecutor
 {
     private readonly IngestionRunOptions _options = options.Value;
-
+    private readonly bool _runNewPipeline = false; // keep this off , until we're ready
+        
     public void StartInBackground(IDistributedLockHandle lockHandle, Guid runId, string sourceType, CancellationToken cancellationToken)
     {
         var stoppingToken = applicationLifetime.ApplicationStopping;
@@ -59,6 +65,9 @@ public sealed class IngestionRunExecutor(
         try
         {
             await legacyImport.RunImportAsync(runId, sourceType, linkedCts.Token);
+
+            if (_runNewPipeline)
+                await RunEtlPipelineAsync(runId, sourceType, linkedCts.Token);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -90,6 +99,18 @@ public sealed class IngestionRunExecutor(
                 logger.LogError(ex, "Unexpected error in lock renewal task for {LockName} (runId={runId})", _options.LockName, runId);
             }
         }
+    }
+
+    private async Task RunEtlPipelineAsync(Guid runId, string sourceType, CancellationToken cancellationToken)
+    {
+        logger.LogInformation("ETL pipeline started (runId={runId})", runId);
+
+        var pipeline = etlPipelineFactory.Create();
+        var context = new EtlPipelineContext(runId, sourceType, EtlConstants.DefaultLookbackDays);
+
+        await pipelineExecutor.RunAsync(pipeline, context, cancellationToken);
+
+        logger.LogInformation("ETL pipeline completed (runId={runId})", runId);
     }
 
     private async Task RenewLockPeriodicallyAsync(IDistributedLockHandle lockHandle, CancellationToken cancellationToken, Guid runId)

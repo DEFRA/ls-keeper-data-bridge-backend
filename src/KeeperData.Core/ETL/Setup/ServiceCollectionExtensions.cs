@@ -7,6 +7,7 @@ using KeeperData.Core.Reporting.Setup;
 using KeeperData.Core.Telemetry;
 using KeeperData.Core.Throttling.Setup;
 using Microsoft.Extensions.Configuration;
+using KeeperData.Core.EtlPipeline.Setup;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics.CodeAnalysis;
 
@@ -28,6 +29,8 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IIngestionPipeline, IngestionPipeline>();
         services.AddTransient<IAcquisitionPipeline, AcquisitionPipeline>();
         services.AddTransient<IImportOrchestrator, ImportOrchestrator>();
+
+        services.AddEtlPipeline();
 
         services.AddReportingDependencies();
 

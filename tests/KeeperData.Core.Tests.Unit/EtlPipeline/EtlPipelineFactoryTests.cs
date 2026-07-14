@@ -3,7 +3,6 @@ using FluentAssertions;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline;
-using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage;
@@ -30,6 +29,30 @@ public class EtlPipelineFactoryTests
             Mock.Of<ILogger<ReportDiscoveredFilesStage>>());
     }
 
+    private void GivenCatalogueReturns(DataSetDefinition definition, params EtlFile[] files)
+    {
+        _catalogue
+            .Setup(c => c.GetFileSetsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImmutableList.Create(new FileSet(definition, files)));
+
+        _catalogueFactory.Setup(f => f.Create(It.IsAny<string>())).Returns(_catalogue.Object);
+    }
+
+    private static DataSetDefinition Definition(string name) =>
+        new(name, $"{name}_{{0}}", ["cph"], "CHANGE_TYPE", []);
+
+    private static EtlFile File(string key) =>
+        new(new StorageObjectInfo
+        {
+            Container = "external",
+            Key = key,
+            StorageUri = new Uri($"s3://external/{key}")
+        }, DateTimeOffset.UtcNow);
+
+    private static Task RunAsync(PipelineDefinition pipeline, EtlPipelineContext context) =>
+        new PipelineExecutor(Mock.Of<ILogger<PipelineExecutor>>())
+            .RunAsync(pipeline, context, CancellationToken.None);
+
     [Fact]
     public void Create_defines_the_reporting_stage_after_discovery()
     {
@@ -39,60 +62,13 @@ public class EtlPipelineFactoryTests
     }
 
     [Fact]
-    public async Task Running_the_pipeline_yields_the_discovered_file_sets()
+    public async Task Running_the_pipeline_writes_a_discovery_manifest_per_dataset()
     {
-        var definition = new DataSetDefinition("SAM_CPH", "SAM_CPH_{0}", ["cph"], "CHANGE_TYPE", []);
-        var file = new EtlFile(
-            new StorageObjectInfo
-            {
-                Container = "external",
-                Key = "SAM_CPH_1.csv",
-                StorageUri = new Uri("s3://external/SAM_CPH_1.csv")
-            },
-            DateTimeOffset.UtcNow);
-
-        _catalogue
-            .Setup(c => c.GetFileSetsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(ImmutableList.Create(new FileSet(definition, [file])));
-
-        _catalogueFactory.Setup(f => f.Create(It.IsAny<string>())).Returns(_catalogue.Object);
-
-        var pipeline = Sut().Create();
-        var context = new EtlPipelineContext(Guid.NewGuid(), "external", lookbackDays: 0);
-
-        var results = await new PipelineExecutor(Mock.Of<ILogger<PipelineExecutor>>())
-            .RunAsync<DiscoveredFileSet>(pipeline, context, CancellationToken.None);
-
-        results.Should().ContainSingle();
-        results[0].Definition.Name.Should().Be("SAM_CPH");
-        results[0].Files.Should().ContainSingle();
-    }
-
-    [Fact]
-    public async Task Running_the_pipeline_writes_a_discovery_manifest_to_the_internal_bucket()
-    {
-        var definition = new DataSetDefinition("SAM_CPH", "SAM_CPH_{0}", ["cph"], "CHANGE_TYPE", []);
-        var file = new EtlFile(
-            new StorageObjectInfo
-            {
-                Container = "external",
-                Key = "SAM_CPH_1.csv",
-                StorageUri = new Uri("s3://external/SAM_CPH_1.csv")
-            },
-            DateTimeOffset.UtcNow);
-
-        _catalogue
-            .Setup(c => c.GetFileSetsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(ImmutableList.Create(new FileSet(definition, [file])));
-
-        _catalogueFactory.Setup(f => f.Create(It.IsAny<string>())).Returns(_catalogue.Object);
+        GivenCatalogueReturns(Definition("SAM_CPH"), File("SAM_CPH_1.csv"));
 
         var runId = Guid.NewGuid();
-        var pipeline = Sut().Create();
-        var context = new EtlPipelineContext(runId, "external", lookbackDays: 0);
 
-        await new PipelineExecutor(Mock.Of<ILogger<PipelineExecutor>>())
-            .RunAsync(pipeline, context, CancellationToken.None);
+        await RunAsync(Sut().Create(), new EtlPipelineContext(runId, "external", lookbackDays: 0));
 
         _internalBlobs.Verify(
             b => b.UploadAsync(
@@ -102,5 +78,22 @@ public class EtlPipelineFactoryTests
                 null,
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Running_the_pipeline_writes_nothing_when_no_files_are_discovered()
+    {
+        GivenCatalogueReturns(Definition("SAM_CPH"));
+
+        await RunAsync(Sut().Create(), new EtlPipelineContext(Guid.NewGuid(), "external", lookbackDays: 0));
+
+        _internalBlobs.Verify(
+            b => b.UploadAsync(
+                It.IsAny<string>(),
+                It.IsAny<byte[]>(),
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyDictionary<string, string>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }

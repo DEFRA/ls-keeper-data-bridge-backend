@@ -1,4 +1,5 @@
 using KeeperData.Core.ETL.Abstract;
+using KeeperData.Core.EtlPipeline.Fluent;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage;
@@ -16,6 +17,6 @@ public sealed class EtlPipelineFactory(
     public PipelineDefinition Create()
         => PipelineBuilder
             .InputSource(new DiscoverFilesStage(catalogueFactory))
-            .Then(new ReportDiscoveredFilesStage(blobStorageFactory, reportLogger))
+            .ReportDiscoveredFiles(blobStorageFactory, reportLogger)   // TEMP ONLY (for "manual testing purposes") - remove during next stage implementation
             .Build();
 }

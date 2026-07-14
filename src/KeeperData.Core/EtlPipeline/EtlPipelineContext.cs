@@ -4,13 +4,13 @@ namespace KeeperData.Core.EtlPipeline;
 
 /// <summary>Run context for the ETL pipeline. Stages take their dependencies via their constructors;
 /// this carries the per-run values passed through by the coordinator.</summary>
-public sealed class EtlPipelineContext(Guid runId, string sourceType, int lookbackDays) : IPipelineContext
+public sealed class EtlPipelineContext(Guid runId, string sourceType, int? lookbackDays = null) : IPipelineContext
 {
     public Guid RunId { get; } = runId;
 
     /// <summary>The blob storage source for this run.</summary>
     public string SourceType { get; } = sourceType;
 
-    /// <summary>Days to look back for files.</summary>
-    public int LookbackDays { get; } = lookbackDays;
+    /// <summary>Days to look back for files. Defaults to EtlConstants.DefaultLookbackDays when not supplied.</summary>
+    public int LookbackDays { get; } = lookbackDays ?? EtlConstants.DefaultLookbackDays;
 }

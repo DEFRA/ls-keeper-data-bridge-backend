@@ -65,7 +65,8 @@ public sealed class IngestionRunExecutor(
         {
             await legacyImport.RunImportAsync(runId, sourceType, linkedCts.Token);
 
-            await RunEtlPipelineAsync(runId, sourceType, linkedCts.Token);
+            // Commented out the "new pipeline" functionality below ... (while we're developing it)
+            // await RunEtlPipelineAsync(runId, sourceType, linkedCts.Token);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

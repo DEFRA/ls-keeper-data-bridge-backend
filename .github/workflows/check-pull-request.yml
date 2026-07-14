@@ -77,15 +77,59 @@ jobs:
         uses: actions/checkout@v3
         with:
           path: working-dir
+
+      # Third-party images are pinned, so cache them as a tarball keyed on the exact tags.
+      # A cache hit turns a ~400MB Docker Hub pull into a local load.
+      - name: Cache docker images
+        id: image-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.docker-images/images.tar
+          key: docker-images-localstack-3.0.2-mongo-6.0.13-redis-7.2.3-alpine3.18
+
+      - name: Load cached docker images
+        if: steps.image-cache.outputs.cache-hit == 'true'
+        run: docker load -i ~/.docker-images/images.tar
+
+      - name: Pull and save docker images
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        run: |
+          docker pull localstack/localstack:3.0.2
+          docker pull mongo:6.0.13
+          docker pull redis:7.2.3-alpine3.18
+          mkdir -p ~/.docker-images
+          docker save -o ~/.docker-images/images.tar \
+            localstack/localstack:3.0.2 \
+            mongo:6.0.13 \
+            redis:7.2.3-alpine3.18
+
+      # Build the app image with a layer cache. Compose's "--build" has no cache and redoes the
+      # full dotnet restore/publish every run. The GHA build cache is a separate pool from
+      # actions/cache, so it does not consume the cache size budget.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build keeperdata_bridge image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./working-dir
+          file: ./working-dir/Dockerfile
+          tags: keeperdata_bridge:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Make LocalStack init script executable
         run: chmod +x ./working-dir/compose/start-localstack.sh
+
       - name: Run docker-compose
         uses: hoverkraft-tech/compose-action@v2.0.1
         with:
           compose-file: |
             ./working-dir/docker-compose.yml
             ./working-dir/docker-compose.ci.yml
-          up-flags: "--build"
+          up-flags: "--no-build"
+
       - name: Make script executable
         run: chmod +x ./working-dir/wait-for-docker-logs.sh
       - name: Wait for localstack

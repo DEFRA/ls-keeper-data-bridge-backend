@@ -25,7 +25,8 @@ public sealed class IngestionRunExecutor(
     IOptions<IngestionRunOptions> options) : IIngestionRunExecutor
 {
     private readonly IngestionRunOptions _options = options.Value;
-
+    private readonly bool _runNewPipeline = false; // keep this off , until we're ready
+        
     public void StartInBackground(IDistributedLockHandle lockHandle, Guid runId, string sourceType, CancellationToken cancellationToken)
     {
         var stoppingToken = applicationLifetime.ApplicationStopping;
@@ -65,8 +66,8 @@ public sealed class IngestionRunExecutor(
         {
             await legacyImport.RunImportAsync(runId, sourceType, linkedCts.Token);
 
-            // Commented out the "new pipeline" functionality below ... (while we're developing it)
-            // await RunEtlPipelineAsync(runId, sourceType, linkedCts.Token);
+            if (_runNewPipeline)
+                await RunEtlPipelineAsync(runId, sourceType, linkedCts.Token);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

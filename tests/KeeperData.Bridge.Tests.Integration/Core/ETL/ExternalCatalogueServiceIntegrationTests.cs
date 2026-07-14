@@ -22,7 +22,7 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
     private readonly Mock<ILogger<S3BlobStorageServiceReadOnly>> _loggerMock;
     private readonly S3BlobStorageServiceReadOnly _blobService;
     private readonly TestDataSetDefinitions _testDataSetDefinitions;
-    private readonly ExternalCatalogueService _ExternalCatalogueService;
+    private readonly IExternalCatalogueService _ExternalCatalogueService;
     private readonly FakeTimeProvider _timeProvider;
     private readonly List<string> _createdTestFileKeys = new();
 

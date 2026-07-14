@@ -108,7 +108,7 @@ public class IngestionPipeline(
         }
     }
 
-    private (IBlobStorageService BlobStorage, ExternalCatalogueService CatalogueService) InitializeStorageServices(Guid importId)
+    private (IBlobStorageService BlobStorage, IExternalCatalogueService CatalogueService) InitializeStorageServices(Guid importId)
     {
         Debug.WriteLine($"[keepetl] Initializing blob storage services for ImportId: {importId}");
         var blobs = blobStorageServiceFactory.Get();
@@ -119,7 +119,7 @@ public class IngestionPipeline(
         return (blobs, catalogueService);
     }
 
-    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(Guid importId, ExternalCatalogueService catalogueService, CancellationToken ct)
+    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(Guid importId, IExternalCatalogueService catalogueService, CancellationToken ct)
     {
         Debug.WriteLine($"[keepetl] Step 1: Discovering files for ImportId: {importId}");
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);

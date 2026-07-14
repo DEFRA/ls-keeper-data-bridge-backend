@@ -7,6 +7,6 @@ namespace KeeperData.Core.ETL.Impl;
 [ExcludeFromCodeCoverage(Justification = "Simple factory wrapper - covered by integration tests.")]
 public class ExternalCatalogueServiceFactory(TimeProvider timeProvider, IDataSetDefinitions dataSetDefinitions, IBlobStorageServiceFactory factory) : IExternalCatalogueServiceFactory
 {
-    public ExternalCatalogueService Create(string sourceType) => new(factory.GetSource(sourceType), timeProvider, dataSetDefinitions);
-    public ExternalCatalogueService Create(IBlobStorageServiceReadOnly blobStorage) => new(blobStorage, timeProvider, dataSetDefinitions);
+    public IExternalCatalogueService Create(string sourceType) => new ExternalCatalogueService(factory.GetSource(sourceType), timeProvider, dataSetDefinitions);
+    public IExternalCatalogueService Create(IBlobStorageServiceReadOnly blobStorage) => new ExternalCatalogueService(blobStorage, timeProvider, dataSetDefinitions);
 }

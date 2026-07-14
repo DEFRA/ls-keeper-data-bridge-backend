@@ -47,7 +47,7 @@ public class ExternalCatalogueController(
 
         var fileSets = await ExternalCatalogueService.GetFileSetsAsync(days, cancellationToken);
 
-        var report = GenerateReport(sourceType, fileSets, ExternalCatalogueService.ToString());
+        var report = GenerateReport(sourceType, fileSets, ExternalCatalogueService.GetType().Name);
 
         return Content(report, "text/plain", Encoding.UTF8);
     }

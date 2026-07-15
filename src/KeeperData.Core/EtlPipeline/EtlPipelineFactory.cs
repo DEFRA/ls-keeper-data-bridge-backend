@@ -2,21 +2,20 @@ using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline.Fluent;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.Pipeline;
-using KeeperData.Core.Storage;
-using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.EtlPipeline;
 
 /// <summary>Defines the ETL pipeline. The single place the stage order lives.
-/// Later stages (decrypt, normalise, snapshot, load) are appended here as they land.</summary>
-public sealed class EtlPipelineFactory(
-    IExternalCatalogueServiceFactory catalogueFactory,
-    IBlobStorageServiceFactory blobStorageFactory,
-    ILogger<ReportDiscoveredFilesStage> reportLogger) : IEtlPipelineFactory
+/// Implementing a stage does not require changing this file (only adding a dependency does).</summary>
+public sealed class EtlPipelineFactory(IExternalCatalogueServiceFactory catalogueFactory) : IEtlPipelineFactory
 {
     public PipelineDefinition Create()
         => PipelineBuilder
-            .InputSource(new DiscoverFilesStage(catalogueFactory))
-            .ReportDiscoveredFiles(blobStorageFactory, reportLogger)   // TEMP ONLY (for "manual testing purposes") - remove during next stage implementation
+            .InputSource(new S3RawFolderSource(catalogueFactory))
+            .Discover()      // -> DiscoveredFileSet
+            .Decrypt()       // -> RawFileSet        (raw/)
+            .Normalise()     // -> NormalisedFileSet (normalised/*.parquet)
+            .Snapshot()      // -> SnapshotFile      (snapshots/*.parquet)
+            .LoadDuckDb()    // -> StagingDatabase   (staging/*.duckdb)
             .Build();
 }

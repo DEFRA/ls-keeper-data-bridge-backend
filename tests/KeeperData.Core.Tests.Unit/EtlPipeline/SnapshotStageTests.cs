@@ -21,4 +21,12 @@ public class SnapshotStageTests
 
         output.Should().HaveCount(2);
     }
+
+    [Fact]
+    public async Task Produces_nothing_for_an_empty_input()
+    {
+        var output = await RunAsync();
+
+        output.Should().BeEmpty();
+    }
 }

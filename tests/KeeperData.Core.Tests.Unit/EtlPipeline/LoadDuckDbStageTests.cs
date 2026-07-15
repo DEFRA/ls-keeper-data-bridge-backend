@@ -21,4 +21,12 @@ public class LoadDuckDbStageTests
 
         output.Should().ContainSingle();
     }
+
+    [Fact]
+    public async Task Still_produces_a_single_database_for_an_empty_input()
+    {
+        var output = await RunAsync();
+
+        output.Should().ContainSingle();
+    }
 }

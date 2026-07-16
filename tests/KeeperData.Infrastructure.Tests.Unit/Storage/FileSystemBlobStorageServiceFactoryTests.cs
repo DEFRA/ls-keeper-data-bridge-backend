@@ -89,7 +89,7 @@ public class FileSystemBlobStorageServiceFactoryTests
 
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<ExternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "external-bucket"));
+            .Returns(new StorageClientInfo(mockS3Client.Object, "external-bucket"));
 
         // Act
         var result = sut.GetSourceExternal();
@@ -107,7 +107,7 @@ public class FileSystemBlobStorageServiceFactoryTests
 
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<ExternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "external-bucket"));
+            .Returns(new StorageClientInfo(mockS3Client.Object, "external-bucket"));
 
         // Act
         var result = sut.GetSource(BlobStorageSources.External);
@@ -171,7 +171,7 @@ public class FileSystemBlobStorageServiceFactoryTests
         var config = CreateConfig(useFileSystem: false);
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<InternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "internal-bucket"));
+            .Returns(new StorageClientInfo(mockS3Client.Object, "internal-bucket"));
 
         var sut = new S3BlobStorageServiceFactory(_s3ClientFactoryMock.Object, _loggerFactoryMock.Object, config);
 
@@ -189,7 +189,7 @@ public class FileSystemBlobStorageServiceFactoryTests
         var config = CreateConfig(useFileSystem: false);
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<InternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "internal-bucket"));
+            .Returns(new StorageClientInfo(mockS3Client.Object, "internal-bucket"));
 
         var sut = new S3BlobStorageServiceFactory(_s3ClientFactoryMock.Object, _loggerFactoryMock.Object, config);
 

@@ -28,5 +28,7 @@ public interface IS3ClientFactory
     void RegisterMockClient<T>(string bucketName, IAmazonS3 mockClient)
         where T : IStorageClient, new();
 
-    S3ClientFactory.ClientInfo GetClientInfo<T>() where T : IStorageClient, new();
+    StorageClientInfo GetClientInfo<T>() where T : IStorageClient, new();
 }
+
+public sealed record StorageClientInfo(IAmazonS3 Client, string BucketName);

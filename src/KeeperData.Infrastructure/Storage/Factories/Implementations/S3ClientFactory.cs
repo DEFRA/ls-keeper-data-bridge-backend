@@ -4,8 +4,6 @@ namespace KeeperData.Infrastructure.Storage.Factories.Implementations;
 
 public class S3ClientFactory : IS3ClientFactory
 {
-    public sealed record ClientInfo(IAmazonS3 Client, string BucketName);
-
     private readonly Dictionary<string, ClientInfo> _clients = [];
 
     public IAmazonS3 GetClient<T>() where T : IStorageClient, new() => GetClientInfo<T>().Client;

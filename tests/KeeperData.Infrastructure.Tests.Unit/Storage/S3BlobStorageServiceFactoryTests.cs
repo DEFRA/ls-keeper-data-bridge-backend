@@ -44,7 +44,7 @@ public class S3BlobStorageServiceFactoryTests
         // Arrange
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<ExternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "external-bucket"));
+            .Returns(new ClientInfo(mockS3Client.Object, "external-bucket"));
 
         // Act
         var result = _sut.GetSource(BlobStorageSources.External);
@@ -61,7 +61,7 @@ public class S3BlobStorageServiceFactoryTests
         // Arrange
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<InternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "internal-bucket"));
+            .Returns(new ClientInfo(mockS3Client.Object, "internal-bucket"));
 
         // Act
         var result = _sut.GetSource(BlobStorageSources.Internal);
@@ -89,7 +89,7 @@ public class S3BlobStorageServiceFactoryTests
         // Arrange
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<ExternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "external-bucket"));
+            .Returns(new ClientInfo(mockS3Client.Object, "external-bucket"));
 
         // Act
         var result = _sut.GetSourceExternal();
@@ -105,7 +105,7 @@ public class S3BlobStorageServiceFactoryTests
         // Arrange
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<InternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "internal-bucket"));
+            .Returns(new ClientInfo(mockS3Client.Object, "internal-bucket"));
 
         // Act
         var result = _sut.GetSourceInternal();
@@ -121,7 +121,7 @@ public class S3BlobStorageServiceFactoryTests
         // Arrange
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<InternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "internal-bucket"));
+            .Returns(new ClientInfo(mockS3Client.Object, "internal-bucket"));
 
         // Act
         var result = _sut.Get();
@@ -138,7 +138,7 @@ public class S3BlobStorageServiceFactoryTests
         // Arrange
         var mockS3Client = new Mock<Amazon.S3.IAmazonS3>();
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<InternalStorageClient>())
-            .Returns(new S3ClientFactory.ClientInfo(mockS3Client.Object, "internal-bucket"));
+            .Returns(new ClientInfo(mockS3Client.Object, "internal-bucket"));
 
         // Act
         var result = _sut.GetCleanseReportsBlobService();

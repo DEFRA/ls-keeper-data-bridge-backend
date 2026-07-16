@@ -1008,7 +1008,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
 
         // Setup for destination storage (Get method)
         s3ClientFactory.Setup(x => x.GetClientInfo<InternalStorageClient>())
-            .Returns(new ClientInfo(
+            .Returns(new StorageClientInfo(
                 _localStackFixture.S3Client,
                 LocalStackFixture.TestBucket));
 

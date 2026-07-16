@@ -622,7 +622,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
 
         var s3ClientFactory = new Mock<IS3ClientFactory>();
         s3ClientFactory.Setup(x => x.GetClientInfo<InternalStorageClient>())
-            .Returns(new ClientInfo(_localStackFixture.S3Client, LocalStackFixture.TestBucket));
+            .Returns(new StorageClientInfo(_localStackFixture.S3Client, LocalStackFixture.TestBucket));
 
         var storageConfig = new StorageConfiguration
         {

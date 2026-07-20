@@ -12,6 +12,13 @@ public static class DataSetFileNaming
     private static readonly TimeOnly DefaultTimeOfDay = new(12, 0, 0);
 
     /// <summary>
+    /// The key prefix shared by every file in the dataset, regardless of date.
+    /// Listing storage under this prefix returns the dataset's entire history.
+    /// </summary>
+    public static string DataSetKeyPrefix(DataSetDefinition definition)
+        => definition.FilePrefixFormat.Replace("{0}", string.Empty);
+
+    /// <summary>
     /// The key prefix shared by the dataset's files for a single date.
     /// Listing storage under this prefix returns one day of that dataset.
     /// </summary>

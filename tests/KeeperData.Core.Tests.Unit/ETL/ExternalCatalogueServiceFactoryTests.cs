@@ -1,4 +1,5 @@
 using FluentAssertions;
+using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Storage;
 using Moq;

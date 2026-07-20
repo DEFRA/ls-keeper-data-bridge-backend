@@ -107,9 +107,6 @@ public class LegacyExternalCatalogueService(IBlobStorageServiceReadOnly sourceBl
         return new FileSet(definition, allFiles);
     }
 
-    private static List<DateOnly> GetDates(DateOnly from, DateOnly to)
-        => [.. Enumerable.Range(0, to.DayNumber - from.DayNumber + 1).Select(offset => from.AddDays(offset))];
-
     public async Task<FileSet> GetFileSetAsync(DataSetDefinition definition, DateOnly date, CancellationToken ct)
     {
         var prefix = DataSetFileNaming.DatedKeyPrefix(definition, date);
@@ -118,6 +115,9 @@ public class LegacyExternalCatalogueService(IBlobStorageServiceReadOnly sourceBl
 
         return new FileSet(definition, [.. etlFiles]);
     }
+
+    private static List<DateOnly> GetDates(DateOnly from, DateOnly to)
+        => [.. Enumerable.Range(0, to.DayNumber - from.DayNumber + 1).Select(offset => from.AddDays(offset))];
 
     public override string ToString() => $"{nameof(LegacyExternalCatalogueService)}[{sourceBlobs}]";
 }

@@ -42,10 +42,12 @@ public static class DataSetFileNaming
     /// <exception cref="InvalidOperationException">The key does not carry a parsable timestamp.</exception>
     public static DateTimeOffset ExtractTimestamp(DataSetDefinition definition, string key)
     {
-        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
-        ArgumentNullException.ThrowIfNull(definition, nameof(definition));
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(definition);
 
-        var timestampPart = key.Split(".").First().Split('_').Last();
+        var beforeFirstDot = key.Split('.')[0];
+        var underscoreParts = beforeFirstDot.Split('_');
+        var timestampPart = underscoreParts[^1];
 
         if (timestampPart.Length < definition.DateTimePattern.Length || !long.TryParse(timestampPart.AsSpan(0, TimestampLength), out _))
         {

@@ -4,6 +4,7 @@ using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 
 namespace KeeperData.Core.Tests.Unit.ETL;
@@ -121,6 +122,107 @@ public class BulkListingExternalCatalogueServiceTests
     }
 
     [Fact]
+    public async Task ForALookbackWindow_CoversTheLastNDaysIncludingToday()
+    {
+        var today = new DateOnly(2024, 10, 20);
+        var catalogue = CatalogueAt(today);
+        GivenStoredFiles(
+            FileFor(DataSetA, today.AddDays(-10)),
+            FileFor(DataSetA, today.AddDays(-5)),
+            FileFor(DataSetA, today.AddDays(-2)),
+            FileFor(DataSetA, today));
+
+        var fileSets = await catalogue.GetFileSetsAsync(days: 7, CancellationToken.None);
+
+        DatesOf(fileSets.Single()).Should().Equal(today.AddDays(-5), today.AddDays(-2), today);
+    }
+
+    [Fact]
+    public async Task ForZeroDays_ReturnsOnlyTodaysFiles()
+    {
+        var today = new DateOnly(2024, 10, 20);
+        var catalogue = CatalogueAt(today);
+        GivenStoredFiles(
+            FileFor(DataSetA, today.AddDays(-1)),
+            FileFor(DataSetA, today),
+            FileFor(DataSetA, today.AddDays(1)));
+
+        var fileSets = await catalogue.GetFileSetsAsync(days: 0, CancellationToken.None);
+
+        DatesOf(fileSets.Single()).Should().Equal(today);
+    }
+
+    [Fact]
+    public async Task WithNoArgumentsBeyondCancellation_ReturnsOnlyTodaysFiles()
+    {
+        var today = new DateOnly(2024, 10, 20);
+        var catalogue = CatalogueAt(today);
+        GivenStoredFiles(
+            FileFor(DataSetA, today.AddDays(-1)),
+            FileFor(DataSetA, today));
+
+        var fileSets = await catalogue.GetFileSetsAsync(CancellationToken.None);
+
+        DatesOf(fileSets.Single()).Should().Equal(today);
+    }
+
+    [Fact]
+    public async Task ForASingleDate_AcrossTheConfiguredDataSets_ReturnsThatDayOnly()
+    {
+        var today = new DateOnly(2024, 10, 20);
+        var catalogue = CatalogueAt(today);
+        GivenStoredFiles(
+            FileFor(DataSetA, today.AddDays(-1)),
+            FileFor(DataSetA, today));
+
+        var fileSets = await catalogue.GetFileSetsAsync(today, CancellationToken.None);
+
+        DatesOf(fileSets.Single()).Should().Equal(today);
+    }
+
+    [Fact]
+    public async Task ForADateRange_AcrossTheConfiguredDataSets_ReturnsTheWholeRange()
+    {
+        var today = new DateOnly(2024, 10, 20);
+        var catalogue = CatalogueAt(today);
+        GivenStoredFiles(
+            FileFor(DataSetA, new DateOnly(2024, 10, 2)),
+            FileFor(DataSetA, new DateOnly(2024, 10, 18)),
+            FileFor(DataSetA, new DateOnly(2024, 11, 3)));
+
+        var fileSets = await catalogue.GetFileSetsAsync(RangeStart, RangeEnd, CancellationToken.None);
+
+        DatesOf(fileSets.Single()).Should().Equal(new DateOnly(2024, 10, 2), new DateOnly(2024, 10, 18));
+    }
+
+    [Fact]
+    public async Task ForASingleDefinitionAndDateAcrossOverloads_ReturnsThatDayOnly()
+    {
+        var definitions = ImmutableArray.Create(DataSetA, DataSetB);
+        var date = new DateOnly(2024, 10, 15);
+        GivenStoredFiles(
+            FileFor(DataSetA, date),
+            FileFor(DataSetB, date),
+            FileFor(DataSetA, date.AddDays(-1)));
+
+        var fileSets = await _catalogue.GetFileSetsAsync(definitions, date, CancellationToken.None);
+
+        fileSets.Should().HaveCount(2);
+        fileSets.Should().OnlyContain(set => set.Files.Length == 1);
+    }
+
+    /// <summary>A catalogue whose clock reads <paramref name="today"/> and whose only dataset is A.</summary>
+    private BulkListingExternalCatalogueService CatalogueAt(DateOnly today)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
+
+        var definitions = new Mock<IDataSetDefinitions>();
+        definitions.Setup(d => d.All).Returns([DataSetA]);
+
+        return new BulkListingExternalCatalogueService(_blobs.Object, clock, definitions.Object);
+    }
+
+    [Fact]
     public async Task DiscoversTheSameFilesAsTheLegacyCatalogue()
     {
         var definitions = ImmutableArray.Create(DataSetA, DataSetB);
@@ -167,7 +269,7 @@ public class BulkListingExternalCatalogueServiceTests
             Times.Exactly(DaysInRange * definitions.Length));
     }
 
-    private IExternalCatalogueService CreateLegacyOver(StorageObjectInfo[] stored)
+    private static IExternalCatalogueService CreateLegacyOver(StorageObjectInfo[] stored)
     {
         var legacyBlobs = new Mock<IBlobStorageServiceReadOnly>();
         StubListing(legacyBlobs, stored);

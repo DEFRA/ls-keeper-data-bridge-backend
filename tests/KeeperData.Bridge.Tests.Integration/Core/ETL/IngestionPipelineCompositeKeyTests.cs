@@ -559,7 +559,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
 
         var catalogueService = new LegacyExternalCatalogueService(destBlobService, timeProvider, definitions);
         var catalogueFactory = new Mock<IExternalCatalogueServiceFactory>();
-        catalogueFactory.Setup(x => x.Create(It.IsAny<IBlobStorageServiceReadOnly>())).Returns(catalogueService);
+        catalogueFactory.Setup(x => x.CreateLegacy(It.IsAny<IBlobStorageServiceReadOnly>())).Returns(catalogueService);
 
         var mongoConfig = Options.Create<IDatabaseConfig>(new MongoConfig
         {

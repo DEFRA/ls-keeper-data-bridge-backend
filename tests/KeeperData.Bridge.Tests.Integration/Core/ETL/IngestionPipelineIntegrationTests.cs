@@ -1064,7 +1064,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             ]
         };
 
-        factory.Setup(x => x.Create(It.IsAny<IBlobStorageServiceReadOnly>()))
+        factory.Setup(x => x.CreateLegacy(It.IsAny<IBlobStorageServiceReadOnly>()))
             .Returns((IBlobStorageServiceReadOnly blobs) =>
             {
                 // Create a blob service that points to the destination folder where test files are uploaded

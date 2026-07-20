@@ -1076,7 +1076,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
                     DestinationFolder);
 
                 var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 12, 15, 10, 0, 0, TimeSpan.Zero));
-                return new ExternalCatalogueService(destBlobService, timeProvider, testDefinitions);
+                return new LegacyExternalCatalogueService(destBlobService, timeProvider, testDefinitions);
             });
 
         return factory.Object;

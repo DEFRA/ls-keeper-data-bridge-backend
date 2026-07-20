@@ -557,7 +557,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
             All = [dataSetDefinition]
         };
 
-        var catalogueService = new ExternalCatalogueService(destBlobService, timeProvider, definitions);
+        var catalogueService = new LegacyExternalCatalogueService(destBlobService, timeProvider, definitions);
         var catalogueFactory = new Mock<IExternalCatalogueServiceFactory>();
         catalogueFactory.Setup(x => x.Create(It.IsAny<IBlobStorageServiceReadOnly>())).Returns(catalogueService);
 
@@ -662,7 +662,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                      DestinationFolder);
 
                  var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 12, 15, 10, 0, 0, TimeSpan.Zero));
-                 return new ExternalCatalogueService(destBlobService, timeProvider, definitions);
+                 return new LegacyExternalCatalogueService(destBlobService, timeProvider, definitions);
              });
 
         return factory.Object;

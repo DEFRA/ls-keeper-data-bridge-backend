@@ -13,8 +13,13 @@ public record EtlFile(StorageObjectInfo StorageObject, DateTimeOffset Timestamp)
 [ExcludeFromCodeCoverage(Justification = "Simple data transfer record.")]
 public record FileSet(DataSetDefinition Definition, EtlFile[] Files);
 
+/// <summary>
+/// The original per-day-scan catalogue: it walks every date in the requested range and issues one
+/// storage listing per date per dataset, so the number of round-trips grows with the lookback
+/// window (a 250 day lookback across 13 datasets is ~3,250 listings).
+/// </summary>
 [ExcludeFromCodeCoverage(Justification = "External catalogue service with S3 dependencies - covered by integration tests.")]
-public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
+public class LegacyExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     TimeProvider timeProvider,
     IDataSetDefinitions dataSetDefinitions) : IExternalCatalogueService
 {
@@ -179,5 +184,5 @@ public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
         return string.Format(definition.FilePrefixFormat, formattedDate);
     }
 
-    public override string ToString() => $"{nameof(ExternalCatalogueService)}[{sourceBlobs}]";
+    public override string ToString() => $"{nameof(LegacyExternalCatalogueService)}[{sourceBlobs}]";
 }

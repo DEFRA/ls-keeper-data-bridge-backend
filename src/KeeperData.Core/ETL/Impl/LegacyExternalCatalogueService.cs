@@ -3,18 +3,16 @@ using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Storage;
-using KeeperData.Core.Storage.Dtos;
 
 namespace KeeperData.Core.ETL.Impl;
 
-[ExcludeFromCodeCoverage(Justification = "Simple data transfer record.")]
-public record EtlFile(StorageObjectInfo StorageObject, DateTimeOffset Timestamp);
-
-[ExcludeFromCodeCoverage(Justification = "Simple data transfer record.")]
-public record FileSet(DataSetDefinition Definition, EtlFile[] Files);
-
+/// <summary>
+/// The original per-day-scan catalogue (slow): it walks every date in the requested range and issues one
+/// storage listing per date per dataset, so the number of round-trips grows with the lookback
+/// window (a 250 day lookback across 13 datasets is ~3,250 listings).
+/// </summary>
 [ExcludeFromCodeCoverage(Justification = "External catalogue service with S3 dependencies - covered by integration tests.")]
-public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
+public class LegacyExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     TimeProvider timeProvider,
     IDataSetDefinitions dataSetDefinitions) : IExternalCatalogueService
 {
@@ -144,7 +142,7 @@ public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
                 System.Globalization.DateTimeStyles.None,
                 out var parsedDateTime))
             {
-                // Create DateTimeOffset from the parsed DateTime, explicitly specifying UTC offset
+                // CreateLegacy DateTimeOffset from the parsed DateTime, explicitly specifying UTC offset
                 var utcDateTime = DateTime.SpecifyKind(parsedDateTime, DateTimeKind.Utc);
                 return new DateTimeOffset(utcDateTime, TimeSpan.Zero);
             }
@@ -179,5 +177,5 @@ public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
         return string.Format(definition.FilePrefixFormat, formattedDate);
     }
 
-    public override string ToString() => $"{nameof(ExternalCatalogueService)}[{sourceBlobs}]";
+    public override string ToString() => $"{nameof(LegacyExternalCatalogueService)}[{sourceBlobs}]";
 }

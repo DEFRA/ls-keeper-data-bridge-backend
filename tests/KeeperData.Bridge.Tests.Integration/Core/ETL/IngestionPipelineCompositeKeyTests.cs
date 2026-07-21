@@ -557,9 +557,9 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
             All = [dataSetDefinition]
         };
 
-        var catalogueService = new ExternalCatalogueService(destBlobService, timeProvider, definitions);
+        var catalogueService = new LegacyExternalCatalogueService(destBlobService, timeProvider, definitions);
         var catalogueFactory = new Mock<IExternalCatalogueServiceFactory>();
-        catalogueFactory.Setup(x => x.Create(It.IsAny<IBlobStorageServiceReadOnly>())).Returns(catalogueService);
+        catalogueFactory.Setup(x => x.CreateLegacy(It.IsAny<IBlobStorageServiceReadOnly>())).Returns(catalogueService);
 
         var mongoConfig = Options.Create<IDatabaseConfig>(new MongoConfig
         {
@@ -651,7 +651,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
         var factory = new Mock<IExternalCatalogueServiceFactory>();
         var definitions = StandardDataSetDefinitionsBuilder.Build();
 
-        factory.Setup(x => x.Create(It.IsAny<IBlobStorageServiceReadOnly>()))
+        factory.Setup(x => x.CreateLegacy(It.IsAny<IBlobStorageServiceReadOnly>()))
                  .Returns((IBlobStorageServiceReadOnly blobs) =>
              {
                  var loggerMock = new Mock<ILogger<S3BlobStorageServiceReadOnly>>();
@@ -662,7 +662,7 @@ public class IngestionPipelineCompositeKeyTests : IAsyncLifetime
                      DestinationFolder);
 
                  var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 12, 15, 10, 0, 0, TimeSpan.Zero));
-                 return new ExternalCatalogueService(destBlobService, timeProvider, definitions);
+                 return new LegacyExternalCatalogueService(destBlobService, timeProvider, definitions);
              });
 
         return factory.Object;

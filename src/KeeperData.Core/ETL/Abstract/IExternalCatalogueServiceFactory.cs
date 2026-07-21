@@ -5,6 +5,6 @@ namespace KeeperData.Core.ETL.Abstract;
 
 public interface IExternalCatalogueServiceFactory
 {
-    IExternalCatalogueService Create(IBlobStorageServiceReadOnly blobStorage);
-    IExternalCatalogueService Create(string sourceType);
+    IExternalCatalogueService CreateLegacy(IBlobStorageServiceReadOnly blobStorage);
+    IExternalCatalogueService CreateLegacy(string sourceType);
 }

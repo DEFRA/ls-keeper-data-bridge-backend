@@ -7,12 +7,9 @@ using KeeperData.Core.Storage.Dtos;
 namespace KeeperData.Core.ETL.Impl;
 
 /// <summary>
+/// Improved bulk listing catalogue service:
 /// Discovers source files by listing each dataset's whole prefix once and selecting the requested
-/// dates in memory, rather than listing storage again for every date in the range. The number of
-/// storage listings is bounded by the dataset count and does not grow with the lookback window.
-///
-/// Every result holds one file set per requested definition - including definitions with no
-/// matching files - with the files ordered by timestamp ascending.
+/// dates in memory, rather than listing storage again for every date in the range. 
 /// </summary>
 public class BulkListingExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     TimeProvider timeProvider,
@@ -44,12 +41,9 @@ public class BulkListingExternalCatalogueService(IBlobStorageServiceReadOnly sou
     {
         var fileSetsByDefinition = new ConcurrentDictionary<DataSetDefinition, FileSet>();
 
+        ParallelOptions parallelOptions = ParallelOptions(ct);
         await Parallel.ForEachAsync(definitions,
-            new ParallelOptions
-            {
-                MaxDegreeOfParallelism = MaxConcurrentDataSetListings,
-                CancellationToken = ct
-            },
+            parallelOptions,
             async (definition, listingToken) =>
             {
                 fileSetsByDefinition[definition] = await GetFileSetAsync(definition, from, to, listingToken);
@@ -82,4 +76,11 @@ public class BulkListingExternalCatalogueService(IBlobStorageServiceReadOnly sou
     }
 
     public override string ToString() => $"{nameof(BulkListingExternalCatalogueService)}[{sourceBlobs}]";
+
+    ParallelOptions ParallelOptions(CancellationToken cancellationToken) =>
+        new()
+        {
+            MaxDegreeOfParallelism = MaxConcurrentDataSetListings,
+            CancellationToken = cancellationToken
+        };
 }

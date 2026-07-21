@@ -9,7 +9,6 @@ namespace KeeperData.Core.ETL.Impl;
 public static class DataSetFileNaming
 {
     private const int TimestampLength = 14;
-    private static readonly TimeOnly DefaultTimeOfDay = new(12, 0, 0);
 
     /// <summary>
     /// The key prefix shared by every file in the dataset, regardless of date.
@@ -31,8 +30,10 @@ public static class DataSetFileNaming
             || definition.DatePattern.Contains('m')
             || definition.DatePattern.Contains('s');
 
+        TimeOnly DefaultSetAsNoon = new(12, 0, 0);
+
         return patternIncludesTime
-            ? date.ToDateTime(DefaultTimeOfDay).ToString(definition.DatePattern)
+            ? date.ToDateTime(DefaultSetAsNoon).ToString(definition.DatePattern)
             : date.ToString(definition.DatePattern);
     }
 

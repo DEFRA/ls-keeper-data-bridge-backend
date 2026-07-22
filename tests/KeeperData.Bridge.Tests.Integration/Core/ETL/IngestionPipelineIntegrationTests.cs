@@ -1064,7 +1064,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
             ]
         };
 
-        factory.Setup(x => x.Create(It.IsAny<IBlobStorageServiceReadOnly>()))
+        factory.Setup(x => x.CreateLegacy(It.IsAny<IBlobStorageServiceReadOnly>()))
             .Returns((IBlobStorageServiceReadOnly blobs) =>
             {
                 // Create a blob service that points to the destination folder where test files are uploaded
@@ -1076,7 +1076,7 @@ public class IngestionPipelineIntegrationTests : IAsyncLifetime
                     DestinationFolder);
 
                 var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 12, 15, 10, 0, 0, TimeSpan.Zero));
-                return new ExternalCatalogueService(destBlobService, timeProvider, testDefinitions);
+                return new LegacyExternalCatalogueService(destBlobService, timeProvider, testDefinitions);
             });
 
         return factory.Object;

@@ -183,7 +183,7 @@ public class ExceptionHandlingMiddlewareTests
         errors.Should().HaveCount(2);
 
         errors.Should().ContainKey("Email");
-        errors["Email"].Should().Contain("'Email' is not a valid email address.");
+        errors!["Email"].Should().Contain("'Email' is not a valid email address.");
 
         errors.Should().ContainKey("CPH");
         errors["CPH"].Should().Contain("'CPH' is not valid.");

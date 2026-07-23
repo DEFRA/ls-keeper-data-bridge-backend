@@ -13,8 +13,8 @@
   <ItemGroup>
     <PackageReference Include="AWSSDK.S3" Version="4.0.17.1" />
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
-    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.2.0" />
-    <PackageReference Include="FluentAssertions" Version="8.6.0" />
+    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.3" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
     <PackageReference Include="GitHubActionsTestLogger" Version="2.4.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

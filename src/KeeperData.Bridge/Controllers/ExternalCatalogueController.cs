@@ -43,7 +43,7 @@ public class ExternalCatalogueController(
             return BadRequest($"Invalid source type. Must be '{BlobStorageSources.Internal}' or '{BlobStorageSources.External}'.");
         }
 
-        var ExternalCatalogueService = ExternalCatalogueServiceFactory.Create(sourceType);
+        var ExternalCatalogueService = ExternalCatalogueServiceFactory.CreateLegacy(sourceType);
 
         var fileSets = await ExternalCatalogueService.GetFileSetsAsync(days, cancellationToken);
 

@@ -3,18 +3,16 @@ using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Storage;
-using KeeperData.Core.Storage.Dtos;
 
 namespace KeeperData.Core.ETL.Impl;
 
-[ExcludeFromCodeCoverage(Justification = "Simple data transfer record.")]
-public record EtlFile(StorageObjectInfo StorageObject, DateTimeOffset Timestamp);
-
-[ExcludeFromCodeCoverage(Justification = "Simple data transfer record.")]
-public record FileSet(DataSetDefinition Definition, EtlFile[] Files);
-
+/// <summary>
+/// The original per-day-scan catalogue (slow): it walks every date in the requested range and issues one
+/// storage listing per date per dataset, so the number of round-trips grows with the lookback
+/// window (a 250 day lookback across 13 datasets is ~3,250 listings).
+/// </summary>
 [ExcludeFromCodeCoverage(Justification = "External catalogue service with S3 dependencies - covered by integration tests.")]
-public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
+public class LegacyExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     TimeProvider timeProvider,
     IDataSetDefinitions dataSetDefinitions) : IExternalCatalogueService
 {
@@ -114,70 +112,12 @@ public class ExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
 
     public async Task<FileSet> GetFileSetAsync(DataSetDefinition definition, DateOnly date, CancellationToken ct)
     {
-        var prefix = GetBlobKeyPrefix(definition, date);
+        var prefix = DataSetFileNaming.DatedKeyPrefix(definition, date);
         var blobs = await sourceBlobs.ListAsync(prefix, ct);
-        var etlFiles = blobs.Select(blob => new EtlFile(blob, ExtractTimestampFromFileName(definition, blob.Key))).ToArray();
+        var etlFiles = blobs.Select(blob => new EtlFile(blob, DataSetFileNaming.ExtractTimestamp(definition, blob.Key))).ToArray();
 
         return new FileSet(definition, [.. etlFiles]);
     }
 
-    private DateTimeOffset ExtractTimestampFromFileName(DataSetDefinition definition, string key)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
-        ArgumentNullException.ThrowIfNull(definition, nameof(definition));
-
-        var parts = key.Split(".").First().Split('_');
-
-        if (parts.Length == 0)
-        {
-            throw new InvalidOperationException($"Cannot extract timestamp from blob key '{key}' for dataset '{definition.Name}'");
-        }
-
-        var timestampPart = parts.Last();
-
-        if (timestampPart.Length >= definition.DateTimePattern.Length && long.TryParse(timestampPart.AsSpan(0, 14), out _))
-        {
-            var dateTimeString = timestampPart.Substring(0, 14);
-
-            if (DateTime.TryParseExact(dateTimeString, definition.DateTimePattern,
-                System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.None,
-                out var parsedDateTime))
-            {
-                // Create DateTimeOffset from the parsed DateTime, explicitly specifying UTC offset
-                var utcDateTime = DateTime.SpecifyKind(parsedDateTime, DateTimeKind.Utc);
-                return new DateTimeOffset(utcDateTime, TimeSpan.Zero);
-            }
-            else
-            {
-                throw new InvalidOperationException($"Cannot parse timestamp '{dateTimeString}' from blob key '{key}' for dataset '{definition.Name}'");
-            }
-        }
-        else
-        {
-            throw new InvalidOperationException($"Cannot extract timestamp from blob key '{key}' for dataset '{definition.Name}'");
-        }
-    }
-
-    private static string GetBlobKeyPrefix(DataSetDefinition definition, DateOnly date)
-    {
-        string formattedDate;
-
-        // Check if the pattern includes time components (HHmmss or similar)
-        if (definition.DatePattern.Contains('H') || definition.DatePattern.Contains('m') || definition.DatePattern.Contains('s'))
-        {
-            // For patterns that include time, we need to convert to DateTime and add a default time
-            var dateTime = date.ToDateTime(new TimeOnly(12, 0, 0)); // Use noon as default time
-            formattedDate = dateTime.ToString(definition.DatePattern);
-        }
-        else
-        {
-            // For date-only patterns, use DateOnly.ToString()
-            formattedDate = date.ToString(definition.DatePattern);
-        }
-
-        return string.Format(definition.FilePrefixFormat, formattedDate);
-    }
-
-    public override string ToString() => $"{nameof(ExternalCatalogueService)}[{sourceBlobs}]";
+    public override string ToString() => $"{nameof(LegacyExternalCatalogueService)}[{sourceBlobs}]";
 }

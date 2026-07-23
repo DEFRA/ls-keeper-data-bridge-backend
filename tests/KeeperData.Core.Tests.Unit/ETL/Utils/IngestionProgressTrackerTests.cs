@@ -306,8 +306,8 @@ public class IngestionProgressTrackerTests
         status1.PercentageCompleted.Should().NotBeNull();
         status2.PercentageCompleted.Should().NotBeNull();
         status3.PercentageCompleted.Should().NotBeNull();
-        status1.PercentageCompleted.Should().BeLessThan(status2.PercentageCompleted.Value);
-        status2.PercentageCompleted.Should().BeLessThan(status3.PercentageCompleted.Value);
+        status1.PercentageCompleted.Should().BeLessThan(status2.PercentageCompleted!.Value);
+        status2.PercentageCompleted.Should().BeLessThan(status3.PercentageCompleted!.Value);
     }
 
     [Fact]
@@ -340,7 +340,7 @@ public class IngestionProgressTrackerTests
         slowerRate.Should().NotBeNull();
 
         // Slower rate should be less than initial rate
-        slowerRate.Should().BeLessThan(fastRate1.Value);
+        slowerRate.Should().BeLessThan(fastRate1!.Value);
     }
 
     [Fact]
@@ -378,7 +378,7 @@ public class IngestionProgressTrackerTests
         // Assert
         status.EstimatedCompletionUtc.Should().NotBeNull();
 
-        var estimatedCompletion = status.EstimatedCompletionUtc.Value;
+        var estimatedCompletion = status.EstimatedCompletionUtc!.Value;
         var now = DateTime.UtcNow;
 
         // Should be in the near future (allow for calculation precision)

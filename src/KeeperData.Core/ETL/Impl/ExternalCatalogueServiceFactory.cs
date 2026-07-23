@@ -9,4 +9,7 @@ public class ExternalCatalogueServiceFactory(TimeProvider timeProvider, IDataSet
 {
     public IExternalCatalogueService CreateLegacy(string sourceType) => new LegacyExternalCatalogueService(factory.GetSource(sourceType), timeProvider, dataSetDefinitions);
     public IExternalCatalogueService CreateLegacy(IBlobStorageServiceReadOnly blobStorage) => new LegacyExternalCatalogueService(blobStorage, timeProvider, dataSetDefinitions);
+
+    public IExternalCatalogueService Create(string sourceType) => new BulkListingExternalCatalogueService(factory.GetSource(sourceType), timeProvider, dataSetDefinitions);
+    public IExternalCatalogueService Create(IBlobStorageServiceReadOnly blobStorage) => new BulkListingExternalCatalogueService(blobStorage, timeProvider, dataSetDefinitions);
 }

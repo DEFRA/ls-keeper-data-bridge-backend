@@ -11,7 +11,7 @@ using Xunit.Abstractions;
 namespace KeeperData.Bridge.Tests.Integration.Core.ETL;
 
 /// <summary>
-/// Integration tests for ExternalCatalogueService using TestContainers.LocalStack.
+/// Integration tests for LegacyExternalCatalogueService using TestContainers.LocalStack.
 /// Tests the ability to discover files within S3 based on date ranges and dataset definitions.
 /// </summary>
 [Collection("LocalStack"), Trait("Dependence", "docker")]
@@ -48,7 +48,7 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         _timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 12, 15, 10, 0, 0, TimeSpan.Zero));
 
         // Create the service under test
-        _ExternalCatalogueService = new ExternalCatalogueService(_blobService, _timeProvider, _testDataSetDefinitions);
+        _ExternalCatalogueService = new LegacyExternalCatalogueService(_blobService, _timeProvider, _testDataSetDefinitions);
     }
 
     public async Task InitializeAsync()

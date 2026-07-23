@@ -112,7 +112,7 @@ public class IngestionPipeline(
     {
         Debug.WriteLine($"[keepetl] Initializing blob storage services for ImportId: {importId}");
         var blobs = blobStorageServiceFactory.Get();
-        var catalogueService = ExternalCatalogueServiceFactory.Create(blobs);
+        var catalogueService = ExternalCatalogueServiceFactory.CreateLegacy(blobs);
 
         logger.LogDebug("Initialized blob storage services for ImportId: {ImportId}", importId);
 

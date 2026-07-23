@@ -13,7 +13,7 @@
   <ItemGroup>
     <PackageReference Include="Bogus" Version="35.6.4" />
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
-    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.2.0" />
+    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.3" />
     <PackageReference Include="FluentAssertions" Version="8.6.0" />
     <PackageReference Include="GitHubActionsTestLogger" Version="2.4.1">
       <PrivateAssets>all</PrivateAssets>

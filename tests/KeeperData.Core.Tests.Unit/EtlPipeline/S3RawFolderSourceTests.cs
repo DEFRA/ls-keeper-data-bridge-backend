@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
-using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
 using Moq;
@@ -17,7 +16,7 @@ public class S3RawFolderSourceTests
 
     private S3RawFolderSource Sut()
     {
-        _catalogueFactory.Setup(f => f.CreateLegacy(It.IsAny<string>())).Returns(_catalogue.Object);
+        _catalogueFactory.Setup(f => f.Create(It.IsAny<string>())).Returns(_catalogue.Object);
         return new S3RawFolderSource(_catalogueFactory.Object);
     }
 
@@ -49,7 +48,7 @@ public class S3RawFolderSourceTests
 
         await StageRunner.RunSourceAsync(Sut(), StageRunner.Context(sourceType: "internal"));
 
-        _catalogueFactory.Verify(f => f.CreateLegacy("internal"), Times.Once);
+        _catalogueFactory.Verify(f => f.Create("internal"), Times.Once);
     }
 
     [Fact]

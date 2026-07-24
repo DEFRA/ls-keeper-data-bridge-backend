@@ -1672,6 +1672,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /key-rotations/check:
+    post:
+      tags: [Key Rotation]
+      operationId: runKeyRotationCheck
+      summary: Run the key rotation check on demand
+      description: |
+        Runs the same detect/validate/adopt flow as the scheduled daily (03:00) job:
+        derives the expected key file name from the bucket, compares the file's SHA-256
+        hash with the last processed file, and — when new and valid — adopts the
+        credentials immediately. Always returns 200 with the outcome of the check;
+        progress is logged with the [KeyRotation] prefix and any adopted rotation
+        appears in GET /key-rotations.
+      responses:
+        '200':
+          description: The outcome of the rotation check
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyRotationCheckResponse'
+
   /key-rotations/{id}/rollback:
     post:
       tags: [Key Rotation]
@@ -2890,6 +2910,38 @@ components:
         secretAccessKey:
           type: string
           description: The new secret access key. Write-only; never returned.
+
+    KeyRotationCheckResponse:
+      type: object
+      required: [outcome, bucketName, checkedAtUtc]
+      properties:
+        outcome:
+          type: string
+          enum: [NotConfigured, LockUnavailable, FileNotFound, AlreadyProcessed, Adopted, InvalidFileFormat, ValidationFailed, TransientError]
+          description: What the check found and did.
+        bucketName:
+          type: string
+          description: The external bucket that was checked.
+        fileKey:
+          type: string
+          nullable: true
+          description: The rotation file name that was looked for.
+        fileHash:
+          type: string
+          nullable: true
+          description: Lowercase hex SHA-256 of the file content, when the file was found.
+        keyIdHint:
+          type: string
+          nullable: true
+          description: Masked access key id from the file, when it was parseable.
+        detail:
+          type: string
+          nullable: true
+          description: Additional outcome detail. Never contains key material.
+        checkedAtUtc:
+          type: string
+          format: date-time
+          description: When the check completed (UTC).
 
   securitySchemes:
     ApiKeyAuth:

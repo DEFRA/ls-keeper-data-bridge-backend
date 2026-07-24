@@ -45,7 +45,7 @@ public interface IS3CredentialValidator
 /// Probes the bucket with <c>ListObjectsV2(MaxKeys=1)</c> using a short-lived candidate
 /// client. The probe is read-only and does not depend on any particular object existing.
 /// </summary>
-public sealed class S3CredentialValidator(
+public class S3CredentialValidator(
     ExternalStorageS3Config externalS3Config,
     ILogger<S3CredentialValidator> logger) : IS3CredentialValidator
 {
@@ -70,9 +70,7 @@ public sealed class S3CredentialValidator(
         ArgumentException.ThrowIfNullOrWhiteSpace(secretAccessKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
 
-        using var candidateClient = new AmazonS3Client(
-            new BasicAWSCredentials(accessKeyId, secretAccessKey),
-            externalS3Config.Value);
+        using var candidateClient = CreateCandidateClient(accessKeyId, secretAccessKey);
 
         try
         {
@@ -105,6 +103,13 @@ public sealed class S3CredentialValidator(
                 $"Probe failed: {ex.GetType().Name}");
         }
     }
+
+    /// <summary>
+    /// Creates the short-lived client used for the probe. Virtual so unit tests can
+    /// substitute a mocked <see cref="IAmazonS3"/> without touching the network.
+    /// </summary>
+    protected virtual IAmazonS3 CreateCandidateClient(string accessKeyId, string secretAccessKey) =>
+        new AmazonS3Client(new BasicAWSCredentials(accessKeyId, secretAccessKey), externalS3Config.Value);
 
     private static bool IsDeterministicAuthFailure(AmazonS3Exception ex) =>
         ex.StatusCode == HttpStatusCode.Forbidden

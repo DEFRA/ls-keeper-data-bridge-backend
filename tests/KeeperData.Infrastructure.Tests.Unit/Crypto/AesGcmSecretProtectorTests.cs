@@ -187,4 +187,45 @@ public class AesGcmSecretProtectorTests
         // Assert
         act.Should().Throw<InvalidOperationException>().WithMessage("*not configured*");
     }
+
+    [Fact]
+    public void Unprotect_WhenNotConfigured_Throws()
+    {
+        // Arrange
+        var encrypted = AesGcmSecretProtector.FromKey(TestKey).Protect("value", "p");
+        var sut = AesGcmSecretProtector.Unconfigured();
+
+        // Act
+        var act = () => sut.Unprotect(encrypted, "p");
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>().WithMessage("*not configured*");
+    }
+
+    [Fact]
+    public void Unprotect_WithMismatchedKeyVersion_Throws()
+    {
+        // Arrange
+        var sut = AesGcmSecretProtector.FromKey(TestKey);
+        var encrypted = sut.Protect("value", "p") with { KeyVersion = 99 };
+
+        // Act
+        var act = () => sut.Unprotect(encrypted, "p");
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>().WithMessage("*key version 99*");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void FromEnvironment_WithBlankSecretName_Throws(string? secretName)
+    {
+        // Act
+        var act = () => AesGcmSecretProtector.FromEnvironment(secretName!);
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+    }
 }

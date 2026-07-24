@@ -4,13 +4,11 @@ using FluentAssertions;
 using KeeperData.Core.Domain.Entities;
 using KeeperData.Core.Locking;
 using KeeperData.Core.Storage.KeyRotation;
-using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Storage.Clients;
 using KeeperData.Infrastructure.Storage.Factories;
 using KeeperData.Infrastructure.Storage.KeyRotation;
 using KeeperData.Infrastructure.Storage.KeyRotation.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Time.Testing;
 using Moq;
 using System.Net;
 using System.Security.Cryptography;
@@ -27,19 +25,12 @@ public class KeyRotationServiceTests
 
     private readonly Mock<IS3ClientFactory> _s3ClientFactoryMock = new();
     private readonly Mock<IAmazonS3> _s3ClientMock = new();
-    private readonly Mock<IKeyRotationRepository> _repositoryMock = new();
+    private readonly Mock<IKeyRotationStore> _storeMock = new();
     private readonly Mock<IS3CredentialValidator> _validatorMock = new();
     private readonly Mock<IDistributedLock> _lockMock = new();
-    private readonly Mock<IExternalStorageCredentialsProvider> _providerMock = new();
-    private readonly FakeTimeProvider _timeProvider = new();
-    private readonly AesGcmSecretProtector _protector;
 
     public KeyRotationServiceTests()
     {
-        var key = new byte[32];
-        for (var i = 0; i < key.Length; i++) key[i] = (byte)(i + 1);
-        _protector = AesGcmSecretProtector.FromKey(key);
-
         _s3ClientFactoryMock.Setup(f => f.GetClientBucketName<ExternalStorageClient>()).Returns(BucketName);
         _s3ClientFactoryMock.Setup(f => f.GetClient<ExternalStorageClient>()).Returns(_s3ClientMock.Object);
 
@@ -48,17 +39,28 @@ public class KeyRotationServiceTests
 
         _validatorMock.Setup(v => v.ValidateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new S3CredentialValidationResult(S3CredentialValidationOutcome.Valid));
+
+        _storeMock.Setup(s => s.IsEncryptionConfigured).Returns(true);
+        _storeMock.Setup(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ValidatedRotation rotation, CancellationToken _) => new KeyRotationRecord
+            {
+                Id = Guid.NewGuid().ToString(),
+                BucketName = rotation.BucketName,
+                Source = rotation.Source,
+                Status = KeyRotationStatus.Active,
+                FileKey = rotation.FileKey,
+                FileHash = rotation.FileHash,
+                KeyIdMasked = KeyIdMask.Mask(rotation.AccessKeyId),
+                RolledBackFromId = rotation.RolledBackFromId
+            });
     }
 
-    private KeyRotationService CreateSut(ISecretProtector? protector = null) => new(
+    private KeyRotationService CreateSut() => new(
         _s3ClientFactoryMock.Object,
-        _repositoryMock.Object,
-        protector ?? _protector,
+        _storeMock.Object,
         _validatorMock.Object,
         _lockMock.Object,
-        _providerMock.Object,
         new ExternalStorageKeyRotationOptions(),
-        _timeProvider,
         Mock.Of<ILogger<KeyRotationService>>());
 
     private void SetupKeyFile(string content)
@@ -83,7 +85,8 @@ public class KeyRotationServiceTests
     public async Task CheckAndRotate_WhenEncryptionKeyNotConfigured_ReturnsNotConfiguredWithoutLocking()
     {
         // Arrange
-        var sut = CreateSut(AesGcmSecretProtector.Unconfigured());
+        _storeMock.Setup(s => s.IsEncryptionConfigured).Returns(false);
+        var sut = CreateSut();
 
         // Act
         var result = await sut.CheckAndRotateAsync();
@@ -123,7 +126,7 @@ public class KeyRotationServiceTests
         // Assert
         result.Outcome.Should().Be(KeyRotationCheckOutcome.FileNotFound);
         result.FileKey.Should().Be(ExpectedFileKey);
-        _repositoryMock.Verify(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+        _storeMock.Verify(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -139,7 +142,7 @@ public class KeyRotationServiceTests
 
         // Assert
         result.Outcome.Should().Be(KeyRotationCheckOutcome.TransientError);
-        _repositoryMock.Verify(r => r.AddFailedAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+        _storeMock.Verify(s => s.RecordFailedAsync(It.IsAny<FailedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -147,7 +150,7 @@ public class KeyRotationServiceTests
     {
         // Arrange
         SetupKeyFile(ValidCsv);
-        _repositoryMock.Setup(r => r.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
+        _storeMock.Setup(s => s.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(HashOf(ValidCsv));
         var sut = CreateSut();
 
@@ -158,7 +161,7 @@ public class KeyRotationServiceTests
         result.Outcome.Should().Be(KeyRotationCheckOutcome.AlreadyProcessed);
         result.FileHash.Should().Be(HashOf(ValidCsv));
         _validatorMock.Verify(v => v.ValidateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        _repositoryMock.Verify(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+        _storeMock.Verify(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -166,12 +169,19 @@ public class KeyRotationServiceTests
     {
         // Arrange
         SetupKeyFile(ValidCsv);
-        _repositoryMock.Setup(r => r.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
+        _storeMock.Setup(s => s.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((string?)null);
-        KeyRotationRecord? activated = null;
-        _repositoryMock.Setup(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()))
-            .Callback<KeyRotationRecord, CancellationToken>((r, _) => activated = r)
-            .Returns(Task.CompletedTask);
+        ValidatedRotation? activated = null;
+        _storeMock.Setup(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()))
+            .Callback<ValidatedRotation, CancellationToken>((r, _) => activated = r)
+            .ReturnsAsync((ValidatedRotation rotation, CancellationToken _) => new KeyRotationRecord
+            {
+                Id = "new-id",
+                BucketName = rotation.BucketName,
+                Source = rotation.Source,
+                Status = KeyRotationStatus.Active,
+                KeyIdMasked = KeyIdMask.Mask(rotation.AccessKeyId)
+            });
         var sut = CreateSut();
 
         // Act
@@ -187,14 +197,8 @@ public class KeyRotationServiceTests
         activated.BucketName.Should().Be(BucketName);
         activated.FileKey.Should().Be(ExpectedFileKey);
         activated.FileHash.Should().Be(HashOf(ValidCsv));
-        activated.KeyIdMasked.Should().Be("AKI...890");
-        activated.ValidatedAtUtc.Should().NotBeNull();
-
-        // Stored credentials are encrypted and decrypt back to the file values.
-        _protector.Unprotect(activated.EncryptedAccessKeyId!, SecretPurposes.AccessKeyId).Should().Be(NewKeyId);
-        _protector.Unprotect(activated.EncryptedSecretAccessKey!, SecretPurposes.SecretAccessKey).Should().Be(NewSecret);
-
-        _providerMock.Verify(p => p.Invalidate(), Times.Once);
+        activated.AccessKeyId.Should().Be(NewKeyId);
+        activated.SecretAccessKey.Should().Be(NewSecret);
     }
 
     [Fact]
@@ -203,11 +207,11 @@ public class KeyRotationServiceTests
         // Arrange
         const string garbage = "this is not a csv";
         SetupKeyFile(garbage);
-        _repositoryMock.Setup(r => r.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
+        _storeMock.Setup(s => s.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((string?)null);
-        KeyRotationRecord? failed = null;
-        _repositoryMock.Setup(r => r.AddFailedAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()))
-            .Callback<KeyRotationRecord, CancellationToken>((r, _) => failed = r)
+        FailedRotation? failed = null;
+        _storeMock.Setup(s => s.RecordFailedAsync(It.IsAny<FailedRotation>(), It.IsAny<CancellationToken>()))
+            .Callback<FailedRotation, CancellationToken>((r, _) => failed = r)
             .Returns(Task.CompletedTask);
         var sut = CreateSut();
 
@@ -218,10 +222,8 @@ public class KeyRotationServiceTests
         result.Outcome.Should().Be(KeyRotationCheckOutcome.InvalidFileFormat);
         failed.Should().NotBeNull();
         failed!.FileHash.Should().Be(HashOf(garbage));
-        failed.EncryptedAccessKeyId.Should().BeNull();
         failed.FailureReason.Should().NotBeNullOrEmpty();
-        _repositoryMock.Verify(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()), Times.Never);
-        _providerMock.Verify(p => p.Invalidate(), Times.Never);
+        _storeMock.Verify(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -229,7 +231,7 @@ public class KeyRotationServiceTests
     {
         // Arrange
         SetupKeyFile(ValidCsv);
-        _repositoryMock.Setup(r => r.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
+        _storeMock.Setup(s => s.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((string?)null);
         _validatorMock.Setup(v => v.ValidateAsync(NewKeyId, NewSecret, BucketName, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new S3CredentialValidationResult(S3CredentialValidationOutcome.InvalidCredentials, "S3 rejected the credentials: InvalidAccessKeyId (HTTP 403)"));
@@ -241,10 +243,10 @@ public class KeyRotationServiceTests
         // Assert
         result.Outcome.Should().Be(KeyRotationCheckOutcome.ValidationFailed);
         result.KeyIdHint.Should().Be("AKI...890");
-        _repositoryMock.Verify(r => r.AddFailedAsync(
-            It.Is<KeyRotationRecord>(rec => rec.FileHash == HashOf(ValidCsv) && rec.EncryptedAccessKeyId == null),
+        _storeMock.Verify(s => s.RecordFailedAsync(
+            It.Is<FailedRotation>(rec => rec.FileHash == HashOf(ValidCsv) && rec.KeyIdMasked == "AKI...890"),
             It.IsAny<CancellationToken>()), Times.Once);
-        _repositoryMock.Verify(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+        _storeMock.Verify(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -252,7 +254,7 @@ public class KeyRotationServiceTests
     {
         // Arrange
         SetupKeyFile(ValidCsv);
-        _repositoryMock.Setup(r => r.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
+        _storeMock.Setup(s => s.GetLatestObservedFileHashAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((string?)null);
         _validatorMock.Setup(v => v.ValidateAsync(NewKeyId, NewSecret, BucketName, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new S3CredentialValidationResult(S3CredentialValidationOutcome.TransientError, "Probe failed: HttpRequestException"));
@@ -263,18 +265,25 @@ public class KeyRotationServiceTests
 
         // Assert
         result.Outcome.Should().Be(KeyRotationCheckOutcome.TransientError);
-        _repositoryMock.Verify(r => r.AddFailedAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()), Times.Never);
-        _repositoryMock.Verify(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+        _storeMock.Verify(s => s.RecordFailedAsync(It.IsAny<FailedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
+        _storeMock.Verify(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task ApplyManual_WithValidCredentials_ActivatesManualRotation()
     {
         // Arrange
-        KeyRotationRecord? activated = null;
-        _repositoryMock.Setup(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()))
-            .Callback<KeyRotationRecord, CancellationToken>((r, _) => activated = r)
-            .Returns(Task.CompletedTask);
+        ValidatedRotation? activated = null;
+        _storeMock.Setup(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()))
+            .Callback<ValidatedRotation, CancellationToken>((r, _) => activated = r)
+            .ReturnsAsync((ValidatedRotation rotation, CancellationToken _) => new KeyRotationRecord
+            {
+                Id = "manual-id",
+                BucketName = rotation.BucketName,
+                Source = rotation.Source,
+                Status = KeyRotationStatus.Active,
+                KeyIdMasked = KeyIdMask.Mask(rotation.AccessKeyId)
+            });
         var sut = CreateSut();
 
         // Act
@@ -286,14 +295,14 @@ public class KeyRotationServiceTests
         activated!.Source.Should().Be(KeyRotationSource.Manual);
         activated.FileKey.Should().BeNull();
         activated.FileHash.Should().BeNull();
-        _providerMock.Verify(p => p.Invalidate(), Times.Once);
     }
 
     [Fact]
     public async Task ApplyManual_WhenNotConfigured_ReturnsNotConfigured()
     {
         // Arrange
-        var sut = CreateSut(AesGcmSecretProtector.Unconfigured());
+        _storeMock.Setup(s => s.IsEncryptionConfigured).Returns(false);
+        var sut = CreateSut();
 
         // Act
         var result = await sut.ApplyManualAsync(NewKeyId, NewSecret);
@@ -328,14 +337,14 @@ public class KeyRotationServiceTests
 
         // Assert
         result.Outcome.Should().Be(KeyRotationActionOutcome.ValidationFailed);
-        _repositoryMock.Verify(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+        _storeMock.Verify(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task Rollback_WithUnknownId_ReturnsNotFound()
     {
         // Arrange
-        _repositoryMock.Setup(r => r.GetByIdAsync("missing", It.IsAny<CancellationToken>()))
+        _storeMock.Setup(s => s.GetByIdAsync("missing", It.IsAny<CancellationToken>()))
             .ReturnsAsync((KeyRotationRecord?)null);
         var sut = CreateSut();
 
@@ -350,7 +359,7 @@ public class KeyRotationServiceTests
     public async Task Rollback_ToFailedRecord_ReturnsInvalidRequest()
     {
         // Arrange
-        _repositoryMock.Setup(r => r.GetByIdAsync("failed-id", It.IsAny<CancellationToken>()))
+        _storeMock.Setup(s => s.GetByIdAsync("failed-id", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new KeyRotationRecord
             {
                 Id = "failed-id",
@@ -371,7 +380,7 @@ public class KeyRotationServiceTests
     public async Task Rollback_ToActiveRecord_ReturnsInvalidRequest()
     {
         // Arrange
-        _repositoryMock.Setup(r => r.GetByIdAsync("active-id", It.IsAny<CancellationToken>()))
+        _storeMock.Setup(s => s.GetByIdAsync("active-id", It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateStoredRecord("active-id", KeyRotationStatus.Active));
         var sut = CreateSut();
 
@@ -387,12 +396,22 @@ public class KeyRotationServiceTests
     public async Task Rollback_ToSupersededRecord_RevalidatesAndActivates()
     {
         // Arrange
-        _repositoryMock.Setup(r => r.GetByIdAsync("old-id", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(CreateStoredRecord("old-id", KeyRotationStatus.Superseded));
-        KeyRotationRecord? activated = null;
-        _repositoryMock.Setup(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()))
-            .Callback<KeyRotationRecord, CancellationToken>((r, _) => activated = r)
-            .Returns(Task.CompletedTask);
+        var target = CreateStoredRecord("old-id", KeyRotationStatus.Superseded);
+        _storeMock.Setup(s => s.GetByIdAsync("old-id", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(target);
+        _storeMock.Setup(s => s.DecryptCredentials(target)).Returns((NewKeyId, NewSecret));
+        ValidatedRotation? activated = null;
+        _storeMock.Setup(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()))
+            .Callback<ValidatedRotation, CancellationToken>((r, _) => activated = r)
+            .ReturnsAsync((ValidatedRotation rotation, CancellationToken _) => new KeyRotationRecord
+            {
+                Id = "rollback-id",
+                BucketName = rotation.BucketName,
+                Source = rotation.Source,
+                Status = KeyRotationStatus.Active,
+                KeyIdMasked = KeyIdMask.Mask(rotation.AccessKeyId),
+                RolledBackFromId = rotation.RolledBackFromId
+            });
         var sut = CreateSut();
 
         // Act
@@ -403,15 +422,16 @@ public class KeyRotationServiceTests
         activated!.Source.Should().Be(KeyRotationSource.Rollback);
         activated.RolledBackFromId.Should().Be("old-id");
         _validatorMock.Verify(v => v.ValidateAsync(NewKeyId, NewSecret, BucketName, It.IsAny<CancellationToken>()), Times.Once);
-        _providerMock.Verify(p => p.Invalidate(), Times.Once);
     }
 
     [Fact]
     public async Task Rollback_WhenOldCredentialsNoLongerValid_ReturnsValidationFailed()
     {
         // Arrange
-        _repositoryMock.Setup(r => r.GetByIdAsync("old-id", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(CreateStoredRecord("old-id", KeyRotationStatus.Superseded));
+        var target = CreateStoredRecord("old-id", KeyRotationStatus.Superseded);
+        _storeMock.Setup(s => s.GetByIdAsync("old-id", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(target);
+        _storeMock.Setup(s => s.DecryptCredentials(target)).Returns((NewKeyId, NewSecret));
         _validatorMock.Setup(v => v.ValidateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new S3CredentialValidationResult(S3CredentialValidationOutcome.InvalidCredentials, "revoked"));
         var sut = CreateSut();
@@ -421,18 +441,91 @@ public class KeyRotationServiceTests
 
         // Assert
         result.Outcome.Should().Be(KeyRotationActionOutcome.ValidationFailed);
-        _repositoryMock.Verify(r => r.ActivateAsync(It.IsAny<KeyRotationRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+        _storeMock.Verify(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private KeyRotationRecord CreateStoredRecord(string id, KeyRotationStatus status) => new()
+    [Fact]
+    public async Task ApplyManual_WhenLockUnavailable_ReturnsLockUnavailable()
+    {
+        // Arrange
+        _lockMock.Setup(l => l.TryAcquireAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IDistributedLockHandle?)null);
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.ApplyManualAsync(NewKeyId, NewSecret);
+
+        // Assert
+        result.Outcome.Should().Be(KeyRotationActionOutcome.LockUnavailable);
+    }
+
+    [Fact]
+    public async Task ApplyManual_WhenValidationTransient_ReturnsTransientError()
+    {
+        // Arrange
+        _validatorMock.Setup(v => v.ValidateAsync(NewKeyId, NewSecret, BucketName, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new S3CredentialValidationResult(S3CredentialValidationOutcome.TransientError, "timeout"));
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.ApplyManualAsync(NewKeyId, NewSecret);
+
+        // Assert
+        result.Outcome.Should().Be(KeyRotationActionOutcome.TransientError);
+        _storeMock.Verify(s => s.ActivateValidatedAsync(It.IsAny<ValidatedRotation>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Rollback_WhenNotConfigured_ReturnsNotConfigured()
+    {
+        // Arrange
+        _storeMock.Setup(s => s.IsEncryptionConfigured).Returns(false);
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.RollbackAsync("any-id");
+
+        // Assert
+        result.Outcome.Should().Be(KeyRotationActionOutcome.NotConfigured);
+    }
+
+    [Fact]
+    public async Task Rollback_WithBlankId_Throws()
+    {
+        // Arrange
+        var sut = CreateSut();
+
+        // Act
+        var act = () => sut.RollbackAsync(" ");
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task Rollback_WhenLockUnavailable_ReturnsLockUnavailable()
+    {
+        // Arrange
+        _lockMock.Setup(l => l.TryAcquireAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IDistributedLockHandle?)null);
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.RollbackAsync("old-id");
+
+        // Assert
+        result.Outcome.Should().Be(KeyRotationActionOutcome.LockUnavailable);
+    }
+
+    private static KeyRotationRecord CreateStoredRecord(string id, KeyRotationStatus status) => new()
     {
         Id = id,
         BucketName = BucketName,
-        RotatedAtUtc = _timeProvider.GetUtcNow().UtcDateTime,
+        RotatedAtUtc = DateTime.UtcNow,
         Source = KeyRotationSource.Automatic,
         Status = status,
         KeyIdMasked = KeyIdMask.Mask(NewKeyId),
-        EncryptedAccessKeyId = _protector.Protect(NewKeyId, SecretPurposes.AccessKeyId),
-        EncryptedSecretAccessKey = _protector.Protect(NewSecret, SecretPurposes.SecretAccessKey)
+        EncryptedAccessKeyId = new EncryptedSecret { KeyVersion = 1, Nonce = "n", CipherText = "c", Tag = "t" },
+        EncryptedSecretAccessKey = new EncryptedSecret { KeyVersion = 1, Nonce = "n2", CipherText = "c2", Tag = "t2" }
     };
 }

@@ -60,6 +60,25 @@ public class KeyRotationsController(
     }
 
     /// <summary>
+    /// Runs the key rotation check on demand — the same detect/validate/adopt flow the
+    /// scheduled daily job performs. Returns the outcome of the check; when a new key file
+    /// is found and validates, it is adopted immediately. Progress and outcome are logged
+    /// with the [KeyRotation] prefix, and any adopted rotation appears in GET /api/key-rotations.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The outcome of the rotation check</returns>
+    [HttpPost("check")]
+    [ProducesResponseType(typeof(KeyRotationCheckResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RunKeyRotationCheck(CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("{LogPrefix} Received request to run an on-demand key rotation check", LogPrefix);
+
+        var result = await requestExecutor.ExecuteCommand(new RunKeyRotationCheckCommand(), cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Manually applies a new access key id and secret. The credentials are validated
     /// against the external bucket before being encrypted, stored, and activated.
     /// The submitted secret is never echoed back.

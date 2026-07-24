@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IKeyRotationRepository, KeyRotationRepository>();
         services.AddSingleton<IExternalStorageCredentialsProvider, ExternalStorageCredentialsProvider>();
+        services.AddSingleton<IKeyRotationStore, KeyRotationStore>();
         services.AddSingleton<IS3CredentialValidator, S3CredentialValidator>();
         services.AddSingleton<IKeyRotationService, KeyRotationService>();
 

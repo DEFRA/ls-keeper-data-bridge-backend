@@ -50,6 +50,17 @@ public static class ServiceCollectionExtensions
                     .WithIdentity($"{cleanseReportConfig.JobType}-trigger")
                     .WithCronSchedule(cleanseReportConfig.CronSchedule));
             }
+
+            var rotateKeysConfig = scheduledJobConfiguration.FirstOrDefault(x => x.JobType == nameof(RotateExternalStorageKeysJob));
+            if (!string.IsNullOrWhiteSpace(rotateKeysConfig?.CronSchedule) && rotateKeysConfig.IsEnabled)
+            {
+                q.AddJob<RotateExternalStorageKeysJob>(opts => opts.WithIdentity(rotateKeysConfig.JobType));
+
+                q.AddTrigger(opts => opts
+                    .ForJob(rotateKeysConfig.JobType)
+                    .WithIdentity($"{rotateKeysConfig.JobType}-trigger")
+                    .WithCronSchedule(rotateKeysConfig.CronSchedule));
+            }
         });
 
         services.AddQuartzHostedService(q =>
@@ -64,6 +75,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<ImportBulkFilesJob>();
         services.AddScoped<CleanseReportJob>();
+        services.AddScoped<RotateExternalStorageKeysJob>();
 
         return services;
     }
@@ -74,6 +86,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIngestionRunExecutor, IngestionRunExecutor>();
         services.AddScoped<ITaskProcessBulkFiles, TaskProcessBulkFiles>();
         services.AddScoped<ITaskRunCleanseReport, TaskRunCleanseReport>();
+        services.AddScoped<ITaskRotateExternalStorageKeys, TaskRotateExternalStorageKeys>();
 
         return services;
     }

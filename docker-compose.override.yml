@@ -13,6 +13,8 @@ services:
       - StorageConfiguration__InternalStorage__BucketName=test-internal-bucket
       - ServiceBusSenderConfiguration__DataBridgeEventsTopic__TopicArn=arn:aws:sns:eu-west-2:000000000000:ls-keeper-data-bridge-events
       - AesSalt=LD8BB2NNze7qKbVyLutAfGBxhkAApR 
+      # Local-dev only key rotation encryption key (base64, 32 bytes). Real keys live in CDP Portal secrets.
+      - KEY_ROTATION_ENCRYPTION_KEY=fLjmYRT31vSX5UYUN0dLxT1YuxarnaOAtLD3XvFcW6c=
     ports:
       - "5560"
     volumes:

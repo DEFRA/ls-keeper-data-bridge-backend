@@ -39,6 +39,13 @@ tags:
       performance differences. Creates temporary collections, runs read/write
       scenarios, and produces a detailed report with noisy-neighbour analysis.
       Does not touch production data collections.
+  - name: Key Rotation
+    description: |
+      External storage (S3) access-key rotation history and management.
+      Rotations are detected automatically from the third party's key file each
+      day at 03:00; this API lists successful rotations and supports rollback
+      and manual key application. Key ids are always masked; secrets are
+      write-only and never returned.
 
 paths:
   # ═══════════════════════════════════════════════════════════════════
@@ -1583,6 +1590,153 @@ paths:
               schema:
                 $ref: '#/components/schemas/BenchmarkStatus'
 
+  # ═══════════════════════════════════════════════════════════════════
+  # Key Rotation
+  # ═══════════════════════════════════════════════════════════════════
+  /key-rotations:
+    get:
+      tags: [Key Rotation]
+      operationId: getKeyRotations
+      summary: List successful key rotations
+      description: |
+        Returns successful external storage key rotations (active and superseded),
+        most recent first. Key ids are masked to their first three and last three
+        characters; secrets are never returned.
+      parameters:
+        - name: page
+          in: query
+          description: 1-based page number
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: pageSize
+          in: query
+          description: Page size
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: A page of key rotation summaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyRotationListResponse'
+        '400':
+          description: Invalid paging parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Key Rotation]
+      operationId: applyManualKey
+      summary: Manually apply new external storage credentials
+      description: |
+        Validates the supplied access key id and secret against the external bucket
+        with a lightweight read-only probe and, when valid, encrypts, stores, and
+        activates them as a manual rotation. The submitted values are write-only:
+        they are never echoed back or logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyManualKeyRequest'
+      responses:
+        '201':
+          description: The credentials were validated and activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyRotationItem'
+        '400':
+          description: Missing values or the credentials failed validation against the bucket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Key rotation is not configured (no encryption key set)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: A transient error or lock contention prevented the operation; retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /key-rotations/check:
+    post:
+      tags: [Key Rotation]
+      operationId: runKeyRotationCheck
+      summary: Run the key rotation check on demand
+      description: |
+        Runs the same detect/validate/adopt flow as the scheduled daily (03:00) job:
+        derives the expected key file name from the bucket, compares the file's SHA-256
+        hash with the last processed file, and — when new and valid — adopts the
+        credentials immediately. Always returns 200 with the outcome of the check;
+        progress is logged with the [KeyRotation] prefix and any adopted rotation
+        appears in GET /key-rotations.
+      responses:
+        '200':
+          description: The outcome of the rotation check
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyRotationCheckResponse'
+
+  /key-rotations/{id}/rollback:
+    post:
+      tags: [Key Rotation]
+      operationId: rollbackKeyRotation
+      summary: Roll back to a previous key rotation
+      description: |
+        Re-validates the credentials captured in the referenced rotation record
+        against the bucket and, when they still authenticate, re-activates them as
+        a new rollback rotation (history is append-only).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The rotation record id to roll back to
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The rollback rotation that is now active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyRotationItem'
+        '404':
+          description: No rotation record found with the given id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: |
+            The rotation cannot be rolled back: its credentials no longer authenticate,
+            it holds no key material (failed record), it is already active, or key
+            rotation is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: A transient error or lock contention prevented the operation; retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 # ═════════════════════════════════════════════════════════════════════
 # Components
 # ═════════════════════════════════════════════════════════════════════
@@ -2693,6 +2847,101 @@ components:
           description: Child nodes forming a recursive tree.
           items:
             $ref: '#/components/schemas/OperationNode'
+
+    # ── Key Rotation ──────────────────────────────────────────────
+    KeyRotationItem:
+      type: object
+      required: [id, rotatedAtUtc, keyIdHint, source, status]
+      properties:
+        id:
+          type: string
+          description: The rotation record id.
+        rotatedAtUtc:
+          type: string
+          format: date-time
+          description: When the rotation occurred (UTC).
+        fileKey:
+          type: string
+          nullable: true
+          description: The S3 key of the rotation file. Null for manual/rollback rotations.
+        fileHash:
+          type: string
+          nullable: true
+          description: Lowercase hex SHA-256 of the rotation file content. Null for manual/rollback rotations.
+        keyIdHint:
+          type: string
+          description: "Masked access key id: first three and last three characters (e.g. AKI...XYZ)."
+        source:
+          type: string
+          enum: [Automatic, Manual, Rollback]
+          description: How the rotation came about.
+        status:
+          type: string
+          enum: [Active, Superseded]
+          description: Whether these are the credentials currently in use.
+        rolledBackFromId:
+          type: string
+          nullable: true
+          description: For rollback rotations, the id of the rotation the key was restored from.
+
+    KeyRotationListResponse:
+      type: object
+      required: [items, page, pageSize, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyRotationItem'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalCount:
+          type: integer
+          format: int64
+
+    ApplyManualKeyRequest:
+      type: object
+      required: [accessKeyId, secretAccessKey]
+      properties:
+        accessKeyId:
+          type: string
+          description: The new access key id. Write-only; never returned.
+        secretAccessKey:
+          type: string
+          description: The new secret access key. Write-only; never returned.
+
+    KeyRotationCheckResponse:
+      type: object
+      required: [outcome, bucketName, checkedAtUtc]
+      properties:
+        outcome:
+          type: string
+          enum: [NotConfigured, LockUnavailable, FileNotFound, AlreadyProcessed, Adopted, InvalidFileFormat, ValidationFailed, TransientError]
+          description: What the check found and did.
+        bucketName:
+          type: string
+          description: The external bucket that was checked.
+        fileKey:
+          type: string
+          nullable: true
+          description: The rotation file name that was looked for.
+        fileHash:
+          type: string
+          nullable: true
+          description: Lowercase hex SHA-256 of the file content, when the file was found.
+        keyIdHint:
+          type: string
+          nullable: true
+          description: Masked access key id from the file, when it was parseable.
+        detail:
+          type: string
+          nullable: true
+          description: Additional outcome detail. Never contains key material.
+        checkedAtUtc:
+          type: string
+          format: date-time
+          description: When the check completed (UTC).
 
   securitySchemes:
     ApiKeyAuth:

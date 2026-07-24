@@ -1,3 +1,4 @@
+using Amazon.Runtime;
 using Amazon.S3;
 using KeeperData.Infrastructure.Storage.Factories.Implementations;
 
@@ -23,6 +24,9 @@ public interface IS3ClientFactory
         where T : IStorageClient, new();
 
     void AddClientWithCredentials<T>(string defaultBucketName, string accessKeyRef, string secretKeyRef, AmazonS3Config amazonS3Config)
+        where T : IStorageClient, new();
+
+    void AddClientWithCredentials<T>(string defaultBucketName, AWSCredentials credentials, AmazonS3Config amazonS3Config)
         where T : IStorageClient, new();
 
     void RegisterMockClient<T>(string bucketName, IAmazonS3 mockClient)

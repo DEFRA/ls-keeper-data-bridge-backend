@@ -17,8 +17,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.3" />
-    <PackageReference Include="FluentAssertions" Version="6.12.0" />
-    <PackageReference Include="GitHubActionsTestLogger" Version="3.0.4">
+    <PackageReference Include="FluentAssertions" Version="8.10.0" />
+    <PackageReference Include="GitHubActionsTestLogger" Version="3.0.5">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>

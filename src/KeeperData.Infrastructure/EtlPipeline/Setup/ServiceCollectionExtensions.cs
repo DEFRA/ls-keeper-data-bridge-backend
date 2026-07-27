@@ -19,11 +19,11 @@ public static class ServiceCollectionExtensions
 
         if (storageConfiguration.UseFileSystem)
         {
-            services.AddTransient<IEtlPipelineStorage, FileSystemEtlPipelineStorage>();
+            services.AddTransient<IEtlPipelineStorageProvider, FileSystemEtlPipelineStorageProvider>();
         }
         else
         {
-            services.AddTransient<IEtlPipelineStorage, S3EtlPipelineStorage>();
+            services.AddTransient<IEtlPipelineStorageProvider, S3EtlPipelineStorageProvider>();
         }
 
         return services;

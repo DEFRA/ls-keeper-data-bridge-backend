@@ -8,11 +8,11 @@ using Moq;
 
 namespace KeeperData.Infrastructure.Tests.Unit.EtlPipeline.Storage;
 
-public class FileSystemEtlPipelineStorageTests
+public class FileSystemEtlPipelineStorageProviderTests
 {
     private readonly Mock<ILoggerFactory> _loggerFactoryMock;
 
-    public FileSystemEtlPipelineStorageTests()
+    public FileSystemEtlPipelineStorageProviderTests()
     {
         _loggerFactoryMock = new Mock<ILoggerFactory>();
         _loggerFactoryMock.Setup(f => f.CreateLogger(It.IsAny<string>()))
@@ -28,7 +28,7 @@ public class FileSystemEtlPipelineStorageTests
         FileSystemBasePath = basePath
     };
 
-    private FileSystemEtlPipelineStorage Sut(StorageConfiguration config) =>
+    private FileSystemEtlPipelineStorageProvider Sut(StorageConfiguration config) =>
         new(_loggerFactoryMock.Object, config);
 
     [Fact]

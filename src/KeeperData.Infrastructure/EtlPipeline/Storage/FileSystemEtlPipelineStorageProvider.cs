@@ -8,9 +8,9 @@ namespace KeeperData.Infrastructure.EtlPipeline.Storage;
 
 /// <summary>Serves the ETL pipeline folders from the local file system, for local development
 /// where <see cref="StorageConfiguration.UseFileSystem"/> is enabled.</summary>
-public sealed class FileSystemEtlPipelineStorage(
+public sealed class FileSystemEtlPipelineStorageProvider(
     ILoggerFactory loggerFactory,
-    StorageConfiguration storageConfiguration) : IEtlPipelineStorage
+    StorageConfiguration storageConfiguration) : IEtlPipelineStorageProvider
 {
     private readonly string _basePath = FileSystemBlobStorageServiceFactory.ResolveBasePath(storageConfiguration);
 

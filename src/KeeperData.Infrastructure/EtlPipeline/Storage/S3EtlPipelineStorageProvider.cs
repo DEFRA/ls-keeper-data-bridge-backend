@@ -9,9 +9,9 @@ namespace KeeperData.Infrastructure.EtlPipeline.Storage;
 
 /// <summary>Serves the ETL pipeline folders from the internal S3 bucket. Each folder is a
 /// top-level folder at the bucket root, alongside the legacy ETL folders.</summary>
-public sealed class S3EtlPipelineStorage(
+public sealed class S3EtlPipelineStorageProvider(
     IS3ClientFactory s3ClientFactory,
-    ILoggerFactory loggerFactory) : IEtlPipelineStorage
+    ILoggerFactory loggerFactory) : IEtlPipelineStorageProvider
 {
     public IBlobStorageService ForFolder(string folder)
     {

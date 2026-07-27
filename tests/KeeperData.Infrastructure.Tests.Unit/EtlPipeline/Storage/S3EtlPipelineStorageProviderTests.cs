@@ -9,13 +9,13 @@ using Moq;
 
 namespace KeeperData.Infrastructure.Tests.Unit.EtlPipeline.Storage;
 
-public class S3EtlPipelineStorageTests
+public class S3EtlPipelineStorageProviderTests
 {
     private readonly Mock<IS3ClientFactory> _s3ClientFactoryMock;
     private readonly Mock<ILoggerFactory> _loggerFactoryMock;
-    private readonly S3EtlPipelineStorage _sut;
+    private readonly S3EtlPipelineStorageProvider _sut;
 
-    public S3EtlPipelineStorageTests()
+    public S3EtlPipelineStorageProviderTests()
     {
         _s3ClientFactoryMock = new Mock<IS3ClientFactory>();
         _loggerFactoryMock = new Mock<ILoggerFactory>();
@@ -27,7 +27,7 @@ public class S3EtlPipelineStorageTests
         _s3ClientFactoryMock.Setup(f => f.GetClientInfo<InternalStorageClient>())
             .Returns(new StorageClientInfo(mockS3Client.Object, "internal-bucket"));
 
-        _sut = new S3EtlPipelineStorage(_s3ClientFactoryMock.Object, _loggerFactoryMock.Object);
+        _sut = new S3EtlPipelineStorageProvider(_s3ClientFactoryMock.Object, _loggerFactoryMock.Object);
     }
 
     [Fact]

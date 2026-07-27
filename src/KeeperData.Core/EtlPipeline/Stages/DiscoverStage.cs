@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.Pipeline;
 
@@ -15,7 +16,7 @@ public sealed class DiscoverStage : GroupStage<DiscoveredFile, DiscoveredFileSet
         IPipelineContext context,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var byDataset = new Dictionary<string, (ETL.Impl.DataSetDefinition Definition, List<ETL.Impl.EtlFile> Files)>();
+        var byDataset = new Dictionary<string, (DataSetDefinition Definition, List<EtlFile> Files)>();
 
         await foreach (var discovered in input.WithCancellation(cancellationToken))
         {

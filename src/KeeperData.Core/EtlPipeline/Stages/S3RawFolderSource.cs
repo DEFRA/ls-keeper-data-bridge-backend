@@ -16,7 +16,7 @@ public sealed class S3RawFolderSource(IExternalCatalogueServiceFactory catalogue
     {
         var etlContext = (EtlPipelineContext)context;
 
-        var catalogue = catalogueFactory.CreateLegacy(etlContext.SourceType);
+        var catalogue = catalogueFactory.Create(etlContext.SourceType);
         var fileSets = await catalogue.GetFileSetsAsync(etlContext.LookbackDays, cancellationToken);
 
         foreach (var fileSet in fileSets)

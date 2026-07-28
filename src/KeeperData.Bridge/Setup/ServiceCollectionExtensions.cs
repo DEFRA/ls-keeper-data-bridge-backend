@@ -56,7 +56,7 @@ namespace KeeperData.Bridge.Setup
 
             services.AddStorageDependencies(configuration);
 
-            services.AddEtlPipelineStorage(configuration);
+            services.AddEtlPipelineStorageProvider(configuration);
 
             services.AddEtlDependencies(configuration);
 

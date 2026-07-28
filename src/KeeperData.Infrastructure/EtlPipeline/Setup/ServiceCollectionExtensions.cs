@@ -13,7 +13,7 @@ public static class ServiceCollectionExtensions
     /// <summary>Registers storage access for the file-based ETL pipeline folders.
     /// Must be called after AddStorageDependencies, which registers StorageConfiguration
     /// and the S3 client factory this depends on.</summary>
-    public static IServiceCollection AddEtlPipelineStorage(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddEtlPipelineStorageProvider(this IServiceCollection services, IConfiguration configuration)
     {
         var storageConfiguration = configuration.GetSection(nameof(StorageConfiguration)).Get<StorageConfiguration>()!;
 

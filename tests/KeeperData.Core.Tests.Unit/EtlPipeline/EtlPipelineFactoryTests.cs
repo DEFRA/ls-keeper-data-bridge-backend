@@ -17,6 +17,7 @@ public class EtlPipelineFactoryTests
     {
         var factory = new EtlPipelineFactory(
             Mock.Of<IExternalCatalogueServiceFactory>(),
+            AutoMocked.Instance<DecryptStage>(),
             AutoMocked.Instance<SnapshotStage>());
 
         factory.Create().GetStageNames().Should().Equal(

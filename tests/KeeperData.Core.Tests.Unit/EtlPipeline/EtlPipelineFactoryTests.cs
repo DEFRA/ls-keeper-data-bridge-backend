@@ -1,11 +1,8 @@
 using FluentAssertions;
-using KeeperData.Core.Crypto;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Stages;
-using KeeperData.Core.EtlPipeline.Storage;
-using KeeperData.Core.Storage;
-using Microsoft.Extensions.Logging.Abstractions;
+using KeeperData.Core.Tests.Unit.TestSupport;
 using Moq;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
@@ -18,7 +15,9 @@ public class EtlPipelineFactoryTests
     [Fact]
     public void Create_wires_the_expected_stages_in_order()
     {
-        var factory = new EtlPipelineFactory(Mock.Of<IExternalCatalogueServiceFactory>(), CreateDecryptStage());
+        var factory = new EtlPipelineFactory(
+            Mock.Of<IExternalCatalogueServiceFactory>(),
+            AutoMocked.Instance<DecryptStage>());
 
         factory.Create().GetStageNames().Should().Equal(
             "discover",
@@ -27,11 +26,4 @@ public class EtlPipelineFactoryTests
             "snapshot",
             "load-duckdb");
     }
-
-    private static DecryptStage CreateDecryptStage() => new(
-        Mock.Of<IBlobStorageServiceFactory>(),
-        Mock.Of<IEtlPipelineStorageProvider>(),
-        Mock.Of<IAesCryptoTransform>(),
-        Mock.Of<IPasswordSaltService>(),
-        NullLogger<DecryptStage>.Instance);
 }

@@ -11,8 +11,8 @@ public static class PipelineExtensions
     public static PipelineBuilder<DiscoveredFileSet> Discover(this PipelineBuilder<DiscoveredFile> builder)
         => builder.Then(new DiscoverStage());
 
-    public static PipelineBuilder<RawFileSet> Decrypt(this PipelineBuilder<DiscoveredFileSet> builder)
-        => builder.Then(new DecryptStage());
+    public static PipelineBuilder<RawFileSet> Decrypt(this PipelineBuilder<DiscoveredFileSet> builder, DecryptStage stage)
+        => builder.Then(stage);
 
     public static PipelineBuilder<NormalisedFileSet> Normalise(this PipelineBuilder<RawFileSet> builder)
         => builder.Then(new NormaliseStage());

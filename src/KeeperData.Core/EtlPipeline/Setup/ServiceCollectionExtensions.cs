@@ -1,3 +1,4 @@
+using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,6 +10,8 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<IPipelineExecutor, PipelineExecutor>();
         services.AddScoped<IEtlPipelineFactory, EtlPipelineFactory>();
+
+        services.AddScoped<DecryptStage>();
 
         return services;
     }

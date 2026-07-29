@@ -7,10 +7,11 @@ public sealed record SnapshotFile(DataSetDefinition Definition)
 {
     public Guid RunId { get; init; }
 
-    /* Delete this region once the previous stage provides these */
-    #region TEMP - PlaceholderInputs
+    public string Key { get; init; } = string.Empty;
 
-    public IReadOnlyList<string> Files { get; init; } = [];
+    public string SourceKey { get; init; } = string.Empty;
 
-    #endregion
+    public DateTimeOffset Timestamp { get; init; }
+
+    public bool Created { get; init; }
 }

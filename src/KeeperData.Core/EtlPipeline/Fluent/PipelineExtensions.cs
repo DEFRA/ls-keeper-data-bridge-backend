@@ -1,6 +1,8 @@
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Stages;
+using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Pipeline;
+using Microsoft.Extensions.Logging;
 
 namespace KeeperData.Core.EtlPipeline.Fluent;
 
@@ -17,8 +19,12 @@ public static class PipelineExtensions
     public static PipelineBuilder<NormalisedFileSet> Normalise(this PipelineBuilder<RawFileSet> builder)
         => builder.Then(new NormaliseStage());
 
-    public static PipelineBuilder<SnapshotFile> Snapshot(this PipelineBuilder<NormalisedFileSet> builder)
-        => builder.Then(new SnapshotStage());
+    public static PipelineBuilder<SnapshotFile> Snapshot(
+        this PipelineBuilder<NormalisedFileSet> builder,
+        IEtlPipelineStorageProvider storageProvider,
+        TimeProvider timeProvider,
+        ILogger<SnapshotStage> logger)
+        => builder.Then(new SnapshotStage(storageProvider, timeProvider, logger));
 
     public static PipelineBuilder<StagingDatabase> LoadDuckDb(this PipelineBuilder<SnapshotFile> builder)
         => builder.Then(new LoadDuckDbStage());

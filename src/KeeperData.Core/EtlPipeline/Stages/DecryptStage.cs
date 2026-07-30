@@ -29,9 +29,9 @@ public sealed class DecryptStage(
         CancellationToken cancellationToken)
     {
         var etlContext = (EtlPipelineContext)context;
-
-        var sourceBlobs = blobStorageServiceFactory.GetSource(etlContext.SourceType);
-        var rawBlobs = etlPipelineStorageProvider.ForFolder(EtlPipelineFolders.Raw);
+        
+        var sourceBlobsStorageService = blobStorageServiceFactory.GetSource(etlContext.SourceType);
+        var rawBlobsStorageService = etlPipelineStorageProvider.ForFolder(EtlPipelineFolders.Raw);
 
         var rawKeys = new List<string>(input.Files.Count);
 
@@ -41,7 +41,7 @@ public sealed class DecryptStage(
 
             var objectKey = file.StorageObject.Key;
 
-            if (await rawBlobs.ExistsAsync(objectKey, cancellationToken))
+            if (await rawBlobsStorageService.ExistsAsync(objectKey, cancellationToken))
             {
                 logger.LogInformation(
                     "Skipping {ObjectKey} for dataset {DatasetName} - already present in {Folder} for RunId: {RunId}",
@@ -51,7 +51,7 @@ public sealed class DecryptStage(
                 continue;
             }
 
-            var decryptedLength = await DecryptToRawAsync(objectKey, sourceBlobs, rawBlobs, cancellationToken);
+            var decryptedLength = await DecryptToRawAsync(objectKey, sourceBlobsStorageService, rawBlobsStorageService, cancellationToken);
 
             logger.LogInformation(
                 "Decrypted {ObjectKey} for dataset {DatasetName} into {Folder} ({SizeMB:F2} MB) for RunId: {RunId}",

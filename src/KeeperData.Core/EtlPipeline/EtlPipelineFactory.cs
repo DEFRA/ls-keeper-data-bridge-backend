@@ -13,13 +13,14 @@ public sealed class EtlPipelineFactory(
     IExternalCatalogueServiceFactory catalogueFactory,
     IEtlPipelineStorageProvider storageProvider,
     TimeProvider timeProvider,
-    ILogger<SnapshotStage> snapshotLogger) : IEtlPipelineFactory
+    ILogger<SnapshotStage> snapshotLogger,
+    DecryptStage decryptStage) : IEtlPipelineFactory
 {
     public PipelineDefinition Create()
         => PipelineBuilder
             .InputSource(new S3RawFolderSource(catalogueFactory))
             .Discover()      // -> DiscoveredFileSet
-            .Decrypt()       // -> RawFileSet        (raw/)
+            .Decrypt(decryptStage) // -> RawFileSet   (raw/)
             .Normalise()     // -> NormalisedFileSet (normalised/*.parquet)
             .Snapshot(storageProvider, timeProvider, snapshotLogger) // -> SnapshotFile (snapshots/*.parquet)
             .LoadDuckDb()    // -> StagingDatabase   (staging/*.duckdb)

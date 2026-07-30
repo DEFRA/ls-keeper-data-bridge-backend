@@ -2,7 +2,9 @@ using FluentAssertions;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Stages;
+using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Tests.Unit.TestSupport;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
@@ -17,6 +19,9 @@ public class EtlPipelineFactoryTests
     {
         var factory = new EtlPipelineFactory(
             Mock.Of<IExternalCatalogueServiceFactory>(),
+            Mock.Of<IEtlPipelineStorageProvider>(),
+            Mock.Of<TimeProvider>(),
+            Mock.Of<Logger<SnapshotStage>>(),
             AutoMocked.Instance<DecryptStage>());
 
         factory.Create().GetStageNames().Should().Equal(

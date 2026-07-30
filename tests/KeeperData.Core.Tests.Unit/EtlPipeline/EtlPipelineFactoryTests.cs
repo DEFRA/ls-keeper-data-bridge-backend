@@ -1,6 +1,9 @@
 using FluentAssertions;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline;
+using KeeperData.Core.EtlPipeline.Stages;
+using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
@@ -12,7 +15,11 @@ public class EtlPipelineFactoryTests
     [Fact]
     public void Create_defines_every_stage_in_order()
     {
-        var factory = new EtlPipelineFactory(Mock.Of<IExternalCatalogueServiceFactory>());
+        var factory = new EtlPipelineFactory(
+            Mock.Of<IExternalCatalogueServiceFactory>(),
+            new InMemoryEtlPipelineStorage(),
+            TimeProvider.System,
+            NullLogger<SnapshotStage>.Instance);
 
         factory.Create().GetStageNames().Should().Equal(
             "discover",

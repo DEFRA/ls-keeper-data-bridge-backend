@@ -17,9 +17,7 @@ public class EtlPipelineFactoryTests
     {
         var factory = new EtlPipelineFactory(
             Mock.Of<IExternalCatalogueServiceFactory>(),
-            new InMemoryEtlPipelineStorage(),
-            TimeProvider.System,
-            NullLogger<SnapshotStage>.Instance);
+            Mock.Of<SnapshotStage>());
 
         factory.Create().GetStageNames().Should().Equal(
             "discover",

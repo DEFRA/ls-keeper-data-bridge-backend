@@ -2,24 +2,22 @@ using FluentAssertions;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Stages;
-using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
-using Microsoft.Extensions.Logging.Abstractions;
+using KeeperData.Core.Tests.Unit.TestSupport;
 using Moq;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
 
-/// <summary>Guards the stage order and the fluent wiring. Building the definition exercises every
-/// fluent extension (Discover/Decrypt/Normalise/Snapshot/LoadDuckDb).</summary>
+/// <summary>Locks the concrete ETL pipeline's stage lineup and order. The GetStageNames()
+/// mechanism itself is unit-tested in PipelineFrameworkTests; here we only assert that this
+/// factory wires the expected stages, in this order.</summary>
 public class EtlPipelineFactoryTests
 {
     [Fact]
-    public void Create_defines_every_stage_in_order()
+    public void Create_wires_the_expected_stages_in_order()
     {
         var factory = new EtlPipelineFactory(
             Mock.Of<IExternalCatalogueServiceFactory>(),
-            new InMemoryEtlPipelineStorage(),
-            TimeProvider.System,
-            NullLogger<SnapshotStage>.Instance);
+            AutoMocked.Instance<SnapshotStage>());
 
         factory.Create().GetStageNames().Should().Equal(
             "discover",

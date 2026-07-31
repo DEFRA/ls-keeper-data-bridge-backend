@@ -14,6 +14,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPipelineExecutor, PipelineExecutor>();
         services.AddScoped<IEtlPipelineFactory, EtlPipelineFactory>();
 
+        services.AddScoped<DecryptStage>();
         services.AddScoped<SnapshotStage>();
 
         return services;

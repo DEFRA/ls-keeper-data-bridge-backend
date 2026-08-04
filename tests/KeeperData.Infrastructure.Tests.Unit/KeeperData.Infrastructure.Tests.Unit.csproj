@@ -11,12 +11,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.S3" Version="4.0.101.4" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.101.6" />
     <PackageReference Include="coverlet.collector" Version="10.0.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.3" />
+    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.5" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
     <PackageReference Include="GitHubActionsTestLogger" Version="3.0.4">
       <PrivateAssets>all</PrivateAssets>

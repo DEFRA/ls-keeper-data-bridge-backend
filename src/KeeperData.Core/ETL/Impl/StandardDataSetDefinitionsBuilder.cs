@@ -5,7 +5,7 @@ public static class StandardDataSetDefinitionsBuilder
     public static DataSetDefinitions Build()
     {
         var list = new List<DataSetDefinition>();
-        var samCPHHolding = list.With(new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", ["CPH", "FEATURE_NAME", "SECONDARY_CPH", "ANIMAL_SPECIES_CODE"], ChangeType.HeaderName, []));
+        var samCPHHolding = list.With(new DataSetDefinition("sam_cph_holdings", "LITP_SAMCPHHOLDING_{0}", ["CPH", "FEATURE_NAME", "SECONDARY_CPH", "ANIMAL_SPECIES_CODE"], ChangeType.HeaderName, [], IngestionMode: DataSetIngestionMode.Delta));
         var ctscphHolding = list.With(new DataSetDefinition("cts_cph_holding", "LITP_CTSCPHHOLDING_{0}", ["LID_FULL_IDENTIFIER"], ChangeType.HeaderName, []));
         var ctsKeeper = list.With(new DataSetDefinition("cts_keeper", "LITP_CTSKEEPER_{0}", ["PAR_ID", "LID_FULL_IDENTIFIER"], ChangeType.HeaderName, []));
         var samCPHHolder = list.With(new DataSetDefinition("sam_cph_holder", "LITP_SAMCPHHOLDER_{0}", ["PARTY_ID"], ChangeType.HeaderName, []));

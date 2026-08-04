@@ -7,7 +7,7 @@ namespace KeeperData.Core.Tests.Unit.EtlPipeline;
 public class SnapshotFileNamingTests
 {
     [Fact]
-    public void SnapshotKey_uses_the_clean_dataset_name_and_the_etl_timestamp()
+    public void SnapshotKey_uses_the_clean_dataset_name_and_the_source_timestamp()
     {
         var key = SnapshotFileNaming.SnapshotKey(
             StageRunner.Definition("sam_cph_holdings"),
@@ -44,5 +44,45 @@ public class SnapshotFileNamingTests
     public void LatestByTimestamp_returns_null_when_nothing_is_usable()
     {
         SnapshotFileNaming.LatestByTimestamp(StageRunner.Definition(), ["no-timestamp.parquet"]).Should().BeNull();
+    }
+
+    [Fact]
+    public void OrderedByTimestamp_orders_oldest_first_by_the_timestamp_in_the_name()
+    {
+        var ordered = SnapshotFileNaming.OrderedByTimestamp(
+            StageRunner.Definition("sam_cph_holdings"),
+            [
+                "sam_cph_holdings/sam_cph_holdings_20260715000000.parquet",
+                "sam_cph_holdings/sam_cph_holdings_20260701000000.parquet",
+                "sam_cph_holdings/sam_cph_holdings_20260710000000.parquet"
+            ]);
+
+        ordered.Select(item => item.Key).Should().Equal(
+            "sam_cph_holdings/sam_cph_holdings_20260701000000.parquet",
+            "sam_cph_holdings/sam_cph_holdings_20260710000000.parquet",
+            "sam_cph_holdings/sam_cph_holdings_20260715000000.parquet");
+    }
+
+    [Fact]
+    public void OrderedByTimestamp_rejects_a_key_carrying_no_timestamp()
+    {
+        var ordering = () => SnapshotFileNaming.OrderedByTimestamp(
+            StageRunner.Definition("sam_cph_holdings"), ["sam_cph_holdings/sam_cph_holdings.parquet"]);
+
+        ordering.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void OrderedByTimestamp_rejects_two_keys_sharing_a_timestamp()
+    {
+        var ordering = () => SnapshotFileNaming.OrderedByTimestamp(
+            StageRunner.Definition("sam_cph_holdings"),
+            [
+                "sam_cph_holdings/sam_cph_holdings_20260701000000.parquet",
+                "sam_cph_holdings/other_20260701000000.parquet"
+            ]);
+
+        ordering.Should().Throw<InvalidOperationException>()
+            .WithMessage("*no rule for which to apply first*");
     }
 }

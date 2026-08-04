@@ -25,7 +25,7 @@ public sealed partial class ParquetDeltaMergeEngine(ILogger<ParquetDeltaMergeEng
 
         if (baseSnapshot is not null)
         {
-            var table = await ReadAsync(baseSnapshot, cancellationToken);
+            var table = await ReadTableAsync(baseSnapshot, cancellationToken);
             state.SeedFrom(table, baseSnapshot.Key);
         }
 
@@ -62,7 +62,7 @@ public sealed partial class ParquetDeltaMergeEngine(ILogger<ParquetDeltaMergeEng
         DataSetDefinition definition,
         CancellationToken cancellationToken)
     {
-        var table = await ReadAsync(delta, cancellationToken);
+        var table = await ReadTableAsync(delta, cancellationToken);
         var applied = state.Apply(table, delta.Key);
 
         if (applied.Rejected > 0)
@@ -79,7 +79,7 @@ public sealed partial class ParquetDeltaMergeEngine(ILogger<ParquetDeltaMergeEng
         return applied;
     }
 
-    private static async Task<ParquetTable> ReadAsync(DeltaMergeSource source, CancellationToken cancellationToken)
+    private static async Task<ParquetTable> ReadTableAsync(DeltaMergeSource source, CancellationToken cancellationToken)
     {
         await using var stream = await source.Open(cancellationToken);
 

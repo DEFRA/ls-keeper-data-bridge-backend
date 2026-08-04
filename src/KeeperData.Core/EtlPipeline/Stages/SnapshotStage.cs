@@ -112,7 +112,7 @@ public sealed class SnapshotStage(
         CancellationToken cancellationToken)
     {
         var definition = fileSet.Definition;
-        var workingFile = Path.GetTempFileName();
+        var workingFile = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
 
         try
         {

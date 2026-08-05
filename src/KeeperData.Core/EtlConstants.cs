@@ -12,7 +12,4 @@ public static class EtlConstants
     // S3 automatically prefixes user metadata with "x-amz-meta-" and lowercases the keys
     public const string MetadataKeySourceEncryptedLength = "x-amz-meta-sourceencryptedlength";
     public const string MetadataKeySourceETag = "x-amz-meta-sourceetag";
-
-    /// <summary>The normalised file key a snapshot was produced from.</summary>
-    public const string MetadataKeySnapshotSourceKey = "x-amz-meta-snapshotsourcekey";
 }

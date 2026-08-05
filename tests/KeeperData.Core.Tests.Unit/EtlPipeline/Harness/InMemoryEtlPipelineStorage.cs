@@ -25,7 +25,12 @@ public sealed class InMemoryBlobStorage(string container) : IBlobStorageService
     public void Put(string objectKey, string content, IReadOnlyDictionary<string, string>? metadata = null)
         => _objects[objectKey] = (System.Text.Encoding.UTF8.GetBytes(content), metadata?.ToDictionary() ?? []);
 
+    public void Put(string objectKey, byte[] content, IReadOnlyDictionary<string, string>? metadata = null)
+        => _objects[objectKey] = (content, metadata?.ToDictionary() ?? []);
+
     public string ContentOf(string objectKey) => System.Text.Encoding.UTF8.GetString(_objects[objectKey].Content);
+
+    public byte[] BytesOf(string objectKey) => _objects[objectKey].Content;
 
     public IReadOnlyDictionary<string, string> MetadataOf(string objectKey) => _objects[objectKey].Metadata;
 

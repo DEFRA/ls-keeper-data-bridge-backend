@@ -1,3 +1,4 @@
+using KeeperData.Core.EtlPipeline.Snapshots;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +14,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IPipelineExecutor, PipelineExecutor>();
         services.AddScoped<IEtlPipelineFactory, EtlPipelineFactory>();
+
+        services.TryAddScoped<IDeltaMergeEngine, ParquetDeltaMergeEngine>();
 
         services.AddScoped<DecryptStage>();
         services.AddScoped<SnapshotStage>();

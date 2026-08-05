@@ -4,6 +4,7 @@ using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Pipeline;
 using Microsoft.Extensions.Logging;
+using XsvHcdtHelper;
 
 namespace KeeperData.Core.EtlPipeline;
 
@@ -12,7 +13,9 @@ namespace KeeperData.Core.EtlPipeline;
 public sealed class EtlPipelineFactory(
     IExternalCatalogueServiceFactory catalogueFactory,
     IEtlPipelineStorageProvider storageProvider,
+    IXsvHcdtNormaliser hcdtNormaliser,
     TimeProvider timeProvider,
+    ILogger<NormaliseStage> normaliseLogger,
     ILogger<SnapshotStage> snapshotLogger) : IEtlPipelineFactory
 {
     public PipelineDefinition Create()
@@ -20,7 +23,7 @@ public sealed class EtlPipelineFactory(
             .InputSource(new S3RawFolderSource(catalogueFactory))
             .Discover()      // -> DiscoveredFileSet
             .Decrypt()       // -> RawFileSet        (raw/)
-            .Normalise()     // -> NormalisedFileSet (normalised/*.parquet)
+            .Normalise(storageProvider, hcdtNormaliser, normaliseLogger)     // -> NormalisedFileSet (normalised/*.parquet)
             .Snapshot(storageProvider, timeProvider, snapshotLogger) // -> SnapshotFile (snapshots/*.parquet)
             .LoadDuckDb()    // -> StagingDatabase   (staging/*.duckdb)
             .Build();

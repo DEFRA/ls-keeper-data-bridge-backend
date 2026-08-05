@@ -1,4 +1,4 @@
-﻿# Base dotnet image
+# Base dotnet image
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
 EXPOSE 80
@@ -15,6 +15,13 @@ RUN apt update && \
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG BUILD_CONFIGURATION=Release
 ENV BUILD_CONFIGURATION=${BUILD_CONFIGURATION}
+
+# Accept BOTH GitHub credentials
+ARG GITHUB_USERNAME
+ARG GITHUB_TOKEN
+ENV GITHUB_USERNAME=$GITHUB_USERNAME
+ENV GITHUB_TOKEN=$GITHUB_TOKEN
+
 WORKDIR /src
 
 COPY ["src/KeeperData.Bridge/KeeperData.Bridge.csproj", "KeeperData.Bridge/"]
@@ -23,6 +30,8 @@ COPY ["src/KeeperData.Infrastructure/KeeperData.Infrastructure.csproj", "KeeperD
 COPY ["src/KeeperData.Application/KeeperData.Application.csproj", "KeeperData.Application/"]
 COPY ["src/KeeperData.Core/KeeperData.Core.csproj", "KeeperData.Core/"]
 COPY ["src/KeeperData.Core.Reports/KeeperData.Core.Reports.csproj", "KeeperData.Core.Reports/"]
+
+COPY ["nuget.config", "."]
 
 RUN dotnet restore "KeeperData.Bridge/KeeperData.Bridge.csproj" -r linux-x64 -v n
 RUN dotnet restore "KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj" -r linux-x64 -v n

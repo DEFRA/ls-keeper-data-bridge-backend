@@ -11,7 +11,7 @@ public sealed partial class ParquetDeltaMergeEngine
     {
         private readonly Dictionary<string, int> _indexByName = new(StringComparer.OrdinalIgnoreCase);
 
-        private ParquetTable(DataField[] fields, List<object?[]> rows)
+        private ParquetTable(DataField[] fields, List<string?[]> rows)
         {
             Fields = fields;
             Rows = rows;
@@ -24,14 +24,14 @@ public sealed partial class ParquetDeltaMergeEngine
 
         public DataField[] Fields { get; }
 
-        public List<object?[]> Rows { get; }
+        public List<string?[]> Rows { get; }
 
         public int IndexOf(string name) => _indexByName.TryGetValue(name, out var index) ? index : -1;
 
         public static async Task<ParquetTable> ReadAsync(Stream stream, string key, CancellationToken cancellationToken)
         {
             await using var seekable = await AsSeekableAsync(stream, cancellationToken);
-            using var reader = await ParquetReader.CreateAsync(seekable, cancellationToken: cancellationToken);
+            await using var reader = await ParquetReader.CreateAsync(seekable, cancellationToken: cancellationToken);
 
             var fields = reader.Schema.GetDataFields();
             var rows = await ReadRowsAsync(reader, fields, cancellationToken);
@@ -41,9 +41,9 @@ public sealed partial class ParquetDeltaMergeEngine
                 : new ParquetTable(fields, rows);
         }
 
-        private static async Task<List<object?[]>> ReadRowsAsync(ParquetReader reader, DataField[] fields, CancellationToken cancellationToken)
+        private static async Task<List<string?[]>> ReadRowsAsync(ParquetReader reader, DataField[] fields, CancellationToken cancellationToken)
         {
-            var rows = new List<object?[]>();
+            var rows = new List<string?[]>();
 
             for (var group = 0; group < reader.RowGroupCount; group++)
             {
@@ -55,29 +55,32 @@ public sealed partial class ParquetDeltaMergeEngine
             return rows;
         }
 
-        private static async Task<Array[]> ReadColumnsAsync(ParquetRowGroupReader rowGroup, DataField[] fields, CancellationToken cancellationToken)
+        private static async Task<string[][]> ReadColumnsAsync(ParquetRowGroupReader rowGroup, DataField[] fields, CancellationToken cancellationToken)
         {
-            var columns = new Array[fields.Length];
+            var rowCount = (int)rowGroup.RowCount;
+            var columns = new string[fields.Length][];
 
             for (var column = 0; column < fields.Length; column++)
             {
-                columns[column] = (await rowGroup.ReadColumnAsync(fields[column], cancellationToken)).Data;
+                var buf = new string[rowCount];
+                await rowGroup.ReadAsync(fields[column], buf.AsMemory(), cancellationToken: cancellationToken);
+                columns[column] = buf;
             }
 
             return columns;
         }
 
-        private static void AppendRows(List<object?[]> rows, Array[] columns, int fieldCount)
+        private static void AppendRows(List<string?[]> rows, string[][] columns, int fieldCount)
         {
             var count = columns.Length == 0 ? 0 : columns[0].Length;
 
             for (var row = 0; row < count; row++)
             {
-                var values = new object?[fieldCount];
+                var values = new string?[fieldCount];
 
                 for (var column = 0; column < fieldCount; column++)
                 {
-                    values[column] = columns[column].GetValue(row);
+                    values[column] = columns[column][row];
                 }
 
                 rows.Add(values);

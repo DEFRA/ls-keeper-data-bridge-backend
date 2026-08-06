@@ -1,5 +1,4 @@
 using Parquet;
-using Parquet.Data;
 using Parquet.Schema;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
@@ -29,24 +28,38 @@ public static class ParquetFixture
         var fields = columns.Select(column => new DataField<string>(column)).ToArray();
         var buffer = new MemoryStream();
 
-        using (var writer = ParquetWriter.CreateAsync(new ParquetSchema(fields), buffer).GetAwaiter().GetResult())
-        {
-            using var rowGroup = writer.CreateRowGroup();
-
-            for (var column = 0; column < fields.Length; column++)
-            {
-                rowGroup.WriteColumnAsync(new DataColumn(fields[column], values[column].ToArray())).GetAwaiter().GetResult();
-            }
-        }
+        WriteParquet(fields, values, buffer);
 
         return buffer.ToArray();
+    }
+
+    private static void WriteParquet(DataField<string>[] fields, List<string?>[] values, MemoryStream buffer)
+    {
+        var task = WriteParquetAsync(fields, values, buffer);
+        task.GetAwaiter().GetResult();
+    }
+
+    private static async Task WriteParquetAsync(DataField<string>[] fields, List<string?>[] values, MemoryStream buffer)
+    {
+        await using var writer = await ParquetWriter.CreateAsync(new ParquetSchema(fields), buffer);
+        using var rowGroup = writer.CreateRowGroup();
+
+        for (var column = 0; column < fields.Length; column++)
+        {
+            await rowGroup.WriteAsync(fields[column], (IReadOnlyCollection<string?>)values[column]);
+        }
     }
 
     /// <summary>The file read back as pipe-separated lines, header first, so an assertion can be
     /// written the same way as the fixture.</summary>
     public static IReadOnlyList<string> ToLines(byte[] content)
     {
-        using var reader = ParquetReader.CreateAsync(new MemoryStream(content)).GetAwaiter().GetResult();
+        return ReadLinesAsync(content).GetAwaiter().GetResult();
+    }
+
+    private static async Task<IReadOnlyList<string>> ReadLinesAsync(byte[] content)
+    {
+        await using var reader = await ParquetReader.CreateAsync(new MemoryStream(content));
 
         var fields = reader.Schema.GetDataFields();
         var lines = new List<string> { string.Join('|', fields.Select(field => field.Name)) };
@@ -55,13 +68,19 @@ public static class ParquetFixture
         {
             using var rowGroup = reader.OpenRowGroupReader(group);
 
-            var columns = fields
-                .Select(field => rowGroup.ReadColumnAsync(field).GetAwaiter().GetResult().Data)
-                .ToArray();
+            var rowCount = (int)rowGroup.RowCount;
+            var columns = new string[fields.Length][];
 
-            for (var row = 0; row < (columns.Length == 0 ? 0 : columns[0].Length); row++)
+            for (var col = 0; col < fields.Length; col++)
             {
-                lines.Add(string.Join('|', columns.Select(column => column.GetValue(row)?.ToString() ?? string.Empty)));
+                var buf = new string[rowCount];
+                await rowGroup.ReadAsync(fields[col], buf.AsMemory());
+                columns[col] = buf;
+            }
+
+            for (var row = 0; row < rowCount; row++)
+            {
+                lines.Add(string.Join('|', columns.Select(column => column?[row] ?? string.Empty)));
             }
         }
 

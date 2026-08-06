@@ -1,6 +1,5 @@
 using KeeperData.Core.ETL.Impl;
 using Parquet;
-using Parquet.Data;
 using Parquet.Schema;
 
 namespace KeeperData.Core.EtlPipeline.Snapshots;
@@ -11,7 +10,7 @@ public sealed partial class ParquetDeltaMergeEngine
     private sealed class MergeState(DataSetDefinition definition)
     {
         private readonly Dictionary<string, int> _indexByKey = new(StringComparer.Ordinal);
-        private readonly List<object?[]> _rows = [];
+        private readonly List<string?[]> _rows = [];
 
         private DataField[]? _fields;
 
@@ -39,7 +38,7 @@ public sealed partial class ParquetDeltaMergeEngine
 
             foreach (var row in table.Rows)
             {
-                var changeType = changeTypeIndex < 0 ? ChangeType.Insert : Text(row[changeTypeIndex]);
+                var changeType = changeTypeIndex < 0 ? ChangeType.Insert : row[changeTypeIndex];
 
                 switch (changeType)
                 {
@@ -68,27 +67,26 @@ public sealed partial class ParquetDeltaMergeEngine
             var fields = _fields
                 ?? throw new InvalidOperationException($"Nothing to write for dataset '{definition.Name}': no file supplied a schema");
 
-            using var writer = await ParquetWriter.CreateAsync(new ParquetSchema(fields), output, cancellationToken: cancellationToken);
+            await using var writer = await ParquetWriter.CreateAsync(new ParquetSchema(fields), output, cancellationToken: cancellationToken);
             using var rowGroup = writer.CreateRowGroup();
 
             for (var column = 0; column < fields.Length; column++)
             {
-                var values = Array.CreateInstance(fields[column].ClrNullableIfHasNullsType, _rows.Count);
-
+                var values = new string?[_rows.Count];
                 for (var row = 0; row < _rows.Count; row++)
                 {
-                    values.SetValue(_rows[row][column], row);
+                    values[row] = _rows[row][column];
                 }
 
-                await rowGroup.WriteColumnAsync(new DataColumn(fields[column], values), cancellationToken);
+                await rowGroup.WriteAsync(fields[column], (IReadOnlyCollection<string?>)values);
             }
         }
 
         /// <summary>The row reduced to the output columns, in output column order.</summary>
-        private object?[] Project(ParquetTable table, object?[] row, string key)
+        private string?[] Project(ParquetTable table, string?[] row, string key)
         {
             var fields = _fields!;
-            var projected = new object?[fields.Length];
+            var projected = new string?[fields.Length];
 
             for (var column = 0; column < fields.Length; column++)
             {
@@ -106,7 +104,7 @@ public sealed partial class ParquetDeltaMergeEngine
             return projected;
         }
 
-        private void Upsert(object?[] row, string compositeKey)
+        private void Upsert(string?[] row, string compositeKey)
         {
             if (_indexByKey.TryGetValue(compositeKey, out var existing))
             {
@@ -118,7 +116,7 @@ public sealed partial class ParquetDeltaMergeEngine
             _rows.Add(row);
         }
 
-        private string CompositeKey(ParquetTable table, object?[] row, string key)
+        private string CompositeKey(ParquetTable table, string?[] row, string key)
         {
             var parts = definition.PrimaryKeyHeaderNames.Select(name =>
             {
@@ -127,7 +125,7 @@ public sealed partial class ParquetDeltaMergeEngine
                 return index < 0
                     ? throw new InvalidOperationException(
                         $"'{key}' has no primary key column '{name}' for dataset '{definition.Name}'")
-                    : Text(row[index]);
+                    : row[index] ?? string.Empty;
             });
 
             return string.Join(EtlConstants.CompositeKeyDelimiter, parts);
@@ -135,7 +133,5 @@ public sealed partial class ParquetDeltaMergeEngine
 
         private bool IsChangeType(string name)
             => string.Equals(name, definition.ChangeTypeHeaderName, StringComparison.OrdinalIgnoreCase);
-
-        private static string Text(object? value) => value?.ToString() ?? string.Empty;
     }
 }

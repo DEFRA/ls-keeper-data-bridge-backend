@@ -1,30 +1,64 @@
 using FluentAssertions;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline;
+using KeeperData.Core.EtlPipeline.Snapshots;
 using KeeperData.Core.EtlPipeline.Stages;
+using KeeperData.Core.EtlPipeline.Storage;
+using KeeperData.Core.Storage;
 using KeeperData.Core.Tests.Unit.TestSupport;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using XsvHcdtHelper;
+using Xunit;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
 
-/// <summary>Locks the concrete ETL pipeline's stage lineup and order. The GetStageNames()
-/// mechanism itself is unit-tested in PipelineFrameworkTests; here we only assert that this
-/// factory wires the expected stages, in this order.</summary>
+[Trait("Category", "Unit")]
 public class EtlPipelineFactoryTests
 {
     [Fact]
-    public void Create_wires_the_expected_stages_in_order()
+    public void Create_ShouldReturnConfiguredPipeline()
     {
-        var factory = new EtlPipelineFactory(
-            Mock.Of<IExternalCatalogueServiceFactory>(),
-            AutoMocked.Instance<DecryptStage>(),
-            AutoMocked.Instance<SnapshotStage>());
+        // Arrange
+        var catalogueFactoryMock = new Mock<IExternalCatalogueServiceFactory>();
+        var storageProviderMock = new Mock<IEtlPipelineStorageProvider>();
+        var hcdtNormaliserMock = new Mock<IXsvHcdtNormaliser>();
+        var dummyBlobStorage = new Mock<IBlobStorageService>();
+        storageProviderMock.Setup(x => x.ForFolder(It.IsAny<string>())).Returns(dummyBlobStorage.Object);
 
-        factory.Create().GetStageNames().Should().Equal(
+        var normaliseLoggerMock = new Mock<ILogger<NormaliseStage>>();
+        var snapshotLoggerMock = new Mock<ILogger<SnapshotStage>>();
+        var decryptStage = AutoMocked.Instance<DecryptStage>();
+        var snapshotStage = new SnapshotStage(
+            storageProviderMock.Object,
+            new Mock<IDeltaMergeEngine>().Object,
+            snapshotLoggerMock.Object);
+
+        var sut = new EtlPipelineFactory(
+            catalogueFactoryMock.Object,
+            decryptStage,
+            storageProviderMock.Object,
+            hcdtNormaliserMock.Object,
+            normaliseLoggerMock.Object,
+            snapshotStage);
+
+        // Act
+        var pipeline = sut.Create();
+
+        // Assert
+        pipeline.Should().NotBeNull();
+
+        var stageNames = pipeline.GetStageNames();
+        stageNames.Should().NotBeEmpty();
+
+        // Verify the pipeline is wired up in the exact correct order
+        stageNames.Should().ContainInOrder(
             "discover",
             "decrypt",
             "normalise",
             "snapshot",
-            "load-duckdb");
+            "load-duckdb"
+        );
     }
 }

@@ -69,11 +69,11 @@ public static class ParquetFixture
             using var rowGroup = reader.OpenRowGroupReader(group);
 
             var rowCount = (int)rowGroup.RowCount;
-            var columns = new string[fields.Length][];
+            var columns = new string?[fields.Length][];
 
             for (var col = 0; col < fields.Length; col++)
             {
-                var buf = new string[rowCount];
+                var buf = new string?[rowCount];
                 await rowGroup.ReadAsync(fields[col], buf.AsMemory());
                 columns[col] = buf;
             }

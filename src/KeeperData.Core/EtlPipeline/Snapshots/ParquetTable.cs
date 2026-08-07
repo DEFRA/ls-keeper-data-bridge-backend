@@ -55,14 +55,14 @@ public sealed partial class ParquetDeltaMergeEngine
             return rows;
         }
 
-        private static async Task<string[][]> ReadColumnsAsync(ParquetRowGroupReader rowGroup, DataField[] fields, CancellationToken cancellationToken)
+        private static async Task<string?[][]> ReadColumnsAsync(ParquetRowGroupReader rowGroup, DataField[] fields, CancellationToken cancellationToken)
         {
             var rowCount = (int)rowGroup.RowCount;
-            var columns = new string[fields.Length][];
+            var columns = new string?[fields.Length][];
 
             for (var column = 0; column < fields.Length; column++)
             {
-                var buf = new string[rowCount];
+                var buf = new string?[rowCount];
                 await rowGroup.ReadAsync(fields[column], buf.AsMemory(), cancellationToken: cancellationToken);
                 columns[column] = buf;
             }
@@ -70,7 +70,7 @@ public sealed partial class ParquetDeltaMergeEngine
             return columns;
         }
 
-        private static void AppendRows(List<string?[]> rows, string[][] columns, int fieldCount)
+        private static void AppendRows(List<string?[]> rows, string?[][] columns, int fieldCount)
         {
             var count = columns.Length == 0 ? 0 : columns[0].Length;
 

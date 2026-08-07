@@ -1,4 +1,5 @@
-﻿# Base dotnet image
+# syntax=docker/dockerfile:1
+# Base dotnet image
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
 EXPOSE 80
@@ -15,6 +16,9 @@ RUN apt update && \
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG BUILD_CONFIGURATION=Release
 ENV BUILD_CONFIGURATION=${BUILD_CONFIGURATION}
+
+# The NuGet token is supplied as a BuildKit secret and is never persisted in an image layer.
+
 WORKDIR /src
 
 COPY ["src/KeeperData.Bridge/KeeperData.Bridge.csproj", "KeeperData.Bridge/"]
@@ -24,12 +28,18 @@ COPY ["src/KeeperData.Application/KeeperData.Application.csproj", "KeeperData.Ap
 COPY ["src/KeeperData.Core/KeeperData.Core.csproj", "KeeperData.Core/"]
 COPY ["src/KeeperData.Core.Reports/KeeperData.Core.Reports.csproj", "KeeperData.Core.Reports/"]
 
-RUN dotnet restore "KeeperData.Bridge/KeeperData.Bridge.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Infrastructure/KeeperData.Infrastructure.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Application/KeeperData.Application.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Core/KeeperData.Core.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Core.Reports/KeeperData.Core.Reports.csproj" -r linux-x64 -v n
+COPY ["nuget.config", "."]
+
+RUN --mount=type=secret,id=nuget_auth_token \
+    token="$(cat /run/secrets/nuget_auth_token)" \
+    && dotnet nuget update source DEFRA --username "github-actions" --password "$token" --store-password-in-clear-text --configfile ./nuget.config \
+    && dotnet restore "KeeperData.Bridge/KeeperData.Bridge.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Infrastructure/KeeperData.Infrastructure.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Application/KeeperData.Application.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Core/KeeperData.Core.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Core.Reports/KeeperData.Core.Reports.csproj" -r linux-x64 -v n \
+    && rm nuget.config
 
 COPY ["src/", "."]
 

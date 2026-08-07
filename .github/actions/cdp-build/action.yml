@@ -1,0 +1,145 @@
+# Vendored from DEFRA/cdp-build-action/build@main (2026-08-07), unchanged except the
+# nuget-token input passed to the Docker builds as a BuildKit secret (the upstream action
+# has no way to supply build secrets, which the private DEFRA NuGet feed requires).
+# Retire in favour of the upstream action once it supports build secrets.
+name: 'CDP Build Action'
+description: 'builds and publishes docker image to ECR and DockerHub'
+inputs:
+  version:
+    description: 'overrides auto-versioning'
+    required: false
+    default: ''
+  image-name:
+    description: 'image of image to push (defaults to repo name)'
+    required: false
+    default: ${{ github.event.repository.name }}
+  push:
+    description: 'push docker image after building'
+    required: false
+    default: true
+  push-build-stages:
+    description: 'push stages in multistage build'
+    required: false
+    default: true
+  github-token:
+    description: Github Token, required for autoversioning
+    required: false
+  nuget-token:
+    description: Token with read access to the DEFRA GitHub Packages NuGet feed
+    required: true
+  secret-manager-docker-credentials:
+    description: Secret for Github Actions to run Terraform
+    default: cdp/platform/gh_actions
+runs:
+  using: "composite"
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-${{ inputs.image-name }}-build-role
+
+    - run: aws sts get-caller-identity
+      shell: bash
+
+    # Get Docker secrets from Secrets Manager
+    - name: Get Github Actions secrets from Secrets Manager
+      uses: aws-actions/aws-secretsmanager-get-secrets@v3
+      with:
+        secret-ids: |
+          ,${{ inputs.secret-manager-docker-credentials }}
+        parse-json-secrets: true
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v4
+      with:
+        username: ${{ env.DOCKER_USERNAME }}
+        password: ${{ env.DOCKER_TOKEN }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      with:
+        mask-password: 'true'
+
+    - name: auto-version
+      id: version
+      if: inputs.version == ''
+      uses: anothrNick/github-tag-action@4ed44965e0db8dab2b466a16da04aec3cc312fd8
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        WITH_V: false
+        DRY_RUN: true
+
+    - name: Docker Build
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        no-cache: true
+        provenance: false
+        sbom: false
+        file: ./Dockerfile
+        push: ${{ inputs.push }}
+        secrets: |
+          nuget_auth_token=${{ inputs.nuget-token }}
+        tags: |
+          ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ inputs.image-name }}:${{ steps.version.outputs.new_tag || inputs.version }}
+          defradigital/${{ inputs.image-name }}:${{ steps.version.outputs.new_tag || inputs.version }}
+          defradigital/${{ inputs.image-name }}:latest
+        labels: |
+          defra.cdp.git.repo.url=${{ github.server_url }}/${{ github.repository }}
+          defra.cdp.git.repo.name=${{ github.repository }}
+          defra.cdp.service.name=${{ inputs.image-name }}
+          defra.cdp.build.run_id=${{ github.run_id }}
+          defra.cdp.run_mode=service
+          git.hash=${{ github.sha }}
+
+    - name: commit-version
+      if: inputs.version == '' && inputs.push
+      uses: anothrNick/github-tag-action@4ed44965e0db8dab2b466a16da04aec3cc312fd8
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        WITH_V: false
+
+    - name: Build and push Docker build stages
+      if: ${{ inputs.push-build-stages == 'true' }}
+      shell: bash
+      env:
+        AWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}
+        AWS_REGION: ${{ env.AWS_REGION }}
+        IMAGE_NAME: ${{ inputs.image-name }}
+        VERSION: ${{ steps.version.outputs.new_tag || inputs.version }}
+        RUN_ID: ${{ github.run_id }}
+        GITHUB_HASH: ${{ github.sha }}
+        NUGET_TOKEN: ${{ inputs.nuget-token }}
+      run: |
+        STAGES=()
+        while read -r line; do
+          for word in $line; do
+            [[ $word == --from=* ]] && STAGES+=("${word#--from=}")
+          done
+        done < Dockerfile
+
+        STAGES=($(printf "%s\n" "${STAGES[@]}" | sort -u))
+
+        if [ ${#STAGES[@]} -eq 0 ]; then
+          echo "No build stages found"
+          exit 0
+        fi
+
+        for stage in "${STAGES[@]}"; do
+          echo "Building stage: $stage"
+
+          docker buildx build \
+            --file Dockerfile \
+            --target "$stage" \
+            --push \
+            --provenance=false \
+            --sbom=false \
+            --no-cache \
+            --secret id=nuget_auth_token,env=NUGET_TOKEN \
+            --tag "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${IMAGE_NAME}:build-stage-${VERSION}-${stage}" \
+            --label "defra.cdp.build.run_id=${RUN_ID}" \
+            --label "git.hash=${GITHUB_HASH}" \
+            . || echo "Stage '$stage' failed, continuing..."
+        done

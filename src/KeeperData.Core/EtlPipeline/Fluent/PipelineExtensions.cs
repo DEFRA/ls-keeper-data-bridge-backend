@@ -1,6 +1,10 @@
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Stages;
+using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Pipeline;
+using KeeperData.Core.Storage;
+using Microsoft.Extensions.Logging;
+using XsvHcdtHelper;
 
 namespace KeeperData.Core.EtlPipeline.Fluent;
 
@@ -14,8 +18,12 @@ public static class PipelineExtensions
     public static PipelineBuilder<RawFileSet> Decrypt(this PipelineBuilder<DiscoveredFileSet> builder, DecryptStage stage)
         => builder.Then(stage);
 
-    public static PipelineBuilder<NormalisedFileSet> Normalise(this PipelineBuilder<RawFileSet> builder)
-        => builder.Then(new NormaliseStage());
+    public static PipelineBuilder<NormalisedFileSet> Normalise(
+        this PipelineBuilder<RawFileSet> builder,
+        IEtlPipelineStorageProvider storageProvider,
+        IXsvHcdtNormaliser hcdtNormaliser,
+        ILogger<NormaliseStage> logger)
+        => builder.Then(new NormaliseStage(storageProvider, hcdtNormaliser,logger));
 
     public static PipelineBuilder<SnapshotFile> Snapshot(this PipelineBuilder<NormalisedFileSet> builder, SnapshotStage stage)
         => builder.Then(stage);

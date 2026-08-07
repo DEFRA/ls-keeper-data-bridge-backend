@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
       pull-requests: write
     steps:
       - uses: actions/setup-dotnet@v3
@@ -29,6 +30,15 @@ jobs:
         uses: actions/checkout@v3
         with:
           path: working-dir
+      - name: Authenticate to GitHub Packages
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.NUGET_TOKEN || github.token }}
+        run: >-
+          dotnet nuget update source DEFRA
+          --username "${{ github.actor }}"
+          --password "$NUGET_AUTH_TOKEN"
+          --store-password-in-clear-text
+          --configfile ./working-dir/nuget.config
       - name: Restore
         run: dotnet restore ./working-dir/KeeperData.Bridge.sln
       - name: Build
@@ -68,6 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
     needs: pr-validator
     steps:
       - uses: actions/setup-dotnet@v3
@@ -77,10 +88,21 @@ jobs:
         uses: actions/checkout@v3
         with:
           path: working-dir
+      - name: Authenticate to GitHub Packages
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.NUGET_TOKEN || github.token }}
+        run: >-
+          dotnet nuget update source DEFRA
+          --username "${{ github.actor }}"
+          --password "$NUGET_AUTH_TOKEN"
+          --store-password-in-clear-text
+          --configfile ./working-dir/nuget.config
       - name: Make LocalStack init script executable
         run: chmod +x ./working-dir/compose/start-localstack.sh
       - name: Run docker-compose
         uses: hoverkraft-tech/compose-action@v2.0.1
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.NUGET_TOKEN || github.token }}
         with:
           compose-file: |
             ./working-dir/docker-compose.yml
@@ -100,8 +122,10 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      packages: read
       pull-requests: write
     uses: ./.github/workflows/sonarcloud.yml
     needs: pr-validator
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      NUGET_TOKEN: ${{ secrets.NUGET_TOKEN }}

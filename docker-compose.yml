@@ -47,7 +47,11 @@ services:
     container_name: "keeperdata_bridge"
     platform: linux
     image: keeperdata_bridge
-    build: ./
+    build:
+      context: ./
+      args:
+        GITHUB_USERNAME: ${GITHUB_ACTOR}
+        GITHUB_TOKEN: ${NUGET_AUTH_TOKEN}
     ports:
       - '5560:5560'
     depends_on:

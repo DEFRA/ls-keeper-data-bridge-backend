@@ -16,11 +16,9 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG BUILD_CONFIGURATION=Release
 ENV BUILD_CONFIGURATION=${BUILD_CONFIGURATION}
 
-# Accept BOTH GitHub credentials
+# Credentials are supplied only by CI paths that forward Docker build arguments.
 ARG GITHUB_USERNAME
 ARG GITHUB_TOKEN
-ENV GITHUB_USERNAME=$GITHUB_USERNAME
-ENV GITHUB_TOKEN=$GITHUB_TOKEN
 
 WORKDIR /src
 
@@ -33,12 +31,14 @@ COPY ["src/KeeperData.Core.Reports/KeeperData.Core.Reports.csproj", "KeeperData.
 
 COPY ["nuget.config", "."]
 
-RUN dotnet restore "KeeperData.Bridge/KeeperData.Bridge.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Infrastructure/KeeperData.Infrastructure.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Application/KeeperData.Application.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Core/KeeperData.Core.csproj" -r linux-x64 -v n
-RUN dotnet restore "KeeperData.Core.Reports/KeeperData.Core.Reports.csproj" -r linux-x64 -v n
+RUN if [ -n "$GITHUB_TOKEN" ]; then dotnet nuget update source DEFRA --username "$GITHUB_USERNAME" --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile ./nuget.config; fi \
+    && dotnet restore "KeeperData.Bridge/KeeperData.Bridge.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Infrastructure/KeeperData.Infrastructure.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Application/KeeperData.Application.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Core/KeeperData.Core.csproj" -r linux-x64 -v n \
+    && dotnet restore "KeeperData.Core.Reports/KeeperData.Core.Reports.csproj" -r linux-x64 -v n \
+    && rm nuget.config
 
 COPY ["src/", "."]
 

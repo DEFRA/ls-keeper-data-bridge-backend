@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<DecryptStage>();
         services.AddScoped<SnapshotStage>();
+        services.AddScoped<LoadDuckDbStage>();
 
         return services;
     }

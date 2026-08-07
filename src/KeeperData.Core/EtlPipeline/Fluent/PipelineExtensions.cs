@@ -20,6 +20,6 @@ public static class PipelineExtensions
     public static PipelineBuilder<SnapshotFile> Snapshot(this PipelineBuilder<NormalisedFileSet> builder, SnapshotStage stage)
         => builder.Then(stage);
 
-    public static PipelineBuilder<StagingDatabase> LoadDuckDb(this PipelineBuilder<SnapshotFile> builder)
-        => builder.Then(new LoadDuckDbStage());
+    public static PipelineBuilder<StagingDatabase> LoadDuckDb(this PipelineBuilder<SnapshotFile> builder, LoadDuckDbStage stage)
+        => builder.Then(stage);
 }

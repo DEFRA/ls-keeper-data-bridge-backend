@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
+using KeeperData.Core.EtlPipeline.Staging;
 using KeeperData.Core.EtlPipeline.Storage;
+using KeeperData.Infrastructure.EtlPipeline.Staging;
 using KeeperData.Infrastructure.EtlPipeline.Storage;
 using KeeperData.Infrastructure.Storage.Configuration;
 using Microsoft.Extensions.Configuration;
@@ -25,6 +27,8 @@ public static class ServiceCollectionExtensions
         {
             services.AddTransient<IEtlPipelineStorageProvider, S3EtlPipelineStorageProvider>();
         }
+
+        services.AddScoped<IStagingDatabaseWriter, DuckDbStagingDatabaseWriter>();
 
         return services;
     }

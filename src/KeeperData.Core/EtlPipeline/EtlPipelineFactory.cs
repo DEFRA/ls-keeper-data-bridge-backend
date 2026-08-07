@@ -10,7 +10,8 @@ namespace KeeperData.Core.EtlPipeline;
 public sealed class EtlPipelineFactory(
     IExternalCatalogueServiceFactory catalogueFactory,
     DecryptStage decryptStage,
-    SnapshotStage snapshotStage) : IEtlPipelineFactory
+    SnapshotStage snapshotStage,
+    LoadDuckDbStage loadDuckDbStage) : IEtlPipelineFactory
 {
     public PipelineDefinition Create()
         => PipelineBuilder
@@ -19,6 +20,6 @@ public sealed class EtlPipelineFactory(
             .Decrypt(decryptStage)    // -> RawFileSet        (raw/)
             .Normalise()              // -> NormalisedFileSet (normalised/*.parquet)
             .Snapshot(snapshotStage)  // -> SnapshotFile      (snapshots/*.parquet)
-            .LoadDuckDb()             // -> StagingDatabase   (staging/*.duckdb)
+            .LoadDuckDb(loadDuckDbStage) // -> StagingDatabase (staging/*.duckdb)
             .Build();
 }

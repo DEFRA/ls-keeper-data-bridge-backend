@@ -93,6 +93,8 @@ jobs:
         run: chmod +x ./working-dir/compose/start-localstack.sh
       - name: Run docker-compose
         uses: hoverkraft-tech/compose-action@v2.0.1
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           compose-file: |
             ./working-dir/docker-compose.yml

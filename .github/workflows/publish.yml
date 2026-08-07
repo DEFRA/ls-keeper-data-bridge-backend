@@ -10,6 +10,7 @@ on:
 permissions:
   id-token: write
   contents: write
+  packages: read
   pull-requests: write
 
 env:
@@ -25,9 +26,11 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v3
       - name: Build and Publish
-        uses: DEFRA/cdp-build-action/build@main
+        # Vendored copy of DEFRA/cdp-build-action/build@main that can pass the NuGet feed token
+        uses: ./.github/actions/cdp-build
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          nuget-token: ${{ secrets.GITHUB_TOKEN }}
   ## SonarCloud
   ## Uncomment to unable SonarCloud scan
   ## Requires project to be set up in SonarCloud

@@ -10,6 +10,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  packages: read
   pull-requests: write
 
 jobs:
@@ -32,6 +33,10 @@ jobs:
         with:
           dotnet-version: |
             8.0
+          source-url: https://nuget.pkg.github.com/DEFRA/index.json
+          config-file: ./nuget.config
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache SonarCloud packages
         uses: actions/cache@v4
         with:

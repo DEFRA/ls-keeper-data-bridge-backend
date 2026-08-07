@@ -20,15 +20,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
       pull-requests: write
     steps:
-      - uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '8.0.x'
       - name: Check out code
         uses: actions/checkout@v3
         with:
           path: working-dir
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+          source-url: https://nuget.pkg.github.com/DEFRA/index.json
+          config-file: ./working-dir/nuget.config
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Restore
         run: dotnet restore ./working-dir/KeeperData.Bridge.sln
       - name: Build
@@ -68,19 +74,27 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
     needs: pr-validator
     steps:
-      - uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '8.0.x'
       - name: Check out code
         uses: actions/checkout@v3
         with:
           path: working-dir
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+          source-url: https://nuget.pkg.github.com/DEFRA/index.json
+          config-file: ./working-dir/nuget.config
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Make LocalStack init script executable
         run: chmod +x ./working-dir/compose/start-localstack.sh
       - name: Run docker-compose
         uses: hoverkraft-tech/compose-action@v2.0.1
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           compose-file: |
             ./working-dir/docker-compose.yml
@@ -100,6 +114,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      packages: read
       pull-requests: write
     uses: ./.github/workflows/sonarcloud.yml
     needs: pr-validator

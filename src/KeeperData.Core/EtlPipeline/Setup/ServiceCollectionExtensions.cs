@@ -3,6 +3,7 @@ using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using XsvHcdtHelper;
 
 namespace KeeperData.Core.EtlPipeline.Setup;
 
@@ -20,6 +21,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DecryptStage>();
         services.AddScoped<SnapshotStage>();
         services.AddScoped<LoadDuckDbStage>();
+
+        
+        services.AddXsvHcdtHelper();
 
         return services;
     }

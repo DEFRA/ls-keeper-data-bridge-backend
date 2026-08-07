@@ -22,7 +22,7 @@
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.10" />
     <PackageReference Include="Parquet.Net" Version="6.0.3" />
     <PackageReference Include="Polly.Core" Version="8.7.0" />
-    <PackageReference Include="XsvHcdtHelper" Version="1.0.0" />
+    <PackageReference Include="XsvHcdtHelper" Version="0.2.0" />
   </ItemGroup>
   
 </Project>

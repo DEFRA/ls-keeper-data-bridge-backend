@@ -82,23 +82,15 @@ public sealed class NormaliseStage(
 
     private async Task NormaliseHcdtAsync(Stream source, Stream dest, CancellationToken ct)
     {
-        try
+        var report = await hcdtNormaliser.NormaliseAsync(source, dest, options =>
         {
-            var report = await hcdtNormaliser.NormaliseAsync(source, dest, options =>
-            {
-                options.OutputFormat = OutputFormat.Parquet;
-                options.InputDelimiter = FieldDelimiter.Auto;
-                options.StrictFieldCount = false;
-            }, ct);
+            options.OutputFormat = OutputFormat.Parquet;
+            options.InputDelimiter = FieldDelimiter.Auto;
+            options.StrictFieldCount = false;
+        }, ct);
 
-            logger.LogInformation("H/C/D/T normalisation complete. Declared: {Declared}, Actual: {Actual}",
-                report.DeclaredRecordCount, report.ActualDataRecords);
-        }
-        catch (XsvValidationException ex)
-        {
-            logger.LogError(ex, "H/C/D/T Validation failed: {Message}", ex.Message);
-            throw; // Let the PipelineExecutor catch it and abort the stage
-        }
+        logger.LogInformation("H/C/D/T normalisation complete. Declared: {Declared}, Actual: {Actual}",
+            report.DeclaredRecordCount, report.ActualDataRecords);
     }
 
     private async Task ConvertSimplePsvToParquetAsync(Stream source, Stream dest, CancellationToken ct)
@@ -137,7 +129,7 @@ public sealed class NormaliseStage(
 
             if (rowBuffer.Count >= maxRowsPerGroup)
             {
-                await WriteRowGroupAsync(parquetWriter, dataFields, rowBuffer, ct);
+                await WriteRowGroupAsync(parquetWriter, dataFields, rowBuffer);
                 rowBuffer.Clear();
             }
         }
@@ -145,11 +137,11 @@ public sealed class NormaliseStage(
         // Flush any remaining records
         if (rowBuffer.Count > 0)
         {
-            await WriteRowGroupAsync(parquetWriter, dataFields, rowBuffer, ct);
+            await WriteRowGroupAsync(parquetWriter, dataFields, rowBuffer);
         }
     }
 
-    private static async Task WriteRowGroupAsync(ParquetWriter writer, DataField<string?>[] fields, List<string?[]> buffer, CancellationToken ct)
+    private static async Task WriteRowGroupAsync(ParquetWriter writer, DataField<string?>[] fields, List<string?[]> buffer)
     {
         using var groupWriter = writer.CreateRowGroup();
         for (int col = 0; col < fields.Length; col++)

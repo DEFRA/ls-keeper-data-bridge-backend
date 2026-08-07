@@ -93,6 +93,34 @@ public class NormaliseStageTests
     }
 
     [Fact]
+    public async Task NormaliseStage_UsesHcdtNormaliser_ForHcdtDatasets()
+    {
+        const string rawFileKey = "raw/sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
+        const string relativeRawKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
+        const string destinationKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.parquet";
+
+        _blobStorageMock.Setup(b => b.ExistsAsync(destinationKey, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _blobStorageMock.Setup(b => b.OpenReadAsync(relativeRawKey, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MemoryStream());
+        _blobStorageMock.Setup(b => b.OpenWriteAsync(destinationKey, It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NonClosingMemoryStream());
+        _hcdtNormaliserMock
+            .Setup(n => n.NormaliseAsync(It.IsAny<Stream>(), It.IsAny<Stream>(), It.IsAny<Action<XsvHcdtOptions>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new XsvValidationReport("source", "destination", 1, 1, true, true, []));
+
+        var hcdtDefinition = _dataSetDef with { Format = FileFormat.Hcdt };
+
+        var results = await RunStageAsync(new RawFileSet(hcdtDefinition) { Files = [rawFileKey] });
+
+        results.Single().Files.Should().ContainSingle().Which.Should().Be(destinationKey);
+        _hcdtNormaliserMock.Verify(n => n.NormaliseAsync(
+            It.IsAny<Stream>(),
+            It.IsAny<Stream>(),
+            It.IsAny<Action<XsvHcdtOptions>>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task NormaliseStage_SkipsExistingFiles_ForIdempotency()
     {
         // Arrange

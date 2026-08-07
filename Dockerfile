@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Base dotnet image
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
@@ -16,9 +17,7 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG BUILD_CONFIGURATION=Release
 ENV BUILD_CONFIGURATION=${BUILD_CONFIGURATION}
 
-# Credentials are supplied only by CI paths that forward Docker build arguments.
-ARG GITHUB_USERNAME
-ARG GITHUB_TOKEN
+# The NuGet token is supplied as a BuildKit secret and is never persisted in an image layer.
 
 WORKDIR /src
 
@@ -31,7 +30,9 @@ COPY ["src/KeeperData.Core.Reports/KeeperData.Core.Reports.csproj", "KeeperData.
 
 COPY ["nuget.config", "."]
 
-RUN if [ -n "$GITHUB_TOKEN" ]; then dotnet nuget update source DEFRA --username "$GITHUB_USERNAME" --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile ./nuget.config; fi \
+RUN --mount=type=secret,id=nuget_auth_token \
+    token="$(cat /run/secrets/nuget_auth_token)" \
+    && dotnet nuget update source DEFRA --username "github-actions" --password "$token" --store-password-in-clear-text --configfile ./nuget.config \
     && dotnet restore "KeeperData.Bridge/KeeperData.Bridge.csproj" -r linux-x64 -v n \
     && dotnet restore "KeeperData.Bridge.Worker/KeeperData.Bridge.Worker.csproj" -r linux-x64 -v n \
     && dotnet restore "KeeperData.Infrastructure/KeeperData.Infrastructure.csproj" -r linux-x64 -v n \

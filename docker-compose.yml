@@ -49,9 +49,9 @@ services:
     image: keeperdata_bridge
     build:
       context: ./
-      args:
-        GITHUB_USERNAME: ${GITHUB_ACTOR}
-        GITHUB_TOKEN: ${NUGET_AUTH_TOKEN}
+      secrets:
+        - source: nuget_auth_token
+          target: nuget_auth_token
     ports:
       - '5560:5560'
     depends_on:
@@ -69,6 +69,10 @@ services:
 
 volumes:
   mongodb-data:
+
+secrets:
+  nuget_auth_token:
+    environment: NUGET_AUTH_TOKEN
 
 networks:
   cdp-tenant:

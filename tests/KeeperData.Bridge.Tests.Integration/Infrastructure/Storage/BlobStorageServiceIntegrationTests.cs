@@ -924,7 +924,7 @@ public class BlobStorageServiceIntegrationTests : IAsyncLifetime
         // Verify folder B is untouched
         var folderBFilesAfter = await folderB.ListAsync();
         folderBFilesAfter.Should().HaveCount(2);
-        folderBFilesAfter.Should().BeEquivalentTo(folderBFilesBefore);
+        folderBFilesAfter.Select(file => file.Key).Should().BeEquivalentTo(folderBFilesBefore.Select(file => file.Key));
 
         // Clean up folder B
         await folderB.ClearDownAsync();

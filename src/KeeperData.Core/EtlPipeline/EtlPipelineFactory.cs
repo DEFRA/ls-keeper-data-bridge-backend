@@ -12,19 +12,19 @@ namespace KeeperData.Core.EtlPipeline;
 /// Implementing a stage does not require changing this file (only adding a dependency does).</summary>
 public sealed class EtlPipelineFactory(
     IExternalCatalogueServiceFactory catalogueFactory,
+    DecryptStage decryptStage,
     IEtlPipelineStorageProvider storageProvider,
     IXsvHcdtNormaliser hcdtNormaliser,
-    TimeProvider timeProvider,
     ILogger<NormaliseStage> normaliseLogger,
-    ILogger<SnapshotStage> snapshotLogger) : IEtlPipelineFactory
+    SnapshotStage snapshotStage) : IEtlPipelineFactory
 {
     public PipelineDefinition Create()
         => PipelineBuilder
             .InputSource(new S3RawFolderSource(catalogueFactory))
-            .Discover()      // -> DiscoveredFileSet
-            .Decrypt()       // -> RawFileSet        (raw/)
+            .Discover()               // -> DiscoveredFileSet
+            .Decrypt(decryptStage)    // -> RawFileSet        (raw/)
             .Normalise(storageProvider, hcdtNormaliser, normaliseLogger)     // -> NormalisedFileSet (normalised/*.parquet)
-            .Snapshot(storageProvider, timeProvider, snapshotLogger) // -> SnapshotFile (snapshots/*.parquet)
-            .LoadDuckDb()    // -> StagingDatabase   (staging/*.duckdb)
+            .Snapshot(snapshotStage)  // -> SnapshotFile      (snapshots/*.parquet)
+            .LoadDuckDb()             // -> StagingDatabase   (staging/*.duckdb)
             .Build();
 }

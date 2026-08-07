@@ -15,8 +15,8 @@ public static class PipelineExtensions
     public static PipelineBuilder<DiscoveredFileSet> Discover(this PipelineBuilder<DiscoveredFile> builder)
         => builder.Then(new DiscoverStage());
 
-    public static PipelineBuilder<RawFileSet> Decrypt(this PipelineBuilder<DiscoveredFileSet> builder)
-        => builder.Then(new DecryptStage());
+    public static PipelineBuilder<RawFileSet> Decrypt(this PipelineBuilder<DiscoveredFileSet> builder, DecryptStage stage)
+        => builder.Then(stage);
 
     public static PipelineBuilder<NormalisedFileSet> Normalise(
         this PipelineBuilder<RawFileSet> builder,
@@ -25,12 +25,8 @@ public static class PipelineExtensions
         ILogger<NormaliseStage> logger)
         => builder.Then(new NormaliseStage(storageProvider, hcdtNormaliser,logger));
 
-    public static PipelineBuilder<SnapshotFile> Snapshot(
-        this PipelineBuilder<NormalisedFileSet> builder,
-        IEtlPipelineStorageProvider storageProvider,
-        TimeProvider timeProvider,
-        ILogger<SnapshotStage> logger)
-        => builder.Then(new SnapshotStage(storageProvider, timeProvider, logger));
+    public static PipelineBuilder<SnapshotFile> Snapshot(this PipelineBuilder<NormalisedFileSet> builder, SnapshotStage stage)
+        => builder.Then(stage);
 
     public static PipelineBuilder<StagingDatabase> LoadDuckDb(this PipelineBuilder<SnapshotFile> builder)
         => builder.Then(new LoadDuckDbStage());

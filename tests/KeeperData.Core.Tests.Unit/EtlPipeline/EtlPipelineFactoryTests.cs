@@ -1,9 +1,11 @@
 using FluentAssertions;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline;
+using KeeperData.Core.EtlPipeline.Snapshots;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Tests.Unit.TestSupport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -22,21 +24,24 @@ public class EtlPipelineFactoryTests
         var catalogueFactoryMock = new Mock<IExternalCatalogueServiceFactory>();
         var storageProviderMock = new Mock<IEtlPipelineStorageProvider>();
         var hcdtNormaliserMock = new Mock<IXsvHcdtNormaliser>();
-        var loggerFactoryMock = new Mock<ILoggerFactory>();
-        
         var dummyBlobStorage = new Mock<IBlobStorageService>();
         storageProviderMock.Setup(x => x.ForFolder(It.IsAny<string>())).Returns(dummyBlobStorage.Object);
 
         var normaliseLoggerMock = new Mock<ILogger<NormaliseStage>>();
         var snapshotLoggerMock = new Mock<ILogger<SnapshotStage>>();
+        var decryptStage = AutoMocked.Instance<DecryptStage>();
+        var snapshotStage = new SnapshotStage(
+            storageProviderMock.Object,
+            new Mock<IDeltaMergeEngine>().Object,
+            snapshotLoggerMock.Object);
 
         var sut = new EtlPipelineFactory(
             catalogueFactoryMock.Object,
+            decryptStage,
             storageProviderMock.Object,
             hcdtNormaliserMock.Object,
-            TimeProvider.System,
             normaliseLoggerMock.Object,
-            snapshotLoggerMock.Object);
+            snapshotStage);
 
         // Act
         var pipeline = sut.Create();

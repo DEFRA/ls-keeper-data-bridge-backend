@@ -24,9 +24,11 @@ jobs:
         with:
           fetch-depth: 0 # Depth 0 required for branch-based versioning
       - name: Publish Hot Fix
-        uses: DEFRA/cdp-build-action/build-hotfix@main
+        # Vendored copy of DEFRA/cdp-build-action/build-hotfix@main that can pass the NuGet feed token
+        uses: ./.github/actions/cdp-build-hotfix
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          nuget-token: ${{ secrets.GITHUB_TOKEN }}
     ## SonarCloud
     ## Uncomment to unable SonarCloud scan
     ## Requires project to be set up in SonarCloud

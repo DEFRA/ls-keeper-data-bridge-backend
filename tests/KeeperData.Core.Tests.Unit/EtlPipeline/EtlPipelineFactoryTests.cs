@@ -20,11 +20,6 @@ public class EtlPipelineFactoryTests
     [Fact]
     public void Create_ShouldReturnConfiguredPipeline()
     {
-        var factory = new EtlPipelineFactory(
-            Mock.Of<IExternalCatalogueServiceFactory>(),
-            AutoMocked.Instance<DecryptStage>(),
-            AutoMocked.Instance<SnapshotStage>(),
-            AutoMocked.Instance<LoadDuckDbStage>());
         // Arrange
         var catalogueFactoryMock = new Mock<IExternalCatalogueServiceFactory>();
         var storageProviderMock = new Mock<IEtlPipelineStorageProvider>();
@@ -39,6 +34,7 @@ public class EtlPipelineFactoryTests
             storageProviderMock.Object,
             new Mock<IDeltaMergeEngine>().Object,
             snapshotLoggerMock.Object);
+        var loadDuckDbStage = AutoMocked.Instance<LoadDuckDbStage>();
 
         var sut = new EtlPipelineFactory(
             catalogueFactoryMock.Object,
@@ -46,7 +42,8 @@ public class EtlPipelineFactoryTests
             storageProviderMock.Object,
             hcdtNormaliserMock.Object,
             normaliseLoggerMock.Object,
-            snapshotStage);
+            snapshotStage,
+            loadDuckDbStage);
 
         // Act
         var pipeline = sut.Create();

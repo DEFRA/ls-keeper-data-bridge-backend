@@ -43,8 +43,8 @@ public static class StageRunner
         return results;
     }
 
-    public static EtlPipelineContext Context(string sourceType = "external", int lookbackDays = 0) =>
-        new(Guid.NewGuid(), sourceType, lookbackDays);
+    public static EtlPipelineContext Context(string sourceType = "external", int lookbackDays = 0, string? dataset = null) =>
+        new(Guid.NewGuid(), sourceType, lookbackDays, dataset);
 
     // Shared test-data builders, so every stage test describes inputs the same way.
 

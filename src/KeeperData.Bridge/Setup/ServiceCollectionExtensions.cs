@@ -4,6 +4,7 @@ using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Filters;
 using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Core.ETL.Setup;
+using KeeperData.Core.EtlPipeline.Setup;
 using KeeperData.Core.Querying.Setup;
 using KeeperData.Core.Telemetry;
 using KeeperData.Infrastructure.Benchmarking.Setup;
@@ -61,6 +62,8 @@ namespace KeeperData.Bridge.Setup
             services.AddEtlDependencies(configuration);
 
             services.AddFileBasedEtlServices();
+
+            services.AddEtlImportStatus();
 
             services.AddCrypto(configuration);
 

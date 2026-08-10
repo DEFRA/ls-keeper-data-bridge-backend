@@ -122,7 +122,110 @@ public class PipelineFrameworkTests
             Times.AtLeastOnce);
     }
 
+    [Fact]
+    public async Task Run_WithObserver_ShouldReportEveryStageAndItsOutput()
+    {
+        var observer = new RecordingObserver();
+        var executor = new PipelineExecutor(NullLogger<PipelineExecutor>.Instance, [observer]);
+        var definition = PipelineBuilder
+            .InputSource(new IntSource(1, 2, 3))
+            .Then(new DoubleStage())
+            .Then(new SumStage())
+            .Build();
+
+        await executor.RunAsync(definition, Context(), CancellationToken.None);
+
+        observer.StartedWith.Should().Equal("double", "sum");
+        observer.Stages.Should().Equal(("double", 3), ("sum", 1));
+        observer.LastItems.Should().Equal(12);
+        observer.Completed.Should().BeTrue();
+        observer.Failure.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Run_WhenStageThrows_ShouldReportTheFailureToObservers()
+    {
+        var observer = new RecordingObserver();
+        var executor = new PipelineExecutor(NullLogger<PipelineExecutor>.Instance, [observer]);
+        var definition = PipelineBuilder
+            .InputSource(new IntSource(1))
+            .Then(new ThrowStage())
+            .Build();
+
+        Func<Task> act = () => executor.RunAsync(definition, Context(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<PipelineExecutionException>();
+
+        observer.Failure.Should().BeOfType<PipelineExecutionException>()
+            .Which.InnerException.Should().BeOfType<InvalidOperationException>();
+        observer.Completed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Run_WhenObserverThrows_ShouldNotFailTheRun()
+    {
+        var executor = new PipelineExecutor(NullLogger<PipelineExecutor>.Instance, [new ThrowingObserver()]);
+        var captured = new List<int>();
+        var definition = PipelineBuilder
+            .InputSource(new IntSource(1, 2))
+            .Then(new CaptureStage<int>(captured))
+            .Build();
+
+        await executor.RunAsync(definition, Context(), CancellationToken.None);
+
+        captured.Should().Equal(1, 2);
+    }
+
     private sealed class TestContext : IPipelineContext { }
+
+    private sealed class RecordingObserver : IPipelineRunObserver
+    {
+        public IReadOnlyList<string> StartedWith { get; private set; } = [];
+        public List<(string Stage, int Count)> Stages { get; } = [];
+        public IReadOnlyList<object> LastItems { get; private set; } = [];
+        public bool Completed { get; private set; }
+        public Exception? Failure { get; private set; }
+
+        public Task RunStartingAsync(IPipelineContext context, IReadOnlyList<string> stageNames, CancellationToken cancellationToken)
+        {
+            StartedWith = stageNames;
+            return Task.CompletedTask;
+        }
+
+        public Task StageCompletedAsync(IPipelineContext context, string stageName, IReadOnlyList<object> items, TimeSpan elapsed, CancellationToken cancellationToken)
+        {
+            Stages.Add((stageName, items.Count));
+            LastItems = items;
+            return Task.CompletedTask;
+        }
+
+        public Task RunCompletedAsync(IPipelineContext context, TimeSpan elapsed, CancellationToken cancellationToken)
+        {
+            Completed = true;
+            return Task.CompletedTask;
+        }
+
+        public Task RunFailedAsync(IPipelineContext context, Exception exception, CancellationToken cancellationToken)
+        {
+            Failure = exception;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingObserver : IPipelineRunObserver
+    {
+        public Task RunStartingAsync(IPipelineContext context, IReadOnlyList<string> stageNames, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("observer boom");
+
+        public Task StageCompletedAsync(IPipelineContext context, string stageName, IReadOnlyList<object> items, TimeSpan elapsed, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("observer boom");
+
+        public Task RunCompletedAsync(IPipelineContext context, TimeSpan elapsed, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("observer boom");
+
+        public Task RunFailedAsync(IPipelineContext context, Exception exception, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("observer boom");
+    }
 
     private sealed class IntSource(params int[] items) : ISourceStage<int>
     {

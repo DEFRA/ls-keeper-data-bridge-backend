@@ -8,6 +8,7 @@ using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Setup;
 using KeeperData.Core.EtlPipeline.Staging;
+using KeeperData.Core.EtlPipeline.Status;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage;
@@ -66,11 +67,14 @@ public sealed class FileBasedPipelineTestHost : IAsyncDisposable
     /// <param name="now">Discovery is a date window ending "today", so the clock decides which source
     /// files a run can see. Fixed here so tests can use realistic source timestamps.</param>
     /// <param name="stagingDatabaseWriter">Replaces the DuckDB writer, for failure scenarios.</param>
+    /// <param name="statusStore">Records import status for the run. Omitted, no status is written -
+    /// the pipeline does not depend on it.</param>
     public static async Task<FileBasedPipelineTestHost> CreateAsync(
         IAmazonS3 s3Client,
         DateTimeOffset now,
         DataSetDefinition? definition = null,
-        IStagingDatabaseWriter? stagingDatabaseWriter = null)
+        IStagingDatabaseWriter? stagingDatabaseWriter = null,
+        IEtlImportStatusStore? statusStore = null)
     {
         var bucketName = $"etl-e2e-{Guid.NewGuid():N}";
         await s3Client.PutBucketAsync(new PutBucketRequest { BucketName = bucketName, UseClientRegion = true });
@@ -78,7 +82,7 @@ public sealed class FileBasedPipelineTestHost : IAsyncDisposable
         var dataSet = definition ?? StandardDataSetDefinitionsBuilder.Build().SamCPHHolding;
         var timeProvider = new FakeTimeProvider(now);
 
-        var services = BuildServices(s3Client, bucketName, dataSet, timeProvider, stagingDatabaseWriter);
+        var services = BuildServices(s3Client, bucketName, dataSet, timeProvider, stagingDatabaseWriter, statusStore);
 
         return new FileBasedPipelineTestHost(s3Client, bucketName, services, timeProvider, dataSet);
     }
@@ -88,7 +92,8 @@ public sealed class FileBasedPipelineTestHost : IAsyncDisposable
         string bucketName,
         DataSetDefinition definition,
         TimeProvider timeProvider,
-        IStagingDatabaseWriter? stagingDatabaseWriter)
+        IStagingDatabaseWriter? stagingDatabaseWriter,
+        IEtlImportStatusStore? statusStore)
     {
         var services = new ServiceCollection();
 
@@ -145,25 +150,35 @@ public sealed class FileBasedPipelineTestHost : IAsyncDisposable
 
         services.AddEtlPipeline();
 
+        if (statusStore is not null)
+        {
+            services.AddSingleton(statusStore);
+            services.AddScoped<IPipelineRunObserver, EtlImportStatusObserver>();
+        }
+
         return services.BuildServiceProvider();
     }
 
     /// <summary>Runs the whole pipeline once, as the host would.</summary>
-    public async Task<Guid> RunPipelineAsync(int lookbackDays = 30, CancellationToken cancellationToken = default)
+    public async Task<Guid> RunPipelineAsync(
+        int lookbackDays = 30,
+        Guid? runId = null,
+        string? dataset = null,
+        CancellationToken cancellationToken = default)
     {
         using var scope = _services.CreateScope();
 
         var factory = scope.ServiceProvider.GetRequiredService<IEtlPipelineFactory>();
         var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
 
-        var runId = Guid.NewGuid();
+        var id = runId ?? Guid.NewGuid();
 
         await executor.RunAsync(
             factory.Create(),
-            new EtlPipelineContext(runId, BlobStorageSources.External, lookbackDays),
+            new EtlPipelineContext(id, BlobStorageSources.External, lookbackDays, dataset),
             cancellationToken);
 
-        return runId;
+        return id;
     }
 
     /// <summary>Moves the run clock, so a later run can see files stamped after the previous one.</summary>

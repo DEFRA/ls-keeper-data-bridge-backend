@@ -14,6 +14,8 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
 
     public EtlImportDocument? Document { get; set; }
     public EtlImportDocument? InFlight { get; set; }
+    public List<EtlImportDocument> Listed { get; } = [];
+    public List<(int Skip, int Top)> ListRequests { get; } = [];
 
     public Task CreateQueuedAsync(Guid importId, string sourceType, string? dataset, CancellationToken cancellationToken)
     {
@@ -50,4 +52,10 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
 
     public Task<EtlImportDocument?> GetInFlightAsync(CancellationToken cancellationToken)
         => Task.FromResult(InFlight);
+
+    public Task<EtlImportPage> ListAsync(int skip, int top, CancellationToken cancellationToken)
+    {
+        ListRequests.Add((skip, top));
+        return Task.FromResult(new EtlImportPage([.. Listed.Skip(skip).Take(top)], Listed.Count));
+    }
 }

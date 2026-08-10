@@ -16,6 +16,43 @@ namespace KeeperData.Bridge.Controllers;
 public class EtlImportStatusController(
     IEtlImportStatusStore statusStore) : ControllerBase
 {
+    private const int MaxPageSize = 100;
+
+    /// <summary>Recent ETL imports, most recently requested first, so a caller that no longer has an
+    /// import id can still find its run.</summary>
+    /// <param name="skip">Imports to skip (default 0)</param>
+    /// <param name="top">Imports to return (default 10, max 100)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    [HttpGet]
+    [ProducesResponseType(typeof(EtlImportListResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetImports(
+        [FromQuery] int skip = 0,
+        [FromQuery] int top = 10,
+        CancellationToken cancellationToken = default)
+    {
+        if (skip < 0)
+        {
+            return BadRequest(new ErrorResponse { Message = "Skip must be greater than or equal to 0." });
+        }
+
+        if (top <= 0 || top > MaxPageSize)
+        {
+            return BadRequest(new ErrorResponse { Message = $"Top must be between 1 and {MaxPageSize}." });
+        }
+
+        var page = await statusStore.ListAsync(skip, top, cancellationToken);
+
+        return Ok(new EtlImportListResponse
+        {
+            Skip = skip,
+            Top = top,
+            Count = page.Imports.Count,
+            TotalCount = page.TotalCount,
+            Imports = [.. page.Imports.Select(Summarise)]
+        });
+    }
+
     /// <summary>Current status of an ETL import.</summary>
     [HttpGet("{importId:guid}")]
     [ProducesResponseType(typeof(EtlImportStatusResponse), StatusCodes.Status200OK)]
@@ -31,6 +68,25 @@ public class EtlImportStatusController(
 
         return Ok(Map(document));
     }
+
+    private static EtlImportSummaryResponse Summarise(EtlImportDocument document) => new()
+    {
+        ImportId = document.ImportId,
+        Status = document.Status,
+        SourceType = document.SourceType,
+        Dataset = document.Dataset,
+        RequestedAtUtc = document.RequestedAtUtc,
+        StartedAtUtc = document.StartedAtUtc,
+        CompletedAtUtc = document.CompletedAtUtc,
+        CurrentStage = document.CurrentStage,
+        DatasetCount = document.Datasets.Count,
+        SourceFileCount = document.Datasets.Sum(d => d.SourceFiles.Count),
+        RowCount = document.Datasets.Any(d => d.RowCount.HasValue)
+            ? document.Datasets.Sum(d => d.RowCount ?? 0)
+            : null,
+        DuckDbPath = Qualify(EtlPipelineFolders.Staging, document.DuckDbKey),
+        Error = document.Error
+    };
 
     private static EtlImportStatusResponse Map(EtlImportDocument document) => new()
     {

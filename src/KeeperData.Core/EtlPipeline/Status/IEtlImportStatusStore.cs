@@ -22,7 +22,14 @@ public interface IEtlImportStatusStore
     /// <summary>The import currently holding the pipeline, if any. Used to tell a caller which run
     /// it collided with rather than only that it collided.</summary>
     Task<EtlImportDocument?> GetInFlightAsync(CancellationToken cancellationToken);
+
+    /// <summary>A page of imports, most recently requested first, so a caller that has lost an
+    /// import id can still find its run. Runs whose lease has lapsed are returned as failed.</summary>
+    Task<EtlImportPage> ListAsync(int skip, int top, CancellationToken cancellationToken);
 }
+
+/// <summary>One page of imports, with the total available so a caller can paginate.</summary>
+public sealed record EtlImportPage(IReadOnlyList<EtlImportDocument> Imports, long TotalCount);
 
 /// <summary>One stage's outcome, already mapped out of the pipeline's payload types.</summary>
 public sealed record EtlImportStageProgress(

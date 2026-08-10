@@ -73,3 +73,52 @@ public class EtlImportSourceFileResponse
     public required string Key { get; set; }
     public long Size { get; set; }
 }
+
+/// <summary>A page of imports, most recent first.</summary>
+[ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
+public class EtlImportListResponse
+{
+    public int Skip { get; set; }
+    public int Top { get; set; }
+
+    /// <summary>How many imports this page contains.</summary>
+    public int Count { get; set; }
+
+    /// <summary>How many imports exist in total, for paging.</summary>
+    public long TotalCount { get; set; }
+
+    public List<EtlImportSummaryResponse> Imports { get; set; } = [];
+}
+
+/// <summary>Enough of an import to list it and link to it. The per-dataset detail - source files,
+/// raw, normalised and snapshot paths - is on the by-id endpoint, so a page of imports stays small
+/// however many datasets each run touched.</summary>
+[ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
+public class EtlImportSummaryResponse
+{
+    public Guid ImportId { get; set; }
+    public required string Status { get; set; }
+    public required string SourceType { get; set; }
+
+    /// <summary>The dataset the run was restricted to, or null for all of them.</summary>
+    public string? Dataset { get; set; }
+
+    public DateTime RequestedAtUtc { get; set; }
+    public DateTime? StartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string? CurrentStage { get; set; }
+
+    /// <summary>Datasets the run produced output for.</summary>
+    public int DatasetCount { get; set; }
+
+    /// <summary>Source files discovered across every dataset. Zero on a succeeded run means nothing
+    /// was found to process - usually a filename timestamp outside the discovery window.</summary>
+    public int SourceFileCount { get; set; }
+
+    /// <summary>Rows summed across datasets, where the run got far enough to count any.</summary>
+    public long? RowCount { get; set; }
+
+    public string? DuckDbPath { get; set; }
+
+    public string? Error { get; set; }
+}

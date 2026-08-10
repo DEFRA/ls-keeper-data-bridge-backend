@@ -21,6 +21,163 @@ public class EtlImportStatusControllerTests
     }
 
     [Fact]
+    public async Task GetImports_ReturnsThePageTheStoreProducedAlongsideTheTotalSoACallerCanPaginate()
+    {
+        _statusStore
+            .Setup(s => s.ListAsync(20, 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EtlImportPage(
+                [
+                    new EtlImportDocument { ImportId = Guid.NewGuid(), Status = nameof(EtlImportStatus.Succeeded), SourceType = "internal" },
+                    new EtlImportDocument { ImportId = Guid.NewGuid(), Status = nameof(EtlImportStatus.Failed), SourceType = "internal" }
+                ],
+                57));
+
+        var result = await _controller.GetImports(20, 5, CancellationToken.None);
+
+        var response = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlImportListResponse>().Subject;
+
+        response.Skip.Should().Be(20);
+        response.Top.Should().Be(5);
+        response.Count.Should().Be(2);
+        response.TotalCount.Should().Be(57);
+        response.Imports.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetImports_WithNoPagingArguments_AsksForTheMostRecentTen()
+    {
+        _statusStore
+            .Setup(s => s.ListAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EtlImportPage([], 0));
+
+        await _controller.GetImports(cancellationToken: CancellationToken.None);
+
+        _statusStore.Verify(s => s.ListAsync(0, 10, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetImports_SummarisesARunWithoutRepeatingEveryPerDatasetDetail()
+    {
+        var importId = Guid.NewGuid();
+
+        _statusStore
+            .Setup(s => s.ListAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EtlImportPage(
+                [
+                    new EtlImportDocument
+                    {
+                        ImportId = importId,
+                        Status = nameof(EtlImportStatus.Succeeded),
+                        SourceType = "internal",
+                        CurrentStage = "load-duckdb",
+                        DuckDbKey = "keeper_data_bridge_20251115121333.duckdb",
+                        Datasets =
+                        [
+                            new EtlImportDatasetDocument
+                            {
+                                Dataset = "sam_cph_holdings",
+                                SourceFiles = [new EtlImportSourceFileDocument { Key = "a.csv", Size = 1 }],
+                                RowCount = 3
+                            },
+                            new EtlImportDatasetDocument
+                            {
+                                Dataset = "cts_keepers",
+                                SourceFiles =
+                                [
+                                    new EtlImportSourceFileDocument { Key = "b.csv", Size = 1 },
+                                    new EtlImportSourceFileDocument { Key = "c.csv", Size = 1 }
+                                ],
+                                RowCount = 4
+                            }
+                        ]
+                    }
+                ],
+                1));
+
+        var result = await _controller.GetImports(cancellationToken: CancellationToken.None);
+
+        var summary = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlImportListResponse>()
+            .Which.Imports.Should().ContainSingle().Subject;
+
+        summary.ImportId.Should().Be(importId);
+        summary.CurrentStage.Should().Be("load-duckdb");
+        summary.DatasetCount.Should().Be(2);
+        summary.SourceFileCount.Should().Be(3);
+        summary.RowCount.Should().Be(7);
+        summary.DuckDbPath.Should().Be("staging/keeper_data_bridge_20251115121333.duckdb");
+    }
+
+    [Fact]
+    public async Task GetImports_ForARunThatHasCountedNothingYet_LeavesTheRowCountNullRatherThanReportingZero()
+    {
+        _statusStore
+            .Setup(s => s.ListAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EtlImportPage(
+                [
+                    new EtlImportDocument
+                    {
+                        ImportId = Guid.NewGuid(),
+                        Status = nameof(EtlImportStatus.Running),
+                        SourceType = "internal",
+                        Datasets = [new EtlImportDatasetDocument { Dataset = "sam_cph_holdings" }]
+                    }
+                ],
+                1));
+
+        var result = await _controller.GetImports(cancellationToken: CancellationToken.None);
+
+        var summary = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlImportListResponse>()
+            .Which.Imports.Should().ContainSingle().Subject;
+
+        summary.RowCount.Should().BeNull();
+        summary.DuckDbPath.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetImports_WithANegativeSkip_Returns400AndDoesNotQuery()
+    {
+        var result = await _controller.GetImports(-1, 10, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+
+        _statusStore.Verify(
+            s => s.ListAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    [InlineData(101)]
+    public async Task GetImports_WithATopOutsideTheAllowedRange_Returns400AndDoesNotQuery(int top)
+    {
+        var result = await _controller.GetImports(0, top, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+
+        _statusStore.Verify(
+            s => s.ListAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetImports_WithTheMaximumTop_IsAccepted()
+    {
+        _statusStore
+            .Setup(s => s.ListAsync(0, 100, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EtlImportPage([], 0));
+
+        var result = await _controller.GetImports(0, 100, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
     public async Task GetImportStatus_ForASucceededRun_ReturnsTheFullPathsQaNeedsToFindTheOutputs()
     {
         var importId = Guid.NewGuid();

@@ -13,8 +13,8 @@ public sealed class EtlImportOptions
     /// ETL run buys nothing and would leave QA waiting hours. This lock still gives the
     /// one-ETL-run-at-a-time guarantee.
     ///
-    /// The value keeps its original name so a deployment mid-rollout cannot end up with two
-    /// concurrent runs holding differently-named locks.
+    /// Changing this value is only safe while no instance is running the old one: two instances
+    /// holding differently-named locks would each believe it had exclusive use of the pipeline.
     /// </summary>
     public string LockName { get; set; } = "EtlImportRun";
 

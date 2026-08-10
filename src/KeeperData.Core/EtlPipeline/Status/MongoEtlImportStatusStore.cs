@@ -130,6 +130,22 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
         return candidates.FirstOrDefault(d => d.LeaseExpiresAtUtc is null || d.LeaseExpiresAtUtc > UtcNow);
     }
 
+    public async Task<EtlImportPage> ListAsync(int skip, int top, CancellationToken cancellationToken)
+    {
+        var all = Builders<EtlImportDocument>.Filter.Empty;
+
+        var documents = await _imports
+            .Find(all)
+            .SortByDescending(d => d.RequestedAtUtc)
+            .Skip(skip)
+            .Limit(top)
+            .ToListAsync(cancellationToken);
+
+        var totalCount = await _imports.CountDocumentsAsync(all, cancellationToken: cancellationToken);
+
+        return new EtlImportPage([.. documents.Select(AsAbandonedIfLapsed)], totalCount);
+    }
+
     private async Task CompleteAsync(Guid importId, EtlImportStatus status, string? error, CancellationToken cancellationToken)
     {
         var update = Builders<EtlImportDocument>.Update

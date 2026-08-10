@@ -115,11 +115,7 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
         var importId = Guid.NewGuid();
         var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(RunClock);
 
-        var store = new MongoEtlImportStatusStore(
-            new MongoClient(_mongo.GetConnectionString()),
-            Options.Create<IDatabaseConfig>(new TestDatabaseConfig()),
-            clock,
-            NullLogger<MongoEtlImportStatusStore>.Instance);
+        var store = CreateStore(clock);
 
         await store.CreateQueuedAsync(importId, "external", null, CancellationToken.None);
         await store.MarkRunningAsync(importId, ["discover"], CancellationToken.None);
@@ -132,10 +128,69 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
     }
 
     [Fact]
+    public async Task Listing_imports_returns_the_most_recently_requested_first_with_the_total_to_page_through()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(RunClock);
+        var store = CreateStore(clock);
+
+        var ids = new List<Guid>();
+
+        for (var i = 0; i < 5; i++)
+        {
+            var importId = Guid.NewGuid();
+            ids.Add(importId);
+
+            await store.CreateQueuedAsync(importId, "internal", "sam_cph_holdings", CancellationToken.None);
+            clock.Advance(TimeSpan.FromMinutes(1));
+        }
+
+        var firstPage = await store.ListAsync(0, 2, CancellationToken.None);
+
+        firstPage.TotalCount.Should().Be(5, "the total is what lets a caller page without walking to the end");
+        firstPage.Imports.Select(i => i.ImportId).Should().Equal(ids[4], ids[3]);
+
+        var secondPage = await store.ListAsync(2, 2, CancellationToken.None);
+
+        secondPage.TotalCount.Should().Be(5);
+        secondPage.Imports.Select(i => i.ImportId).Should().Equal(ids[2], ids[1]);
+
+        var pastTheEnd = await store.ListAsync(10, 2, CancellationToken.None);
+
+        pastTheEnd.Imports.Should().BeEmpty();
+        pastTheEnd.TotalCount.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task Listing_imports_reports_an_abandoned_run_as_failed_the_same_way_polling_does()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(RunClock);
+        var store = CreateStore(clock);
+
+        var importId = Guid.NewGuid();
+
+        await store.CreateQueuedAsync(importId, "internal", null, CancellationToken.None);
+        await store.MarkRunningAsync(importId, ["discover"], CancellationToken.None);
+
+        clock.Advance(MongoEtlImportStatusStore.LeaseDuration + TimeSpan.FromMinutes(1));
+
+        var page = await store.ListAsync(0, 10, CancellationToken.None);
+
+        page.Imports.Should().ContainSingle()
+            .Which.Status.Should().Be(nameof(EtlImportStatus.Failed));
+    }
+
+    [Fact]
     public async Task An_unknown_import_id_has_no_status()
     {
         (await _store.GetAsync(Guid.NewGuid(), CancellationToken.None)).Should().BeNull();
     }
+
+    private MongoEtlImportStatusStore CreateStore(TimeProvider clock)
+        => new(
+            new MongoClient(_mongo.GetConnectionString()),
+            Options.Create<IDatabaseConfig>(new TestDatabaseConfig()),
+            clock,
+            NullLogger<MongoEtlImportStatusStore>.Instance);
 
     private Task<EtlPipelineTestHost> CreateHostAsync()
         => EtlPipelineTestHost.CreateAsync(localStack.S3Client, RunClock, statusStore: _store);

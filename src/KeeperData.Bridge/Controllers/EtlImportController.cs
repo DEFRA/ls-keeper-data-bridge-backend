@@ -29,9 +29,9 @@ public class EtlImportController(
     /// <param name="dataset">Restricts the run to one dataset, e.g. "sam_cph_holdings". Omit to run all.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     [HttpPost]
-    [ProducesResponseType(typeof(StartFileBasedImportResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(StartEtlImportResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(FileBasedImportConflictResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(EtlImportConflictResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> StartImport(
         [FromQuery] string sourceType = BlobStorageSources.External,
         [FromQuery] string? dataset = null,
@@ -64,14 +64,14 @@ public class EtlImportController(
 
         if (!result.Accepted)
         {
-            return Conflict(new FileBasedImportConflictResponse
+            return Conflict(new EtlImportConflictResponse
             {
                 Message = "An ETL import is already running. Poll that import, or retry when it has finished.",
                 InFlightImportId = result.InFlightImportId
             });
         }
 
-        return Accepted(new StartFileBasedImportResponse
+        return Accepted(new StartEtlImportResponse
         {
             ImportId = result.ImportId!.Value,
             Status = EtlImportStatus.Queued.ToString()

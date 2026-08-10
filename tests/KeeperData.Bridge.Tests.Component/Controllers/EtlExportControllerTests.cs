@@ -10,20 +10,20 @@ using Moq;
 
 namespace KeeperData.Bridge.Tests.Component.Controllers;
 
-public class FileBasedExportControllerTests
+public class EtlExportControllerTests
 {
     private readonly Mock<ICphExportStatusService> _mockStatusService;
     private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
-    private readonly Mock<ILogger<FileBasedExportController>> _mockLogger;
-    private readonly FileBasedExportController _controller;
+    private readonly Mock<ILogger<EtlExportController>> _mockLogger;
+    private readonly EtlExportController _controller;
 
-    public FileBasedExportControllerTests()
+    public EtlExportControllerTests()
     {
         _mockStatusService = new Mock<ICphExportStatusService>();
         _mockScopeFactory = new Mock<IServiceScopeFactory>();
-        _mockLogger = new Mock<ILogger<FileBasedExportController>>();
+        _mockLogger = new Mock<ILogger<EtlExportController>>();
 
-        _controller = new FileBasedExportController(
+        _controller = new EtlExportController(
             _mockStatusService.Object,
             _mockScopeFactory.Object,
             _mockLogger.Object);
@@ -359,8 +359,8 @@ public class FileBasedExportControllerTests
             .Setup(sp => sp.GetService(typeof(ICphExportStatusService)))
             .Returns(new Mock<ICphExportStatusService>().Object);
         mockServiceProvider
-            .Setup(sp => sp.GetService(typeof(ILogger<FileBasedExportController>)))
-            .Returns(new Mock<ILogger<FileBasedExportController>>().Object);
+            .Setup(sp => sp.GetService(typeof(ILogger<EtlExportController>)))
+            .Returns(new Mock<ILogger<EtlExportController>>().Object);
 
         mockScope.Setup(s => s.ServiceProvider).Returns(mockServiceProvider.Object);
 

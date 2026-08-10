@@ -51,7 +51,7 @@ public class EtlImportStatusControllerTests
         var result = await _controller.GetImportStatus(importId, CancellationToken.None);
 
         var response = result.Should().BeOfType<OkObjectResult>()
-            .Which.Value.Should().BeOfType<FileBasedImportStatusResponse>().Subject;
+            .Which.Value.Should().BeOfType<EtlImportStatusResponse>().Subject;
 
         response.Status.Should().Be(nameof(EtlImportStatus.Succeeded));
         response.DuckDbPath.Should().Be("staging/keeper_data_bridge_20251115121333.duckdb");
@@ -80,7 +80,7 @@ public class EtlImportStatusControllerTests
         var result = await _controller.GetImportStatus(importId, CancellationToken.None);
 
         var response = result.Should().BeOfType<OkObjectResult>()
-            .Which.Value.Should().BeOfType<FileBasedImportStatusResponse>().Subject;
+            .Which.Value.Should().BeOfType<EtlImportStatusResponse>().Subject;
 
         response.DuckDbPath.Should().BeNull();
         response.Datasets.Should().BeEmpty();

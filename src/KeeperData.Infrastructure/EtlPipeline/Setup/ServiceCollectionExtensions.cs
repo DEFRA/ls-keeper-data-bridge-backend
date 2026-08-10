@@ -12,7 +12,7 @@ namespace KeeperData.Infrastructure.EtlPipeline.Setup;
 [ExcludeFromCodeCoverage]
 public static class ServiceCollectionExtensions
 {
-    /// <summary>Registers storage access for the file-based ETL pipeline folders.
+    /// <summary>Registers storage access for the ETL pipeline folders.
     /// Must be called after AddStorageDependencies, which registers StorageConfiguration
     /// and the S3 client factory this depends on.</summary>
     public static IServiceCollection AddEtlPipelineStorageProvider(this IServiceCollection services, IConfiguration configuration)

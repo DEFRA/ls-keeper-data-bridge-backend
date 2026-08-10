@@ -1,6 +1,6 @@
 namespace KeeperData.Core.EtlPipeline.Status;
 
-/// <summary>Lifecycle of a file-based ETL import, as reported to the polling API.</summary>
+/// <summary>Lifecycle of an ETL import, as reported to the polling API.</summary>
 public enum EtlImportStatus
 {
     /// <summary>Accepted and the lock is held, but the pipeline has not started yet.</summary>

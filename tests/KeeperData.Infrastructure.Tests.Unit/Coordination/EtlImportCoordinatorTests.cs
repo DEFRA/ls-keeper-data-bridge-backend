@@ -130,12 +130,12 @@ public class EtlImportCoordinatorTests
 
         var result = await _sut.StartAsync("external", null, CancellationToken.None);
 
-        await onFailure!(new InvalidOperationException("Failed to renew lock for FileBasedEtlRun"));
+        await onFailure!(new InvalidOperationException("Failed to renew lock for EtlImportRun"));
 
         _statusStore.Verify(
             s => s.MarkFailedAsync(
                 result.ImportId!.Value,
-                "InvalidOperationException: Failed to renew lock for FileBasedEtlRun",
+                "InvalidOperationException: Failed to renew lock for EtlImportRun",
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }

@@ -61,7 +61,7 @@ namespace KeeperData.Bridge.Setup
 
             services.AddEtlDependencies(configuration);
 
-            services.AddFileBasedEtlServices();
+            services.AddEtlServices();
 
             services.AddEtlImportStatus();
 

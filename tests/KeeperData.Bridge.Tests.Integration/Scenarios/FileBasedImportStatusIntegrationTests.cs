@@ -12,13 +12,13 @@ namespace KeeperData.Bridge.Tests.Integration.Scenarios;
 
 /// <summary>
 /// The status a QA analyst polls, produced the way it will be in the deployed system: a real run of
-/// the file-based pipeline over LocalStack, observed into a real Mongo collection.
+/// the ETL pipeline over LocalStack, observed into a real Mongo collection.
 ///
 /// The unit tests cover what the observer derives from each payload; these cover that it survives
 /// the round trip through Mongo, which is where the status API reads it from.
 /// </summary>
 [Collection("LocalStack"), Trait("Dependence", "docker")]
-public sealed class FileBasedImportStatusIntegrationTests(LocalStackFixture localStack) : IAsyncLifetime
+public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack) : IAsyncLifetime
 {
     private const string Header = "CPH|FEATURE_NAME|SECONDARY_CPH|ANIMAL_SPECIES_CODE|HOLDING_NAME|CHANGE_TYPE";
     private const string KeyColumns = "MAIN|-|01";
@@ -105,7 +105,7 @@ public sealed class FileBasedImportStatusIntegrationTests(LocalStackFixture loca
         status.Status.Should().Be(nameof(EtlImportStatus.Failed));
         status.CompletedAtUtc.Should().NotBeNull();
         status.Error.Should().NotBeNullOrWhiteSpace();
-        status.Error.Should().NotContain(FileBasedPipelineTestHost.AesSalt, "a status a caller can read must never carry the salt");
+        status.Error.Should().NotContain(EtlPipelineTestHost.AesSalt, "a status a caller can read must never carry the salt");
         status.Error.Should().NotContain(" at ", "the caller gets a summary; the stack trace stays in the logs");
     }
 
@@ -137,8 +137,8 @@ public sealed class FileBasedImportStatusIntegrationTests(LocalStackFixture loca
         (await _store.GetAsync(Guid.NewGuid(), CancellationToken.None)).Should().BeNull();
     }
 
-    private Task<FileBasedPipelineTestHost> CreateHostAsync()
-        => FileBasedPipelineTestHost.CreateAsync(localStack.S3Client, RunClock, statusStore: _store);
+    private Task<EtlPipelineTestHost> CreateHostAsync()
+        => EtlPipelineTestHost.CreateAsync(localStack.S3Client, RunClock, statusStore: _store);
 
     private static string SourceContent() => new StringBuilder()
         .AppendLine(Header)

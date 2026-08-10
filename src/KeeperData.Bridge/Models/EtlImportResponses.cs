@@ -3,14 +3,14 @@ using System.Diagnostics.CodeAnalysis;
 namespace KeeperData.Bridge.Models;
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
-public class StartFileBasedImportResponse
+public class StartEtlImportResponse
 {
     public Guid ImportId { get; set; }
     public required string Status { get; set; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
-public class FileBasedImportConflictResponse
+public class EtlImportConflictResponse
 {
     public required string Message { get; set; }
 
@@ -19,7 +19,7 @@ public class FileBasedImportConflictResponse
 }
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
-public class FileBasedImportStatusResponse
+public class EtlImportStatusResponse
 {
     public Guid ImportId { get; set; }
     public required string Status { get; set; }
@@ -33,8 +33,8 @@ public class FileBasedImportStatusResponse
     public DateTime? CompletedAtUtc { get; set; }
     public string? CurrentStage { get; set; }
 
-    public List<FileBasedImportStageResponse> Stages { get; set; } = [];
-    public List<FileBasedImportDatasetResponse> Datasets { get; set; } = [];
+    public List<EtlImportStageResponse> Stages { get; set; } = [];
+    public List<EtlImportDatasetResponse> Datasets { get; set; } = [];
 
     /// <summary>Key of the staging database this run produced. Ask the staging endpoint for a
     /// presigned URL to download it.</summary>
@@ -45,7 +45,7 @@ public class FileBasedImportStatusResponse
 }
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
-public class FileBasedImportStageResponse
+public class EtlImportStageResponse
 {
     public required string Name { get; set; }
     public int ItemCount { get; set; }
@@ -54,10 +54,10 @@ public class FileBasedImportStageResponse
 }
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
-public class FileBasedImportDatasetResponse
+public class EtlImportDatasetResponse
 {
     public required string Dataset { get; set; }
-    public List<FileBasedImportSourceFileResponse> SourceFiles { get; set; } = [];
+    public List<EtlImportSourceFileResponse> SourceFiles { get; set; } = [];
     public List<string> RawPaths { get; set; } = [];
     public List<string> NormalisedPaths { get; set; } = [];
     public string? SnapshotPath { get; set; }
@@ -68,7 +68,7 @@ public class FileBasedImportDatasetResponse
 }
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
-public class FileBasedImportSourceFileResponse
+public class EtlImportSourceFileResponse
 {
     public required string Key { get; set; }
     public long Size { get; set; }

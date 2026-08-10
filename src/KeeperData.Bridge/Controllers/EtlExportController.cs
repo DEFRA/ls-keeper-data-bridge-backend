@@ -6,16 +6,16 @@ using Microsoft.AspNetCore.Mvc;
 namespace KeeperData.Bridge.Controllers;
 
 [ApiController]
-[Route("api/etl/file-based/exports")]
+[Route("api/etl/exports")]
 [ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
-public class FileBasedExportController(
+public class EtlExportController(
     ICphExportStatusService cphExportStatusService,
     IServiceScopeFactory serviceScopeFactory,
-    ILogger<FileBasedExportController> logger) : ControllerBase
+    ILogger<EtlExportController> logger) : ControllerBase
 {
     /// <summary>
     /// Triggers a CPH export from the latest DuckDB staging file to SQLite.
-    /// The export runs in the background; poll GET /api/etl/file-based/exports/{exportId} for progress.
+    /// The export runs in the background; poll GET /api/etl/exports/{exportId} for progress.
     /// Returns 409 if an export is already queued or running.
     /// </summary>
     [HttpPost("cphs")]
@@ -166,7 +166,7 @@ public class FileBasedExportController(
         }
     }
 
-    private static async Task UpdateExceptionStatus(ICphExportStatusService scopedStatusService, Guid exportId, Exception ex, ILogger<FileBasedExportController> scopedLogger)
+    private static async Task UpdateExceptionStatus(ICphExportStatusService scopedStatusService, Guid exportId, Exception ex, ILogger<EtlExportController> scopedLogger)
     {
         try
         {
@@ -183,11 +183,11 @@ public class FileBasedExportController(
         }
     }
 
-    private static (ICphExportService, ICphExportStatusService, ILogger<FileBasedExportController>) GetScopedServices(
+    private static (ICphExportService, ICphExportStatusService, ILogger<EtlExportController>) GetScopedServices(
         IServiceScope scope) => (
             scope.ServiceProvider.GetRequiredService<ICphExportService>(),
             scope.ServiceProvider.GetRequiredService<ICphExportStatusService>(),
-            scope.ServiceProvider.GetRequiredService<ILogger<FileBasedExportController>>());
+            scope.ServiceProvider.GetRequiredService<ILogger<EtlExportController>>());
 
     private static async Task UpdateSuccessStatus(
         ICphExportStatusService statusService,

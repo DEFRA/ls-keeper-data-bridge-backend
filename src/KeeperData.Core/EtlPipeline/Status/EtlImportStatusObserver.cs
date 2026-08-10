@@ -45,7 +45,7 @@ public sealed class EtlImportStatusObserver(
 
         // Full detail goes to the log; the document gets the message only, so nothing that might
         // carry a salt, password or presigned URL is stored or served to a caller.
-        logger.LogError(exception, "File-based ETL import failed (importId={ImportId})", importId);
+        logger.LogError(exception, "ETL import failed (importId={ImportId})", importId);
 
         return store.MarkFailedAsync(importId, SafeSummary(exception), cancellationToken);
     }

@@ -11,7 +11,7 @@ public sealed record LockRenewalSettings(string LockName, TimeSpan RenewalInterv
 /// <summary>
 /// Runs work while keeping an already-acquired lock alive, inline or on a background thread.
 ///
-/// Shared by the legacy ingestion executor and the file-based import executor: the renewal loop is
+/// Shared by the legacy ingestion executor and the ETL import executor: the renewal loop is
 /// the fiddliest code in this folder and having two copies of it would be a mistake.
 /// </summary>
 public interface ILockRenewingRunner

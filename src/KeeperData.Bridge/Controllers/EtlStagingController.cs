@@ -10,11 +10,11 @@ namespace KeeperData.Bridge.Controllers;
 /// <summary>Download access to the DuckDB staging databases the load stage produces.
 /// A prototype stand-in for the presigned-URI API, in the same shape as the SQLite endpoint.</summary>
 [ApiController]
-[Route("api/etl/file-based/staging")]
+[Route("api/etl/staging")]
 [ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
-public class FileBasedStagingController(
+public class EtlStagingController(
     IEtlPipelineStorageProvider storageProvider,
-    ILogger<FileBasedStagingController> logger) : ControllerBase
+    ILogger<EtlStagingController> logger) : ControllerBase
 {
     private static readonly TimeSpan DefaultPresignedUrlExpiry = TimeSpan.FromHours(1);
 
@@ -99,7 +99,7 @@ public class FileBasedStagingController(
             logger.LogWarning("No DuckDB staging files found in {Folder}/", EtlPipelineFolders.Staging);
             return NotFound(new StagingDatabaseErrorResponse
             {
-                Message = "No DuckDB staging databases found. Run the file-based ETL pipeline first.",
+                Message = "No DuckDB staging databases found. Run the ETL pipeline first.",
                 Timestamp = DateTime.UtcNow
             });
         }

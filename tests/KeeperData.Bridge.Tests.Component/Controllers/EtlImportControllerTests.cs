@@ -44,7 +44,7 @@ public class EtlImportControllerTests
         var accepted = result.Should().BeOfType<AcceptedResult>().Subject;
         accepted.StatusCode.Should().Be(StatusCodes.Status202Accepted);
 
-        var response = accepted.Value.Should().BeOfType<StartFileBasedImportResponse>().Subject;
+        var response = accepted.Value.Should().BeOfType<StartEtlImportResponse>().Subject;
         response.ImportId.Should().Be(importId);
         response.Status.Should().Be(nameof(EtlImportStatus.Queued));
     }
@@ -100,7 +100,7 @@ public class EtlImportControllerTests
 
         var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
         conflict.StatusCode.Should().Be(StatusCodes.Status409Conflict);
-        conflict.Value.Should().BeOfType<FileBasedImportConflictResponse>()
+        conflict.Value.Should().BeOfType<EtlImportConflictResponse>()
             .Which.InFlightImportId.Should().Be(inFlight);
     }
 }

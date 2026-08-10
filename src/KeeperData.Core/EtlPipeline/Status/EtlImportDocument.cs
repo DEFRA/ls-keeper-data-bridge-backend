@@ -5,7 +5,7 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace KeeperData.Core.EtlPipeline.Status;
 
-/// <summary>Status of one file-based ETL import.
+/// <summary>Status of one ETL import.
 ///
 /// A separate collection from the legacy <c>import_reports</c> on purpose: that document is shaped
 /// around the legacy acquisition/ingestion phases, and sharing it is how "the existing ETL must not

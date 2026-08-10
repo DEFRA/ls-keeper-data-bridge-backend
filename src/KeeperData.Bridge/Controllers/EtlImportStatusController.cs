@@ -18,7 +18,7 @@ public class EtlImportStatusController(
 {
     /// <summary>Current status of an ETL import.</summary>
     [HttpGet("{importId:guid}")]
-    [ProducesResponseType(typeof(FileBasedImportStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(EtlImportStatusResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetImportStatus(Guid importId, CancellationToken cancellationToken = default)
     {
@@ -32,7 +32,7 @@ public class EtlImportStatusController(
         return Ok(Map(document));
     }
 
-    private static FileBasedImportStatusResponse Map(EtlImportDocument document) => new()
+    private static EtlImportStatusResponse Map(EtlImportDocument document) => new()
     {
         ImportId = document.ImportId,
         Status = document.Status,
@@ -44,17 +44,17 @@ public class EtlImportStatusController(
         CurrentStage = document.CurrentStage,
         DuckDbPath = Qualify(EtlPipelineFolders.Staging, document.DuckDbKey),
         Error = document.Error,
-        Stages = [.. document.Stages.Select(s => new FileBasedImportStageResponse
+        Stages = [.. document.Stages.Select(s => new EtlImportStageResponse
         {
             Name = s.Name,
             ItemCount = s.ItemCount,
             ElapsedMs = s.ElapsedMs,
             CompletedAtUtc = s.CompletedAtUtc
         })],
-        Datasets = [.. document.Datasets.Select(d => new FileBasedImportDatasetResponse
+        Datasets = [.. document.Datasets.Select(d => new EtlImportDatasetResponse
         {
             Dataset = d.Dataset,
-            SourceFiles = [.. d.SourceFiles.Select(f => new FileBasedImportSourceFileResponse { Key = f.Key, Size = f.Size })],
+            SourceFiles = [.. d.SourceFiles.Select(f => new EtlImportSourceFileResponse { Key = f.Key, Size = f.Size })],
             RawPaths = [.. d.RawKeys.Select(k => Qualify(EtlPipelineFolders.Raw, k)!)],
             NormalisedPaths = [.. d.NormalisedKeys.Select(k => Qualify(EtlPipelineFolders.Normalised, k)!)],
             SnapshotPath = Qualify(EtlPipelineFolders.Snapshots, d.SnapshotKey),

@@ -9,24 +9,24 @@ using Moq;
 
 namespace KeeperData.Bridge.Tests.Component.Controllers;
 
-public class FileBasedSqliteControllerTests
+public class EtlSqliteControllerTests
 {
     private readonly Mock<IBlobStorageServiceFactory> _mockStorageFactory;
     private readonly Mock<IBlobStorageService> _mockStorageService;
-    private readonly Mock<ILogger<FileBasedSqliteController>> _mockLogger;
-    private readonly FileBasedSqliteController _controller;
+    private readonly Mock<ILogger<EtlSqliteController>> _mockLogger;
+    private readonly EtlSqliteController _controller;
 
-    public FileBasedSqliteControllerTests()
+    public EtlSqliteControllerTests()
     {
         _mockStorageFactory = new Mock<IBlobStorageServiceFactory>();
         _mockStorageService = new Mock<IBlobStorageService>();
-        _mockLogger = new Mock<ILogger<FileBasedSqliteController>>();
+        _mockLogger = new Mock<ILogger<EtlSqliteController>>();
 
         _mockStorageFactory
             .Setup(f => f.GetSourceInternal())
             .Returns(_mockStorageService.Object);
 
-        _controller = new FileBasedSqliteController(
+        _controller = new EtlSqliteController(
             _mockStorageFactory.Object,
             _mockLogger.Object);
     }

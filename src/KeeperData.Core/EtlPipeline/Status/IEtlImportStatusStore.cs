@@ -1,6 +1,6 @@
 namespace KeeperData.Core.EtlPipeline.Status;
 
-/// <summary>Persistence for file-based ETL import status, so a run survives an API restart and can
+/// <summary>Persistence for ETL import status, so a run survives an API restart and can
 /// be polled by id.</summary>
 public interface IEtlImportStatusStore
 {

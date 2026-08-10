@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace KeeperData.Bridge.Worker.Coordination;
 
 /// <summary>
-/// Runs the legacy Mongo import while keeping the run lock alive. The file-based pipeline has its
+/// Runs the legacy Mongo import while keeping the run lock alive. The ETL pipeline has its
 /// own trigger and executor; this path is unchanged by it.
 /// </summary>
 [ExcludeFromCodeCoverage(Justification = "Thin adapter over the shared lock-renewing runner; exercised by integration tests.")]

@@ -12,7 +12,7 @@ using Xunit.Abstractions;
 namespace KeeperData.Bridge.Tests.Integration.Scenarios;
 
 /// <summary>
-/// End-to-end coverage of the file-based ETL pipeline: source -> discover -> decrypt -> normalise
+/// End-to-end coverage of the ETL pipeline: source -> discover -> decrypt -> normalise
 /// -> snapshot -> load-duckdb, over LocalStack S3 with real crypto, real Parquet and real DuckDB.
 ///
 /// The legacy Mongo ETL is not wired in here and is never reached; these tests are about the new
@@ -23,7 +23,7 @@ namespace KeeperData.Bridge.Tests.Integration.Scenarios;
 /// untouched row, one insert and one ignored delete.
 /// </summary>
 [Collection("LocalStack"), Trait("Dependence", "docker")]
-public sealed class FileBasedPipelineEndToEndTests(ITestOutputHelper output, LocalStackFixture localStack)
+public sealed class EtlPipelineEndToEndTests(ITestOutputHelper output, LocalStackFixture localStack)
 {
     // The dataset's real composite key is CPH + FEATURE_NAME + SECONDARY_CPH + ANIMAL_SPECIES_CODE,
     // so the fixture carries all four; only CPH varies between rows.
@@ -266,10 +266,10 @@ public sealed class FileBasedPipelineEndToEndTests(ITestOutputHelper output, Loc
         rows.Should().HaveCount(rowCount, "no rows are lost between the source file and the database");
     }
 
-    private Task<FileBasedPipelineTestHost> CreateHostAsync(IStagingDatabaseWriter? writer = null)
-        => FileBasedPipelineTestHost.CreateAsync(localStack.S3Client, RunClock, stagingDatabaseWriter: writer);
+    private Task<EtlPipelineTestHost> CreateHostAsync(IStagingDatabaseWriter? writer = null)
+        => EtlPipelineTestHost.CreateAsync(localStack.S3Client, RunClock, stagingDatabaseWriter: writer);
 
-    private static async Task SeedTheThreeDeltasAsync(FileBasedPipelineTestHost host)
+    private static async Task SeedTheThreeDeltasAsync(EtlPipelineTestHost host)
     {
         await host.PutEncryptedSourceFileAsync(FirstDelta, Psv(
             ("01/001/0001", "Old Farm", "I"),
@@ -307,7 +307,7 @@ public sealed class FileBasedPipelineEndToEndTests(ITestOutputHelper output, Loc
 
     /// <summary>Reads a snapshot Parquet directly, so the assertion does not depend on the load stage.</summary>
     private static async Task<List<(string Cph, string Name)>> ReadSnapshotAsync(
-        FileBasedPipelineTestHost host, string key)
+        EtlPipelineTestHost host, string key)
     {
         var path = await host.DownloadToTempAsync(EtlPipelineFolders.Snapshots, key, ".parquet");
 
@@ -344,7 +344,7 @@ public sealed class FileBasedPipelineEndToEndTests(ITestOutputHelper output, Loc
     }
 
     private static async Task<List<(string Cph, string Name)>> QueryDatabaseAsync(
-        FileBasedPipelineTestHost host, string key)
+        EtlPipelineTestHost host, string key)
     {
         var path = await host.DownloadToTempAsync(EtlPipelineFolders.Staging, key, ".duckdb");
 
@@ -373,7 +373,7 @@ public sealed class FileBasedPipelineEndToEndTests(ITestOutputHelper output, Loc
     }
 
     private static async Task<Dictionary<string, IReadOnlyList<string>>> SnapshotOfEveryFolderAsync(
-        FileBasedPipelineTestHost host)
+        EtlPipelineTestHost host)
     {
         string[] folders =
         [

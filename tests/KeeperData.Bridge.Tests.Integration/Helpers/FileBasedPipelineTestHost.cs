@@ -28,14 +28,14 @@ using Microsoft.Extensions.Time.Testing;
 namespace KeeperData.Bridge.Tests.Integration.Helpers;
 
 /// <summary>
-/// Hosts the file-based ETL pipeline over a bucket of its own in LocalStack, wired the way the
+/// Hosts the ETL pipeline over a bucket of its own in LocalStack, wired the way the
 /// application wires it: real crypto, real catalogue, real storage, real Parquet, real DuckDB.
 /// Nothing from the legacy Mongo ETL is registered, so a run here cannot reach it.
 ///
 /// Each instance owns its bucket, so the pipeline folders start empty and tests do not see one
 /// another's snapshots.
 /// </summary>
-public sealed class FileBasedPipelineTestHost : IAsyncDisposable
+public sealed class EtlPipelineTestHost : IAsyncDisposable
 {
     public const string SourcePrefix = "litprd";
     public const string AesSalt = "Jr8Lm2PXzd7qNbVyWutRfGBxhkHTpE";
@@ -44,7 +44,7 @@ public sealed class FileBasedPipelineTestHost : IAsyncDisposable
     private readonly ServiceProvider _services;
     private readonly FakeTimeProvider _timeProvider;
 
-    private FileBasedPipelineTestHost(
+    private EtlPipelineTestHost(
         IAmazonS3 s3Client,
         string bucketName,
         ServiceProvider services,
@@ -69,7 +69,7 @@ public sealed class FileBasedPipelineTestHost : IAsyncDisposable
     /// <param name="stagingDatabaseWriter">Replaces the DuckDB writer, for failure scenarios.</param>
     /// <param name="statusStore">Records import status for the run. Omitted, no status is written -
     /// the pipeline does not depend on it.</param>
-    public static async Task<FileBasedPipelineTestHost> CreateAsync(
+    public static async Task<EtlPipelineTestHost> CreateAsync(
         IAmazonS3 s3Client,
         DateTimeOffset now,
         DataSetDefinition? definition = null,
@@ -84,7 +84,7 @@ public sealed class FileBasedPipelineTestHost : IAsyncDisposable
 
         var services = BuildServices(s3Client, bucketName, dataSet, timeProvider, stagingDatabaseWriter, statusStore);
 
-        return new FileBasedPipelineTestHost(s3Client, bucketName, services, timeProvider, dataSet);
+        return new EtlPipelineTestHost(s3Client, bucketName, services, timeProvider, dataSet);
     }
 
     private static ServiceProvider BuildServices(

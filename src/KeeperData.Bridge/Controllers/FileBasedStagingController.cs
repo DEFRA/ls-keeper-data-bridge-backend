@@ -13,10 +13,9 @@ namespace KeeperData.Bridge.Controllers;
 [Route("api/etl/file-based/staging")]
 [ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
 public class FileBasedStagingController(
-    IBlobStorageServiceFactory blobStorageServiceFactory,
+    IEtlPipelineStorageProvider storageProvider,
     ILogger<FileBasedStagingController> logger) : ControllerBase
 {
-    private const string StagingPrefix = $"{EtlPipelineFolders.Staging}/";
     private static readonly TimeSpan DefaultPresignedUrlExpiry = TimeSpan.FromHours(1);
 
     /// <summary>
@@ -37,8 +36,10 @@ public class FileBasedStagingController(
 
         try
         {
-            var storageService = blobStorageServiceFactory.GetSourceInternal();
-            var objects = await storageService.ListAsync(StagingPrefix, cancellationToken);
+            // The pipeline folders sit at the bucket root, not under the legacy source prefix, so
+            // this has to read them through the same provider the load stage writes with.
+            var storageService = storageProvider.ForFolder(EtlPipelineFolders.Staging);
+            var objects = await storageService.ListAsync(string.Empty, cancellationToken);
 
             var latest = objects.GetLatest();
 
@@ -70,7 +71,7 @@ public class FileBasedStagingController(
     private OkObjectResult PresignedUrlReady(StorageObjectInfo latest, string presignedUrl, TimeSpan expiry)
         => Ok(new StagingDatabaseLatestResponse
         {
-            ObjectKey = latest.Key,
+            ObjectKey = $"{EtlPipelineFolders.Staging}/{latest.Key}",
             DownloadUrl = presignedUrl,
             Size = latest.Size,
             LastModified = latest.LastModified,
@@ -95,7 +96,7 @@ public class FileBasedStagingController(
     {
         get
         {
-            logger.LogWarning("No DuckDB staging files found in {Prefix}", StagingPrefix);
+            logger.LogWarning("No DuckDB staging files found in {Folder}/", EtlPipelineFolders.Staging);
             return NotFound(new StagingDatabaseErrorResponse
             {
                 Message = "No DuckDB staging databases found. Run the file-based ETL pipeline first.",

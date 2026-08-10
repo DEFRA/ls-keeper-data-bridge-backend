@@ -25,7 +25,8 @@ public sealed class IngestionRunExecutor(
     IOptions<IngestionRunOptions> options) : IIngestionRunExecutor
 {
     private readonly IngestionRunOptions _options = options.Value;
-    private readonly bool _runNewPipeline = false; // keep this off , until we're ready
+    private readonly ITaskProcessBulkFiles _legacyImport = legacyImport;
+    private readonly bool _runNewPipeline = true; // keep this off , until we're ready
         
     public void StartInBackground(IDistributedLockHandle lockHandle, Guid runId, string sourceType, CancellationToken cancellationToken)
     {
@@ -64,7 +65,7 @@ public sealed class IngestionRunExecutor(
 
         try
         {
-            await legacyImport.RunImportAsync(runId, sourceType, linkedCts.Token);
+            //await legacyImport.RunImportAsync(runId, sourceType, linkedCts.Token);
 
             if (_runNewPipeline)
                 await RunEtlPipelineAsync(runId, sourceType, linkedCts.Token);

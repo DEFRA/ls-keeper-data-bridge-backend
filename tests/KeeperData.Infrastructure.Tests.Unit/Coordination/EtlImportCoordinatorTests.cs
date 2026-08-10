@@ -9,20 +9,20 @@ using Moq;
 
 namespace KeeperData.Infrastructure.Tests.Unit.Coordination;
 
-/// <summary>The coordinator decides whether a file-based import happens at all: it takes the lock,
+/// <summary>The coordinator decides whether an ETL import happens at all: it takes the lock,
 /// records the import before any work starts, and refuses a second concurrent run.</summary>
-public class FileBasedImportCoordinatorTests
+public class EtlImportCoordinatorTests
 {
     private readonly Mock<IDistributedLock> _distributedLock = new();
     private readonly Mock<ILockRenewingRunner> _runner = new();
     private readonly Mock<IEtlImportStatusStore> _statusStore = new();
-    private readonly FileBasedImportOptions _options = new();
-    private readonly FileBasedImportCoordinator _sut;
+    private readonly EtlImportOptions _options = new();
+    private readonly EtlImportCoordinator _sut;
 
-    public FileBasedImportCoordinatorTests()
+    public EtlImportCoordinatorTests()
     {
-        _sut = new FileBasedImportCoordinator(
-            Mock.Of<ILogger<FileBasedImportCoordinator>>(),
+        _sut = new EtlImportCoordinator(
+            Mock.Of<ILogger<EtlImportCoordinator>>(),
             _distributedLock.Object,
             _runner.Object,
             new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),

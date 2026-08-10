@@ -1,11 +1,11 @@
 namespace KeeperData.Bridge.Worker.Coordination;
 
 /// <summary>
-/// Configuration for the file-based ETL import trigger. Bound from the "FileBasedImport" section.
+/// Configuration for the ETL import trigger. Bound from the "EtlImport" section.
 /// </summary>
-public sealed class FileBasedImportOptions
+public sealed class EtlImportOptions
 {
-    public const string SectionName = "FileBasedImport";
+    public const string SectionName = "EtlImport";
 
     /// <summary>
     /// Name of the distributed lock guarding a file-based run. Deliberately not the legacy

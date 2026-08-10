@@ -10,20 +10,20 @@ using Microsoft.Extensions.Options;
 namespace KeeperData.Bridge.Worker.Coordination;
 
 /// <summary>
-/// Accepts a file-based import: takes the lock, records the import as queued, and hands the run to
+/// Accepts an ETL import: takes the lock, records the import as queued, and hands the run to
 /// the background. Returns as soon as the id exists, so the caller polls for the outcome.
 /// </summary>
-public sealed class FileBasedImportCoordinator(
-    ILogger<FileBasedImportCoordinator> logger,
+public sealed class EtlImportCoordinator(
+    ILogger<EtlImportCoordinator> logger,
     IDistributedLock distributedLock,
     ILockRenewingRunner runner,
     IServiceScopeFactory scopeFactory,
     IEtlImportStatusStore statusStore,
-    IOptions<FileBasedImportOptions> options) : IFileBasedImportCoordinator
+    IOptions<EtlImportOptions> options) : IEtlImportCoordinator
 {
-    private readonly FileBasedImportOptions _options = options.Value;
+    private readonly EtlImportOptions _options = options.Value;
 
-    public async Task<FileBasedImportStartResult> StartAsync(string sourceType, string? dataset, CancellationToken cancellationToken = default)
+    public async Task<EtlImportStartResult> StartAsync(string sourceType, string? dataset, CancellationToken cancellationToken = default)
     {
         var importId = Guid.NewGuid();
 
@@ -34,11 +34,11 @@ public sealed class FileBasedImportCoordinator(
             var inFlight = await statusStore.GetInFlightAsync(cancellationToken);
 
             logger.LogInformation(
-                "File-based import rejected, {LockName} is held (inFlightImportId={inFlightImportId})",
+                "ETL import rejected, {LockName} is held (inFlightImportId={inFlightImportId})",
                 _options.LockName,
                 inFlight?.ImportId);
 
-            return FileBasedImportStartResult.Conflict(inFlight?.ImportId);
+            return EtlImportStartResult.Conflict(inFlight?.ImportId);
         }
 
         // Written before the run starts so a poll immediately after the response finds the import,
@@ -46,7 +46,7 @@ public sealed class FileBasedImportCoordinator(
         await statusStore.CreateQueuedAsync(importId, sourceType, dataset, cancellationToken);
 
         logger.LogInformation(
-            "File-based import accepted (importId={importId}, sourceType={sourceType}, dataset={dataset})",
+            "ETL import accepted (importId={importId}, sourceType={sourceType}, dataset={dataset})",
             importId,
             sourceType,
             dataset ?? "all");
@@ -60,7 +60,7 @@ public sealed class FileBasedImportCoordinator(
             onFailure: exception => statusStore.MarkFailedAsync(importId, Summarise(exception), CancellationToken.None),
             cancellationToken);
 
-        return FileBasedImportStartResult.Started(importId);
+        return EtlImportStartResult.Started(importId);
     }
 
     private async Task RunPipelineAsync(Guid importId, string sourceType, string? dataset, CancellationToken cancellationToken)

@@ -34,6 +34,7 @@ public class EtlPipelineFactoryTests
             storageProviderMock.Object,
             new Mock<IDeltaMergeEngine>().Object,
             snapshotLoggerMock.Object);
+        var loadDuckDbStage = AutoMocked.Instance<LoadDuckDbStage>();
 
         var sut = new EtlPipelineFactory(
             catalogueFactoryMock.Object,
@@ -41,7 +42,8 @@ public class EtlPipelineFactoryTests
             storageProviderMock.Object,
             hcdtNormaliserMock.Object,
             normaliseLoggerMock.Object,
-            snapshotStage);
+            snapshotStage,
+            loadDuckDbStage);
 
         // Act
         var pipeline = sut.Create();

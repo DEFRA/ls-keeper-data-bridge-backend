@@ -16,7 +16,8 @@ public sealed class EtlPipelineFactory(
     IEtlPipelineStorageProvider storageProvider,
     IXsvHcdtNormaliser hcdtNormaliser,
     ILogger<NormaliseStage> normaliseLogger,
-    SnapshotStage snapshotStage) : IEtlPipelineFactory
+    SnapshotStage snapshotStage,
+    LoadDuckDbStage loadDuckDbStage) : IEtlPipelineFactory
 {
     public PipelineDefinition Create()
         => PipelineBuilder
@@ -25,6 +26,6 @@ public sealed class EtlPipelineFactory(
             .Decrypt(decryptStage)    // -> RawFileSet        (raw/)
             .Normalise(storageProvider, hcdtNormaliser, normaliseLogger)     // -> NormalisedFileSet (normalised/*.parquet)
             .Snapshot(snapshotStage)  // -> SnapshotFile      (snapshots/*.parquet)
-            .LoadDuckDb()             // -> StagingDatabase   (staging/*.duckdb)
+            .LoadDuckDb(loadDuckDbStage) // -> StagingDatabase (staging/*.duckdb)
             .Build();
 }

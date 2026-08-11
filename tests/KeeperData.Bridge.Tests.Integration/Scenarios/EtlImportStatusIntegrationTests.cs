@@ -110,6 +110,63 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
     }
 
     [Fact]
+    public async Task A_file_encrypted_for_another_environment_reports_which_file_and_why_rather_than_a_padding_error()
+    {
+        var importId = Guid.NewGuid();
+
+        await using var host = await CreateHostAsync();
+
+        // Correctly named and inside the lookback window, but encrypted against a different salt -
+        // which is what a caller hits when they are handed fixtures built for another environment.
+        await host.PutEncryptedSourceFileAsync(SourceFile, SourceContent(), salt: "a-different-environments-salt");
+
+        await _store.CreateQueuedAsync(importId, "external", null, CancellationToken.None);
+
+        var run = async () => await host.RunPipelineAsync(runId: importId);
+        await run.Should().ThrowAsync<Exception>();
+
+        var status = (await _store.GetAsync(importId, CancellationToken.None))!;
+
+        status.Status.Should().Be(nameof(EtlImportStatus.Failed));
+        status.Error.Should().Contain(SourceFile, "the reader needs to know which file could not be decrypted");
+        status.Error.Should().Contain("filename is the decryption password");
+        status.Error.Should().NotContain("Padding", "the padding error is what this message exists to replace");
+        status.Error.Should().NotContain(EtlPipelineTestHost.AesSalt, "a status a caller can read must never carry the salt");
+    }
+
+    [Fact]
+    public async Task A_run_that_follows_a_failed_decryption_of_the_same_file_succeeds_once_the_file_is_replaced()
+    {
+        await using var host = await CreateHostAsync();
+
+        // A wrong-salt file writes most of a raw object before AES rejects the final block, and the
+        // write commits on the way out of the failure. Left there, the retry below would skip
+        // decryption as already done and normalise the garbage instead - surfacing much later as a
+        // parquet file with none of the dataset's columns in it.
+        await host.PutEncryptedSourceFileAsync(SourceFile, SourceContent(), salt: "a-different-environments-salt");
+
+        var failedImportId = Guid.NewGuid();
+        await _store.CreateQueuedAsync(failedImportId, "external", null, CancellationToken.None);
+
+        var failedRun = async () => await host.RunPipelineAsync(runId: failedImportId);
+        await failedRun.Should().ThrowAsync<Exception>();
+
+        (await host.ListFolderAsync("raw")).Should().BeEmpty("a raw file that was never finished must not be left behind");
+
+        await host.PutEncryptedSourceFileAsync(SourceFile, SourceContent());
+
+        var retryImportId = Guid.NewGuid();
+        await _store.CreateQueuedAsync(retryImportId, "external", null, CancellationToken.None);
+
+        await host.RunPipelineAsync(runId: retryImportId);
+
+        var status = (await _store.GetAsync(retryImportId, CancellationToken.None))!;
+
+        status.Status.Should().Be(nameof(EtlImportStatus.Succeeded));
+        status.Datasets.Should().ContainSingle().Which.RowCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task An_import_that_stopped_reporting_progress_is_reported_as_failed_rather_than_running_forever()
     {
         var importId = Guid.NewGuid();

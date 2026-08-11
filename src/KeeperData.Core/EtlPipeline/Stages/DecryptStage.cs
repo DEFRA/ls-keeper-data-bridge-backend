@@ -4,6 +4,7 @@ using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage;
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
 
 namespace KeeperData.Core.EtlPipeline.Stages;
 
@@ -51,7 +52,12 @@ public sealed class DecryptStage(
                 continue;
             }
 
-            var decryptedLength = await DecryptToRawAsync(objectKey, sourceBlobsStorageService, rawBlobsStorageService, cancellationToken);
+            var decryptedLength = await EtlArtefactWrite.RunAsync(
+                rawBlobsStorageService,
+                objectKey,
+                () => DecryptToRawAsync(
+                    objectKey, input.Definition.Name, sourceBlobsStorageService, rawBlobsStorageService, cancellationToken),
+                logger);
 
             logger.LogInformation(
                 "Decrypted {ObjectKey} for dataset {DatasetName} into {Folder} ({SizeMB:F2} MB) for RunId: {RunId}",
@@ -72,6 +78,7 @@ public sealed class DecryptStage(
     /// Nothing is buffered: the decrypted bytes go straight to the upload stream.</summary>
     private async Task<long> DecryptToRawAsync(
         string objectKey,
+        string datasetName,
         IBlobStorageServiceReadOnly sourceBlobs,
         IBlobStorageService rawBlobs,
         CancellationToken cancellationToken)
@@ -83,14 +90,23 @@ public sealed class DecryptStage(
         await using var uploadStream = await rawBlobs.OpenWriteAsync(objectKey, MimeTypeTextCsv, cancellationToken: cancellationToken);
         await using var byteCounter = new ByteCountingStream(uploadStream);
 
-        await aesCryptoTransform.DecryptStreamAsync(
-            encryptedStream,
-            byteCounter,
-            credentials.Password,
-            credentials.Salt,
-            sourceMetadata.ContentLength,
-            null,
-            cancellationToken);
+        try
+        {
+            await aesCryptoTransform.DecryptStreamAsync(
+                encryptedStream,
+                byteCounter,
+                credentials.Password,
+                credentials.Salt,
+                sourceMetadata.ContentLength,
+                null,
+                cancellationToken);
+        }
+        catch (CryptographicException exception)
+        {
+            // A padding error is what a wrong key looks like, and the key is derived from the
+            // filename and the salt alone. Say so, rather than reporting the padding.
+            throw new SourceFileDecryptionException(objectKey, datasetName, exception);
+        }
 
         await byteCounter.FlushAsync(cancellationToken);
 

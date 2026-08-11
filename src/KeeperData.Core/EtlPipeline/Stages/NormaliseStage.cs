@@ -53,22 +53,25 @@ public sealed class NormaliseStage(
             logger.LogInformation("Normalising {RawFileKey} to {DestKey}. Format: {Format}",
                 relativeRawKey, relativeDestKey, isHcdtFormat ? "H/C/D/T" : "Simple PSV");
 
-            await using var sourceStream = await rawStorage.OpenReadAsync(relativeRawKey, cancellationToken);
-            await using var destStream = await normalisedStorage.OpenWriteAsync(
-                relativeDestKey,
-                SnapshotFileNaming.ParquetContentType,
-                cancellationToken: cancellationToken);
+            await EtlArtefactWrite.RunAsync(normalisedStorage, relativeDestKey, async () =>
+            {
+                await using var sourceStream = await rawStorage.OpenReadAsync(relativeRawKey, cancellationToken);
+                await using var destStream = await normalisedStorage.OpenWriteAsync(
+                    relativeDestKey,
+                    SnapshotFileNaming.ParquetContentType,
+                    cancellationToken: cancellationToken);
 
-            if (isHcdtFormat)
-            {
-                // Use the NuGet package for H/C/D/T files
-                await NormaliseHcdtAsync(sourceStream, destStream, cancellationToken);
-            }
-            else
-            {
-                // Use manual chunking for Simple PSV files
-                await ConvertSimplePsvToParquetAsync(sourceStream, destStream, cancellationToken);
-            }
+                if (isHcdtFormat)
+                {
+                    // Use the NuGet package for H/C/D/T files
+                    await NormaliseHcdtAsync(sourceStream, destStream, cancellationToken);
+                }
+                else
+                {
+                    // Use manual chunking for Simple PSV files
+                    await ConvertSimplePsvToParquetAsync(sourceStream, destStream, cancellationToken);
+                }
+            }, logger);
 
             normalisedFiles.Add(relativeDestKey);
         }

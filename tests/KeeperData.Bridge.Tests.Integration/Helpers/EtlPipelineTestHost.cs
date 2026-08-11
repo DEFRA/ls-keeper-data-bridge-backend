@@ -185,15 +185,18 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
     public void SetNow(DateTimeOffset now) => _timeProvider.SetUtcNow(now);
 
     /// <summary>Encrypts PSV content the way the source system does and puts it in the source folder,
-    /// under the dataset's own naming convention.</summary>
-    public async Task<string> PutEncryptedSourceFileAsync(string fileName, string psvContent)
+    /// under the dataset's own naming convention.
+    ///
+    /// <paramref name="salt"/> defaults to the salt this host is configured with; pass a different
+    /// one to produce the file a caller gets when it was encrypted for another environment.</summary>
+    public async Task<string> PutEncryptedSourceFileAsync(string fileName, string psvContent, string? salt = null)
     {
         var crypto = new AesCryptoTransform();
         var plaintext = new MemoryStream(Encoding.UTF8.GetBytes(psvContent));
         var encrypted = new MemoryStream();
 
         // The decrypt stage derives the password from the object key, so encrypt against that key.
-        await crypto.EncryptStreamAsync(plaintext, encrypted, fileName, AesSalt, plaintext.Length);
+        await crypto.EncryptStreamAsync(plaintext, encrypted, fileName, salt ?? AesSalt, plaintext.Length);
 
         encrypted.Position = 0;
 

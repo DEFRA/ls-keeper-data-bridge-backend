@@ -3,11 +3,13 @@ using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Staging;
+using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Status;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage.Dtos;
 using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline.Status;
 
@@ -143,5 +145,24 @@ public class EtlImportStatusObserverTests
 
         _store.Failed.Single().Error
             .Should().Be("InvalidOperationException: snapshot timestamp could not be parsed");
+    }
+
+    [Fact]
+    public async Task Records_a_stages_explanation_rather_than_the_cause_it_wrapped()
+    {
+        var failure = new PipelineExecutionException(
+            "Pipeline failed after 10ms.",
+            new SourceFileDecryptionException(
+                "LITP_SAMCPHHOLDING_20260811074324.csv",
+                "sam_cph_holdings",
+                new CryptographicException("Padding is invalid and cannot be removed.")));
+
+        await Sut().RunFailedAsync(Context(), failure, CancellationToken.None);
+
+        var error = _store.Failed.Single().Error;
+
+        error.Should().StartWith("Could not decrypt 'LITP_SAMCPHHOLDING_20260811074324.csv' for dataset 'sam_cph_holdings'.");
+        error.Should().NotContain("Padding", "the padding error is what the explanation exists to replace");
+        error.Should().NotContain("SourceFileDecryptionException", "the message was written to be read as it is");
     }
 }

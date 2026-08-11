@@ -12,7 +12,7 @@
     <PackageReference Include="AWSSDK.S3" Version="4.0.101.6" />
     <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.100.7" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.100.7" />
-    <PackageReference Include="DuckDB.NET.Data" Version="1.5.5" />
+    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.5" />
     <PackageReference Include="Elastic.CommonSchema.Serilog" Version="8.11.1" />
     <PackageReference Include="GovukNotify" Version="7.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" Version="8.0.29" />

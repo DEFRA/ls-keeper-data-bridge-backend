@@ -7,7 +7,7 @@ namespace KeeperData.Infrastructure.ETL.Setup;
 [ExcludeFromCodeCoverage]
 public static class ServiceCollectionExtensions
 {
-    public static void AddFileBasedEtlServices(this IServiceCollection services)
+    public static void AddEtlServices(this IServiceCollection services)
     {
         services.AddScoped<ICphExportService, CphExportService>();
         services.AddScoped<ICphExportStatusService, CphExportStatusService>();

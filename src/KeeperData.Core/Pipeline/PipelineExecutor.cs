@@ -6,16 +6,24 @@ namespace KeeperData.Core.Pipeline;
 
 /// <summary>Default executor. Runs each stage to completion before the next (the macro checkpoint
 /// boundary), while the stage itself streams its items internally. Owns the cross-cutting concerns
-/// (timing, logging).</summary>
-public sealed class PipelineExecutor(ILogger<PipelineExecutor> logger) : IPipelineExecutor
+/// (timing, logging, notifying observers).</summary>
+public sealed class PipelineExecutor(
+    ILogger<PipelineExecutor> logger,
+    IEnumerable<IPipelineRunObserver>? observers = null) : IPipelineExecutor
 {
+    private readonly IReadOnlyList<IPipelineRunObserver> _observers = observers?.ToArray() ?? [];
+
     public async Task RunAsync(PipelineDefinition pipeline, IPipelineContext context, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        var stageNames = pipeline.GetStageNames();
+
         logger.LogInformation(
             "Pipeline starting with {StageCount} stage(s): {Stages}",
             pipeline.Steps.Count,
-            string.Join(" -> ", pipeline.GetStageNames()));
+            string.Join(" -> ", stageNames));
+
+        await NotifyAsync(o => o.RunStartingAsync(context, stageNames, cancellationToken));
 
         try
         {
@@ -38,6 +46,8 @@ public sealed class PipelineExecutor(ILogger<PipelineExecutor> logger) : IPipeli
                     step.Name,
                     stageStopwatch.ElapsedMilliseconds,
                     current.Count);
+
+                await NotifyAsync(o => o.StageCompletedAsync(context, step.Name, current, stageStopwatch.Elapsed, cancellationToken));
             }
         }
         catch (OperationCanceledException)
@@ -47,8 +57,12 @@ public sealed class PipelineExecutor(ILogger<PipelineExecutor> logger) : IPipeli
         }
         catch (Exception ex)
         {
-            throw new PipelineExecutionException(
+            var failure = new PipelineExecutionException(
                 $"Pipeline failed after {stopwatch.ElapsedMilliseconds}ms.", ex);
+
+            await NotifyAsync(o => o.RunFailedAsync(context, failure, CancellationToken.None));
+
+            throw failure;
         }
 
         stopwatch.Stop();
@@ -56,6 +70,24 @@ public sealed class PipelineExecutor(ILogger<PipelineExecutor> logger) : IPipeli
             "Pipeline completed {StageCount} stage(s) in {ElapsedMs}ms",
             pipeline.Steps.Count,
             stopwatch.ElapsedMilliseconds);
+
+        await NotifyAsync(o => o.RunCompletedAsync(context, stopwatch.Elapsed, cancellationToken));
+    }
+
+    // Observers report status; they must never be able to fail the run they are reporting on.
+    private async Task NotifyAsync(Func<IPipelineRunObserver, Task> notify)
+    {
+        foreach (var observer in _observers)
+        {
+            try
+            {
+                await notify(observer);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Pipeline run observer {Observer} threw and was ignored", observer.GetType().Name);
+            }
+        }
     }
 
     private static async Task<IReadOnlyList<object>> DrainAsync(IAsyncEnumerable<object> source, CancellationToken cancellationToken)

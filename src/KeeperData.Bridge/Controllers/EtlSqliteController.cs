@@ -5,11 +5,11 @@ using Microsoft.AspNetCore.Mvc;
 namespace KeeperData.Bridge.Controllers;
 
 [ApiController]
-[Route("api/etl/file-based/sqlite")]
+[Route("api/etl/sqlite")]
 [ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
-public class FileBasedSqliteController(
+public class EtlSqliteController(
     IBlobStorageServiceFactory blobStorageServiceFactory,
-    ILogger<FileBasedSqliteController> logger) : ControllerBase
+    ILogger<EtlSqliteController> logger) : ControllerBase
 {
     private const string ViewsPrefix = "views/";
     private const string CphsSqlitePattern = "cphs_";
@@ -48,7 +48,7 @@ public class FileBasedSqliteController(
                 logger.LogWarning("No CPH SQLite files found in {Prefix}", ViewsPrefix);
                 return NotFound(new CphSqliteErrorResponse
                 {
-                    Message = "No CPH SQLite export files found. Trigger an export first via POST /api/etl/file-based/exports/cphs.",
+                    Message = "No CPH SQLite export files found. Trigger an export first via POST /api/etl/exports/cphs.",
                     Timestamp = DateTime.UtcNow
                 });
             }

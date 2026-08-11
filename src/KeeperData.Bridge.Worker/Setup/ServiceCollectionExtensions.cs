@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
             .AddTasks();
 
         services.Configure<IngestionRunOptions>(configuration.GetSection(IngestionRunOptions.SectionName));
+        services.Configure<EtlImportOptions>(configuration.GetSection(EtlImportOptions.SectionName));
     }
 
     private static IServiceCollection AddQuartz(this IServiceCollection services, IConfiguration configuration)
@@ -82,8 +83,10 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddTasks(this IServiceCollection services)
     {
+        services.AddSingleton<ILockRenewingRunner, LockRenewingRunner>();
         services.AddScoped<IIngestionRunCoordinator, IngestionRunCoordinator>();
         services.AddScoped<IIngestionRunExecutor, IngestionRunExecutor>();
+        services.AddScoped<IEtlImportCoordinator, EtlImportCoordinator>();
         services.AddScoped<ITaskProcessBulkFiles, TaskProcessBulkFiles>();
         services.AddScoped<ITaskRunCleanseReport, TaskRunCleanseReport>();
         services.AddScoped<ITaskRotateExternalStorageKeys, TaskRotateExternalStorageKeys>();

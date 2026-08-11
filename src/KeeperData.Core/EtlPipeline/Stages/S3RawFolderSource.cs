@@ -21,6 +21,12 @@ public sealed class S3RawFolderSource(IExternalCatalogueServiceFactory catalogue
 
         foreach (var fileSet in fileSets)
         {
+            if (etlContext.Dataset is not null &&
+                !string.Equals(fileSet.Definition.Name, etlContext.Dataset, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             foreach (var file in fileSet.Files)
             {
                 cancellationToken.ThrowIfCancellationRequested();

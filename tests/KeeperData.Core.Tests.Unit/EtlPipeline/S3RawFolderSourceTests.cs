@@ -62,6 +62,40 @@ public class S3RawFolderSourceTests
     }
 
     [Fact]
+    public async Task Yields_only_the_requested_dataset_when_the_run_is_filtered()
+    {
+        GivenSourceFiles(
+            FileSetFor("SAM_CPH", "SAM_CPH_1.csv"),
+            FileSetFor("CTS_KEEPER", "CTS_KEEPER_1.csv"));
+
+        var output = await StageRunner.RunSourceAsync(Sut(), StageRunner.Context(dataset: "SAM_CPH"));
+
+        output.Select(d => d.File.StorageObject.Key).Should().Equal("SAM_CPH_1.csv");
+    }
+
+    [Fact]
+    public async Task Matches_the_dataset_filter_regardless_of_case()
+    {
+        GivenSourceFiles(FileSetFor("SAM_CPH", "SAM_CPH_1.csv"));
+
+        var output = await StageRunner.RunSourceAsync(Sut(), StageRunner.Context(dataset: "sam_cph"));
+
+        output.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Yields_every_dataset_when_the_run_is_not_filtered()
+    {
+        GivenSourceFiles(
+            FileSetFor("SAM_CPH", "SAM_CPH_1.csv"),
+            FileSetFor("CTS_KEEPER", "CTS_KEEPER_1.csv"));
+
+        var output = await StageRunner.RunSourceAsync(Sut(), StageRunner.Context(dataset: null));
+
+        output.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task Yields_nothing_when_the_source_is_empty()
     {
         GivenSourceFiles();

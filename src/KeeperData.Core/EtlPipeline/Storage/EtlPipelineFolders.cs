@@ -1,6 +1,6 @@
 namespace KeeperData.Core.EtlPipeline.Storage;
 
-/// <summary>The top-level folders the file-based ETL pipeline materialises into.
+/// <summary>The top-level folders the ETL pipeline materialises into.
 /// Each is a top-level folder at the root of the internal bucket, a sibling of the
 /// legacy ETL folders. The legacy ETL output folders are not represented here and
 /// are not touched by this pipeline.</summary>

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
 using KeeperData.Core.Crypto;
@@ -170,6 +171,66 @@ public class DecryptStageTests
 
         Encoding.UTF8.GetString(_rawWrites["SAM_CPH_1.csv"].ToArray())
             .Should().Be("decrypted:SAM_CPH_1.csv");
+    }
+
+    [Fact]
+    public async Task Explains_a_decryption_failure_instead_of_reporting_the_padding_error()
+    {
+        _crypto.Setup(c => c.DecryptStreamAsync(
+                It.IsAny<Stream>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<long?>(), It.IsAny<ProgressCallback?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CryptographicException("Padding is invalid and cannot be removed."));
+
+        var act = () => RunAsync(StageRunner.DiscoveredSet("SAM_CPH", "SAM_CPH_1.csv"));
+
+        var thrown = (await act.Should().ThrowAsync<SourceFileDecryptionException>()).Which;
+
+        thrown.ObjectKey.Should().Be("SAM_CPH_1.csv");
+        thrown.DatasetName.Should().Be("SAM_CPH");
+        thrown.Message.Should().Contain("SAM_CPH_1.csv").And.Contain("filename is the decryption password");
+        thrown.Message.Should().NotContain(Salt, "the message is served to API callers");
+        thrown.InnerException.Should().BeOfType<CryptographicException>("the technical cause still belongs in the log");
+    }
+
+    [Fact]
+    public async Task Removes_what_a_failed_decryption_wrote_so_a_re_run_does_not_skip_it()
+    {
+        // A wrong key is only detected at the final block, by which point almost the whole file has
+        // been written as garbage - and the write commits on disposal either way.
+        _crypto.Setup(c => c.DecryptStreamAsync(
+                It.IsAny<Stream>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<long?>(), It.IsAny<ProgressCallback?>(), It.IsAny<CancellationToken>()))
+            .Returns(async (Stream _, Stream output, string _, string _, long? _, ProgressCallback? _, CancellationToken ct) =>
+            {
+                await output.WriteAsync(Encoding.UTF8.GetBytes("garbage"), ct);
+                throw new CryptographicException("Padding is invalid and cannot be removed.");
+            });
+
+        var act = () => RunAsync(StageRunner.DiscoveredSet("SAM_CPH", "SAM_CPH_1.csv"));
+
+        await act.Should().ThrowAsync<SourceFileDecryptionException>();
+
+        _rawBlobs.Verify(
+            s => s.DeleteAsync("SAM_CPH_1.csv", It.IsAny<CancellationToken>()),
+            Times.Once,
+            "a half-written raw file would otherwise be treated as already decrypted forever");
+    }
+
+    [Fact]
+    public async Task Reports_the_decryption_failure_even_if_the_partial_file_cannot_be_removed()
+    {
+        _crypto.Setup(c => c.DecryptStreamAsync(
+                It.IsAny<Stream>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<long?>(), It.IsAny<ProgressCallback?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CryptographicException("Padding is invalid and cannot be removed."));
+
+        _rawBlobs.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("storage is unavailable"));
+
+        var act = () => RunAsync(StageRunner.DiscoveredSet("SAM_CPH", "SAM_CPH_1.csv"));
+
+        await act.Should().ThrowAsync<SourceFileDecryptionException>(
+            "the cleanup is best effort and must not replace the failure worth reporting");
     }
 
     [Fact]

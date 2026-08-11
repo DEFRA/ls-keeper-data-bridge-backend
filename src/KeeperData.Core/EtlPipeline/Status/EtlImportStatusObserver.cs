@@ -51,17 +51,35 @@ public sealed class EtlImportStatusObserver(
     }
 
     /// <summary>The innermost message, which is the one that says what actually went wrong; the
-    /// wrapper only says the pipeline failed.</summary>
+    /// wrapper only says the pipeline failed.
+    ///
+    /// Unless a stage has already explained the failure, in which case that explanation wins: an
+    /// <see cref="IEtlDiagnosableException"/> exists precisely because its inner exception is
+    /// technically accurate and useless to read. Its message is reported as written, without a type
+    /// name in front of it, because it was written to be read.</summary>
     private static string SafeSummary(Exception exception)
     {
         var cause = exception;
+        Exception? diagnosable = null;
 
-        while (cause.InnerException is not null)
+        while (true)
         {
+            if (cause is IEtlDiagnosableException)
+            {
+                diagnosable = cause;
+            }
+
+            if (cause.InnerException is null)
+            {
+                break;
+            }
+
             cause = cause.InnerException;
         }
 
-        return $"{cause.GetType().Name}: {cause.Message}";
+        return diagnosable is not null
+            ? diagnosable.Message
+            : $"{cause.GetType().Name}: {cause.Message}";
     }
 
     private static EtlImportDatasetProgress? Map(object item) => item switch

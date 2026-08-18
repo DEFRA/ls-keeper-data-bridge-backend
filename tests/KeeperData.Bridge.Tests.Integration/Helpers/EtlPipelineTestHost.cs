@@ -49,19 +49,27 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
         string bucketName,
         ServiceProvider services,
         FakeTimeProvider timeProvider,
-        DataSetDefinition definition)
+        IReadOnlyList<DataSetDefinition> definitions)
     {
         _s3Client = s3Client;
         _services = services;
         _timeProvider = timeProvider;
 
         BucketName = bucketName;
-        Definition = definition;
+        Definitions = definitions;
     }
 
     public string BucketName { get; }
 
-    public DataSetDefinition Definition { get; }
+    /// <summary>Every dataset this host discovers.</summary>
+    public IReadOnlyList<DataSetDefinition> Definitions { get; }
+
+    /// <summary>The dataset under test, for the single-dataset tests. Throws when the host was
+    /// created with several, because in that case "the" dataset is not a meaningful thing to ask for.</summary>
+    public DataSetDefinition Definition => Definitions.Count == 1
+        ? Definitions[0]
+        : throw new InvalidOperationException(
+            $"This host discovers {Definitions.Count} datasets. Use {nameof(Definitions)} instead.");
 
     /// <summary>Creates the bucket and wires the pipeline against it.</summary>
     /// <param name="now">Discovery is a date window ending "today", so the clock decides which source
@@ -69,28 +77,49 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
     /// <param name="stagingDatabaseWriter">Replaces the DuckDB writer, for failure scenarios.</param>
     /// <param name="statusStore">Records import status for the run. Omitted, no status is written -
     /// the pipeline does not depend on it.</param>
-    public static async Task<EtlPipelineTestHost> CreateAsync(
+    public static Task<EtlPipelineTestHost> CreateAsync(
         IAmazonS3 s3Client,
         DateTimeOffset now,
         DataSetDefinition? definition = null,
         IStagingDatabaseWriter? stagingDatabaseWriter = null,
         IEtlImportStatusStore? statusStore = null)
+        => CreateAsync(
+            s3Client,
+            now,
+            [definition ?? StandardDataSetDefinitionsBuilder.Build().SamCPHHolding],
+            stagingDatabaseWriter,
+            statusStore);
+
+    /// <summary>Creates the bucket and wires the pipeline against it for several datasets at once,
+    /// so a run can be observed routing each dataset into its own prefix.</summary>
+    public static async Task<EtlPipelineTestHost> CreateAsync(
+        IAmazonS3 s3Client,
+        DateTimeOffset now,
+        IReadOnlyList<DataSetDefinition> definitions,
+        IStagingDatabaseWriter? stagingDatabaseWriter = null,
+        IEtlImportStatusStore? statusStore = null)
     {
+        ArgumentNullException.ThrowIfNull(definitions);
+
+        if (definitions.Count == 0)
+        {
+            throw new ArgumentException("At least one dataset is needed, or the run has nothing to discover.", nameof(definitions));
+        }
+
         var bucketName = $"etl-e2e-{Guid.NewGuid():N}";
         await s3Client.PutBucketAsync(new PutBucketRequest { BucketName = bucketName, UseClientRegion = true });
 
-        var dataSet = definition ?? StandardDataSetDefinitionsBuilder.Build().SamCPHHolding;
         var timeProvider = new FakeTimeProvider(now);
 
-        var services = BuildServices(s3Client, bucketName, dataSet, timeProvider, stagingDatabaseWriter, statusStore);
+        var services = BuildServices(s3Client, bucketName, definitions, timeProvider, stagingDatabaseWriter, statusStore);
 
-        return new EtlPipelineTestHost(s3Client, bucketName, services, timeProvider, dataSet);
+        return new EtlPipelineTestHost(s3Client, bucketName, services, timeProvider, definitions);
     }
 
     private static ServiceProvider BuildServices(
         IAmazonS3 s3Client,
         string bucketName,
-        DataSetDefinition definition,
+        IReadOnlyList<DataSetDefinition> definitions,
         TimeProvider timeProvider,
         IStagingDatabaseWriter? stagingDatabaseWriter,
         IEtlImportStatusStore? statusStore)
@@ -105,8 +134,8 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
             .AddInMemoryCollection(new Dictionary<string, string?> { ["AesSalt"] = AesSalt })
             .Build());
 
-        // Only the dataset under test, so discovery does not list twelve empty prefixes per run.
-        services.AddSingleton<IDataSetDefinitions>(new SingleDataSetDefinitions(definition));
+        // Only the datasets under test, so discovery does not list twelve empty prefixes per run.
+        services.AddSingleton<IDataSetDefinitions>(new SelectedDataSetDefinitions(definitions));
 
         services.AddSingleton(new StorageConfiguration
         {
@@ -268,9 +297,9 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
         }
     }
 
-    /// <summary>The dataset definitions the pipeline discovers, narrowed to the one under test.</summary>
-    private sealed class SingleDataSetDefinitions(DataSetDefinition definition) : IDataSetDefinitions
+    /// <summary>The dataset definitions the pipeline discovers, narrowed to those under test.</summary>
+    private sealed class SelectedDataSetDefinitions(IReadOnlyList<DataSetDefinition> definitions) : IDataSetDefinitions
     {
-        public ImmutableArray<DataSetDefinition> All { get; } = [definition];
+        public ImmutableArray<DataSetDefinition> All { get; } = [.. definitions];
     }
 }

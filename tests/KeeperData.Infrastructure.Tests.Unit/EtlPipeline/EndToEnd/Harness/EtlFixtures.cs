@@ -12,20 +12,20 @@ namespace KeeperData.Infrastructure.Tests.Unit.EtlPipeline.EndToEnd.Harness;
 /// fixtures are small enough to read, so the expected end state can be stated as a table and a
 /// failure points straight at the row that moved.
 ///
-/// The three datasets are chosen to cover the interesting axes in one run: composite keys of four,
-/// three and one column, and both ingestion modes (sam_cph_holdings is Delta, the other two are
-/// Snapshot).
+/// The three datasets are chosen to cover the interesting axes: composite keys of four, three and
+/// one column. All twelve definitions are currently DataSetIngestionMode.Delta, so every dataset
+/// folds its files rather than replacing them.
 ///
 /// Two pipeline behaviours shape what the fixtures can assert, and both are deliberate in the code:
 ///
 /// 1. Delta mode ignores deletes. MergeState treats a D row as counted-and-skipped ("delete
 ///    processing is out of scope"), so the row it names stays in the snapshot at its previous value.
-///    The sam_cph_holdings expectation therefore keeps the deleted row. Change this fixture when
-///    delete processing is implemented, not before.
+///    Every expectation below therefore keeps its deleted row. Change these fixtures when delete
+///    processing is implemented, not before.
 ///
-/// 2. Snapshot mode does not merge at all. SnapshotStage copies the dataset's LATEST normalised file
-///    as-is, so each sam_herd and sam_party file has to be a complete statement of the world, not an
-///    increment. The earlier files exist to prove the newest one wins, not to accumulate.
+/// 2. SnapshotStage still has a non-Delta branch that copies the newest normalised file as-is. No
+///    definition uses it today, so nothing here exercises it. If a dataset is ever set back to
+///    Snapshot mode, its fixture files must each become a complete statement of the world.
 /// </summary>
 public static class EtlFixtures
 {
@@ -130,21 +130,20 @@ public static class EtlFixtures
         "01/001/0001|AA1234|BR|Hill Herd|I",
         "01/001/0002|BB5678|DY|Vale Herd|I");
 
-    // Each file is the whole world at that moment, because Snapshot mode copies the latest one.
+    // Delta increments, not full snapshots: the files fold onto one another.
 
     private static string HerdSecond => Psv(HerdHeader,
-        "01/001/0001|AA1234|BR|Hill Herd|I",
-        "01/001/0002|BB5678|DY|Vale Herd|I",
-        "01/001/0003|DD3456|BR|Superseded Herd|I");
-
-    private static string HerdThird => Psv(HerdHeader,
-        "01/001/0001|AA1234|BR|Hill Herd Renamed|I",
+        "01/001/0001|AA1234|BR|Hill Herd Renamed|U",
         "01/001/0004|CC9012|BR|Moor Herd|I");
 
-    /// <summary>Snapshot mode: the newest file, verbatim. The earlier files leave no trace.</summary>
+    private static string HerdThird => Psv(HerdHeader,
+        "01/001/0002|BB5678|DY|Vale Herd|D");
+
+    /// <summary>Folded across the three files. The D row for 01/001/0002 is ignored, so it survives.</summary>
     public static (string Cphh, string Herdmark, string HerdName)[] ExpectedHerd =>
     [
         ("01/001/0001", "AA1234", "Hill Herd Renamed"),
+        ("01/001/0002", "BB5678", "Vale Herd"),
         ("01/001/0004", "CC9012", "Moor Herd")
     ];
 
@@ -157,18 +156,17 @@ public static class EtlFixtures
         "P0000002|Bob Holder|I");
 
     private static string PartySecond => Psv(PartyHeader,
-        "P0000001|Alice Holder|I",
-        "P0000002|Bob Holder|I",
-        "P0000004|Superseded Holder|I");
-
-    private static string PartyThird => Psv(PartyHeader,
-        "P0000001|Alice Renamed|I",
+        "P0000001|Alice Renamed|U",
         "P0000003|Carol Holder|I");
 
-    /// <summary>Snapshot mode: the newest file, verbatim.</summary>
+    private static string PartyThird => Psv(PartyHeader,
+        "P0000002|Bob Holder|D");
+
+    /// <summary>Folded across the three files. The D row for P0000002 is ignored, so it survives.</summary>
     public static (string PartyId, string PartyName)[] ExpectedParty =>
     [
         ("P0000001", "Alice Renamed"),
+        ("P0000002", "Bob Holder"),
         ("P0000003", "Carol Holder")
     ];
 

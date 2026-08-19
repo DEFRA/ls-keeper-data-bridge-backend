@@ -18,13 +18,11 @@ namespace KeeperData.Bridge.Tests.Integration.Scenarios;
 /// staging database holding several tables, the dataset filter, and the two ingestion modes running
 /// side by side in a single pass.
 ///
-/// The three are chosen to span the axes: composite keys of four, three and one column, and both
-/// ingestion modes (sam_cph_holdings is Delta, sam_herd and sam_party are Snapshot).
+/// The three are chosen to span the axes: composite keys of four, three and one column. All twelve
+/// definitions are currently DataSetIngestionMode.Delta, so every dataset folds its files.
 ///
-/// Two pipeline behaviours the fixtures must respect, both deliberate in the code:
-///  - Delta mode ignores D rows (MergeState counts and skips them), so a deleted row survives.
-///  - Snapshot mode does not merge at all; SnapshotStage copies the newest normalised file as-is,
-///    so each sam_herd and sam_party file is a complete statement of the world.
+/// One pipeline behaviour the fixtures must respect, deliberate in the code: Delta mode ignores D
+/// rows (MergeState counts and skips them), so a deleted row survives at its previous value.
 /// </summary>
 [Collection("LocalStack"), Trait("Dependence", "docker")]
 public sealed class EtlPipelineMultiDataSetTests(ITestOutputHelper output, LocalStackFixture localStack)
@@ -51,10 +49,10 @@ public sealed class EtlPipelineMultiDataSetTests(ITestOutputHelper output, Local
     private const string CphHeader = "CPH|FEATURE_NAME|SECONDARY_CPH|ANIMAL_SPECIES_CODE|HOLDING_NAME|CHANGE_TYPE";
     private const string CphKeyTail = "MAIN|-|01";
 
-    // sam_herd, Snapshot mode. Three-column key.
+    // sam_herd. Three-column key.
     private const string HerdHeader = "CPHH|HERDMARK|ANIMAL_PURPOSE_CODE|HERD_NAME|CHANGE_TYPE";
 
-    // sam_party, Snapshot mode. Single-column key, the degenerate case worth covering explicitly.
+    // sam_party. Single-column key, the degenerate case worth covering explicitly.
     private const string PartyHeader = "PARTY_ID|PARTY_NAME|CHANGE_TYPE";
 
     [Fact]
@@ -94,15 +92,15 @@ public sealed class EtlPipelineMultiDataSetTests(ITestOutputHelper output, Local
 
         (await ReadSnapshotAsync(host, SnapshotKeyFor(CphHolding), "CPH", "HOLDING_NAME"))
             .Should().BeEquivalentTo(ExpectedCph,
-                "sam_cph_holdings is Delta mode: the three files fold, and the D row is ignored by design");
+                "sam_cph_holdings folds its three files; the D row is ignored by design");
 
         (await ReadSnapshotAsync(host, SnapshotKeyFor(Herd), "CPHH", "HERD_NAME"))
             .Should().BeEquivalentTo(ExpectedHerd,
-                "sam_herd is Snapshot mode: only the newest file survives");
+                "sam_herd folds its three files, three-column key");
 
         (await ReadSnapshotAsync(host, SnapshotKeyFor(Party), "PARTY_ID", "PARTY_NAME"))
             .Should().BeEquivalentTo(ExpectedParty,
-                "sam_party is Snapshot mode with a single-column key");
+                "sam_party folds its three files, single-column key");
 
         // 4. Loaded. One database, three tables, every one queryable and complete.
         var databaseKey = StagingFileNaming.DatabaseKey(LatestSourceTimestamp);
@@ -199,8 +197,8 @@ public sealed class EtlPipelineMultiDataSetTests(ITestOutputHelper output, Local
             "sam_cph_holdings gained nothing either");
 
         (await ReadSnapshotAsync(host, SnapshotFileNaming.SnapshotKey(Party, lateTimestamp), "PARTY_ID", "PARTY_NAME"))
-            .Should().BeEquivalentTo([("P0000005", "Dave Holder")],
-                "Snapshot mode copies the newest file, so the late arrival replaces the lot");
+            .Should().BeEquivalentTo([.. ExpectedParty, ("P0000005", "Dave Holder")],
+                "the late arrival folds onto the snapshot the first run produced, it does not replace it");
     }
 
     private static async Task SeedAllAsync(EtlPipelineTestHost host)
@@ -243,22 +241,22 @@ public sealed class EtlPipelineMultiDataSetTests(ITestOutputHelper output, Local
         ("01/001/0003", "New Farm")
     ];
 
-    // Snapshot mode. Each file is the whole world; the earlier ones exist to prove the newest wins.
+    // Delta increments. The D row in each third file is counted and skipped, so its row survives.
     private static string HerdFirst => Psv(HerdHeader,
         "01/001/0001|AA1234|BR|Hill Herd|I",
         "01/001/0002|BB5678|DY|Vale Herd|I");
 
     private static string HerdSecond => Psv(HerdHeader,
-        "01/001/0001|AA1234|BR|Hill Herd|I",
-        "01/001/0003|DD3456|BR|Superseded Herd|I");
+        "01/001/0001|AA1234|BR|Hill Herd Renamed|U",
+        "01/001/0004|CC9012|BR|Moor Herd|I");
 
     private static string HerdThird => Psv(HerdHeader,
-        "01/001/0001|AA1234|BR|Hill Herd Renamed|I",
-        "01/001/0004|CC9012|BR|Moor Herd|I");
+        "01/001/0002|BB5678|DY|Vale Herd|D");
 
     private static (string, string)[] ExpectedHerd =>
     [
         ("01/001/0001", "Hill Herd Renamed"),
+        ("01/001/0002", "Vale Herd"),
         ("01/001/0004", "Moor Herd")
     ];
 
@@ -267,16 +265,16 @@ public sealed class EtlPipelineMultiDataSetTests(ITestOutputHelper output, Local
         "P0000002|Bob Holder|I");
 
     private static string PartySecond => Psv(PartyHeader,
-        "P0000001|Alice Holder|I",
-        "P0000004|Superseded Holder|I");
+        "P0000001|Alice Renamed|U",
+        "P0000003|Carol Holder|I");
 
     private static string PartyThird => Psv(PartyHeader,
-        "P0000001|Alice Renamed|I",
-        "P0000003|Carol Holder|I");
+        "P0000002|Bob Holder|D");
 
     private static (string, string)[] ExpectedParty =>
     [
         ("P0000001", "Alice Renamed"),
+        ("P0000002", "Bob Holder"),
         ("P0000003", "Carol Holder")
     ];
 

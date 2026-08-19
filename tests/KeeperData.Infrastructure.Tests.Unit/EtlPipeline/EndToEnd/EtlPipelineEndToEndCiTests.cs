@@ -87,7 +87,7 @@ public sealed class EtlPipelineEndToEndCiTests
     [InlineData("cph")]
     [InlineData("herd")]
     [InlineData("party")]
-    public async Task Snapshot_MatchesTheDatasetsIngestionMode(string dataset)
+    public async Task Snapshot_FoldsTheThreeFiles(string dataset)
     {
         using var host = CreateHost();
         await SeedAllThreeAsync(host);
@@ -100,7 +100,7 @@ public sealed class EtlPipelineEndToEndCiTests
 
         rows.Select(row => (row[0], row[1]))
             .Should().BeEquivalentTo(expected,
-                "Delta mode folds every file onto the snapshot, Snapshot mode copies only the newest");
+                "every dataset is Delta mode, so all three files fold and ignored deletes survive");
     }
 
     [Fact]
@@ -121,17 +121,20 @@ public sealed class EtlPipelineEndToEndCiTests
     }
 
     [Fact]
-    public async Task Snapshot_ForASnapshotModeDataset_IsTheNewestFileOnly()
+    public async Task Snapshot_FoldsEveryFile_NotJustTheNewest()
     {
         using var host = CreateHost([EtlFixtures.Party]);
         await SeedAsync(host, EtlFixtures.Party);
 
         await host.RunAsync();
 
-        var rows = await SnapshotReader.ReadColumnsAsync(host, PartySnapshotKey, "PARTY_ID");
+        var rows = await SnapshotReader.ReadColumnsAsync(host, PartySnapshotKey, "PARTY_ID", "PARTY_NAME");
 
-        rows.Select(row => row[0]).Should().NotContain("P0000004",
-            "a key present only in an earlier file is gone, because Snapshot mode copies rather than merges");
+        rows.Select(row => row[0]).Should().Contain("P0000002",
+            "a key introduced by the first file survives, because Delta mode folds rather than replaces");
+
+        rows.Single(row => row[0] == "P0000001")[1].Should().Be("Alice Renamed",
+            "and a later U row wins over the value the first file set");
     }
 
     [Fact]
@@ -325,21 +328,21 @@ public sealed class EtlPipelineEndToEndCiTests
                 .Should().HaveCount(3, "every source file for {0} is normalised", definition.Name);
         }
 
-        // 3. Snapshotted. The rows are what that dataset's ingestion mode says they should be.
+        // 3. Snapshotted. Each dataset folds its three files, with the ignored delete surviving.
         (await SnapshotReader.ReadColumnsAsync(host, CphSnapshotKey, "CPH", "HOLDING_NAME"))
             .Select(row => (row[0], row[1]))
             .Should().BeEquivalentTo(EtlFixtures.ExpectedCph.Select(row => (row.Cph, row.HoldingName)),
-                "sam_cph_holdings is Delta mode, so the three files fold together");
+                "sam_cph_holdings folds its three files, four-column key");
 
         (await SnapshotReader.ReadColumnsAsync(host, HerdSnapshotKey, "CPHH", "HERD_NAME"))
             .Select(row => (row[0], row[1]))
             .Should().BeEquivalentTo(EtlFixtures.ExpectedHerd.Select(row => (row.Cphh, row.HerdName)),
-                "sam_herd is Snapshot mode, so only the newest file survives");
+                "sam_herd folds its three files, three-column key");
 
         (await SnapshotReader.ReadColumnsAsync(host, PartySnapshotKey, "PARTY_ID", "PARTY_NAME"))
             .Select(row => (row[0], row[1]))
             .Should().BeEquivalentTo(EtlFixtures.ExpectedParty.Select(row => (row.PartyId, row.PartyName)),
-                "sam_party is Snapshot mode with a single-column key");
+                "sam_party folds its three files, single-column key");
 
         // 4. Loaded. All three tables are in one database and every one is queryable.
         var databaseKey = StagingFileNaming.DatabaseKey(EtlFixtures.LatestSourceTimestamp);

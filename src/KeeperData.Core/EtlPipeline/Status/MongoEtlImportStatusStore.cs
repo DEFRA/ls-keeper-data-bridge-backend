@@ -208,6 +208,9 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
         target.RowCount = source.RowCount ?? target.RowCount;
         target.RowsUpserted = source.RowsUpserted ?? target.RowsUpserted;
         target.RowsIgnoredDeletes = source.RowsIgnoredDeletes ?? target.RowsIgnoredDeletes;
+
+        if (source.ColumnsNullified.Count > 0) target.ColumnsNullified = [.. source.ColumnsNullified];
+        if (source.ColumnsAdded.Count > 0) target.ColumnsAdded = [.. source.ColumnsAdded];
     }
 
     private DateTime UtcNow => _timeProvider.GetUtcNow().UtcDateTime;

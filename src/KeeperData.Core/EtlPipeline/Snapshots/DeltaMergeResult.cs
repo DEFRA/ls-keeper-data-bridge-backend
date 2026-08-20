@@ -9,4 +9,6 @@ public sealed record DeltaMergeResult
     public long RowsIgnoredDeletes { get; init; }
     public long RowsRejected { get; init; }
     public long RowCount { get; init; }
+    public IReadOnlyList<string> ColumnsNullified { get; init; } = [];
+    public IReadOnlyList<string> ColumnsAdded { get; init; } = [];
 }

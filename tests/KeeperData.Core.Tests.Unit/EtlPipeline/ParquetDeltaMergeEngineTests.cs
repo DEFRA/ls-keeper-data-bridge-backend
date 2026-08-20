@@ -148,14 +148,115 @@ public class ParquetDeltaMergeEngineTests
     }
 
     [Fact]
-    public async Task Rejects_a_delta_missing_a_column_the_snapshot_carries()
+    public async Task Nullifies_a_column_a_delta_no_longer_carries()
+    {
+        // The source extract dropped ADDRESS_PK part way through: the column stays, and the rows the
+        // delta supplies have nothing for it.
+        var (lines, _) = await MergeAsync(
+            null,
+            Source("before", "CHANGE_TYPE|CPH|HOLDING_NAME|ADDRESS_PK",
+                "I|01/001/0001|Old Farm|ADDR001", "I|01/001/0002|Keep Farm|ADDR002"),
+            Source("after", DeltaHeader, "U|01/001/0001|Updated Farm"));
+
+        lines.Should().Equal(
+            "CPH|HOLDING_NAME|ADDRESS_PK",
+            "01/001/0001|Updated Farm|",
+            "01/001/0002|Keep Farm|ADDR002");
+    }
+
+    [Fact]
+    public async Task Nullifies_a_column_the_base_snapshot_carries_and_no_delta_does()
+    {
+        var (lines, _) = await MergeAsync(
+            Source("snapshot", "CPH|HOLDING_NAME|ADDRESS_PK", "01/001/0001|Old Farm|ADDR001"),
+            Source("delta", DeltaHeader, "U|01/001/0001|Updated Farm"));
+
+        lines.Should().Equal("CPH|HOLDING_NAME|ADDRESS_PK", "01/001/0001|Updated Farm|");
+    }
+
+    [Fact]
+    public async Task Keeps_a_column_a_later_delta_introduces()
+    {
+        var (lines, _) = await MergeAsync(
+            null,
+            Source("before", DeltaHeader, "I|01/001/0001|Old Farm"),
+            Source("after", "CHANGE_TYPE|CPH|HOLDING_NAME|NEW_COLUMN", "I|01/001/0002|New Farm|VALUE"));
+
+        lines.Should().Equal(
+            "CPH|HOLDING_NAME|NEW_COLUMN",
+            "01/001/0001|Old Farm|",
+            "01/001/0002|New Farm|VALUE");
+    }
+
+    [Fact]
+    public async Task Keeps_a_column_a_delta_introduces_over_the_base_snapshot()
+    {
+        var (lines, _) = await MergeAsync(
+            Source("snapshot", SnapshotHeader, "01/001/0001|Old Farm"),
+            Source("delta", "CHANGE_TYPE|CPH|HOLDING_NAME|ADDRESS_PK", "U|01/001/0001|Updated Farm|ADDR001"));
+
+        lines.Should().Equal("CPH|HOLDING_NAME|ADDRESS_PK", "01/001/0001|Updated Farm|ADDR001");
+    }
+
+    [Fact]
+    public async Task Warns_once_per_file_about_a_column_appearing_and_disappearing()
+    {
+        var logger = new CapturingLogger<ParquetDeltaMergeEngine>();
+        var engine = new ParquetDeltaMergeEngine(logger);
+
+        using var output = new MemoryStream();
+
+        await engine.MergeAsync(
+            SamCph,
+            Source("snapshot", "CPH|HOLDING_NAME|ADDRESS_PK", "01/001/0001|Old Farm|ADDR001"),
+            [
+                Source("dropped", DeltaHeader, "U|01/001/0001|Updated Farm"),
+                Source("added", "CHANGE_TYPE|CPH|HOLDING_NAME|ADDRESS_PK|NEW_COLUMN", "I|01/001/0002|New Farm|ADDR002|VALUE")
+            ],
+            output);
+
+        var warnings = logger.Warnings;
+
+        warnings.Should().ContainSingle(w => w.Contains("dropped") && w.Contains("ADDRESS_PK") && w.Contains("does not carry"));
+        warnings.Should().ContainSingle(w => w.Contains("added") && w.Contains("NEW_COLUMN") && w.Contains("introduces"));
+
+        // The file that establishes the schema is not drift, so it is not warned about.
+        warnings.Should().NotContain(w => w.Contains("snapshot"));
+    }
+
+    [Fact]
+    public async Task Reports_drifted_columns_once_so_the_run_status_can_show_them()
+    {
+        var (_, result) = await MergeAsync(
+            Source("snapshot", "CPH|HOLDING_NAME|ADDRESS_PK", "01/001/0001|Old Farm|ADDR001"),
+            Source("dropped", DeltaHeader, "U|01/001/0001|Updated Farm"),
+            Source("dropped-again", DeltaHeader, "U|01/001/0001|Updated Twice"),
+            Source("added", "CHANGE_TYPE|CPH|HOLDING_NAME|NEW_COLUMN", "I|01/001/0002|New Farm|VALUE"));
+
+        result.ColumnsNullified.Should().Equal("ADDRESS_PK");
+        result.ColumnsAdded.Should().Equal("NEW_COLUMN");
+    }
+
+    [Fact]
+    public async Task Reports_no_drifted_columns_when_every_file_agrees()
+    {
+        var (_, result) = await MergeAsync(
+            Source("snapshot", SnapshotHeader, "01/001/0001|Old Farm"),
+            Source("delta", DeltaHeader, "U|01/001/0001|Updated Farm"));
+
+        result.ColumnsNullified.Should().BeEmpty();
+        result.ColumnsAdded.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Still_rejects_a_delta_missing_a_primary_key_column_rather_than_nullifying_it()
     {
         var merge = async () => await MergeAsync(
             Source("snapshot", SnapshotHeader, "01/001/0001|Old Farm"),
-            Source("delta", "CHANGE_TYPE|CPH", "I|01/001/0001"));
+            Source("delta", "CHANGE_TYPE|HOLDING_NAME", "U|Updated Farm"));
 
         await merge.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*no column 'HOLDING_NAME'*");
+            .WithMessage("*primary key column 'CPH'*");
     }
 
     [Fact]

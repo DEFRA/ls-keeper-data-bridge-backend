@@ -6,30 +6,42 @@ namespace KeeperData.Core.EtlPipeline.Snapshots;
 
 public sealed partial class ParquetDeltaMergeEngine
 {
-    /// <summary>The merged rows, held in insertion order so the output is deterministic.</summary>
+    /// <summary>The merged rows, held in insertion order so the output is deterministic.
+    ///
+    /// The output schema is the union of the columns every file supplies, because a source extract can
+    /// gain or lose a column between files and neither should stop the merge. A column a file does not
+    /// carry is null for the rows that file supplies; a column a file introduces is appended and null
+    /// for the rows already held. Both are reported as <see cref="SchemaDrift"/> so the caller can warn,
+    /// since a column quietly appearing or disappearing is worth noticing even though it is tolerated.
+    ///
+    /// Note this nullifies per row, not per column: a row updated by a file that has dropped a column
+    /// loses the value it previously held for it, while a row that file does not mention keeps its own.
+    /// Primary keys are not treated this way - a file that cannot be keyed still fails the merge.</summary>
     private sealed class MergeState(DataSetDefinition definition)
     {
         private readonly Dictionary<string, int> _indexByKey = new(StringComparer.Ordinal);
         private readonly List<string?[]> _rows = [];
 
-        private DataField[]? _fields;
+        private readonly List<DataField> _fields = [];
+        private readonly Dictionary<string, int> _columnByName = new(StringComparer.OrdinalIgnoreCase);
 
         public long RowCount => _rows.Count;
 
-        public void SeedFrom(ParquetTable table, string key)
+        public SchemaDrift SeedFrom(ParquetTable table, string key)
         {
-            _fields = table.Fields.Where(field => !IsChangeType(field.Name)).ToArray();
+            var alignment = Align(table);
 
             foreach (var row in table.Rows)
             {
-                Upsert(Project(table, row, key), CompositeKey(table, row, key));
+                Upsert(Project(alignment, row), CompositeKey(table, row, key));
             }
+
+            return alignment.Drift;
         }
 
-        public (long Upserted, long IgnoredDeletes, long Rejected) Apply(ParquetTable table, string key)
+        public AppliedDelta Apply(ParquetTable table, string key)
         {
-            _fields ??= table.Fields.Where(field => !IsChangeType(field.Name)).ToArray();
-
+            var alignment = Align(table);
             var changeTypeIndex = table.IndexOf(definition.ChangeTypeHeaderName);
 
             var upserted = 0L;
@@ -44,7 +56,7 @@ public sealed partial class ParquetDeltaMergeEngine
                 {
                     case ChangeType.Insert:
                     case ChangeType.Update:
-                        Upsert(Project(table, row, key), CompositeKey(table, row, key));
+                        Upsert(Project(alignment, row), CompositeKey(table, row, key));
                         upserted++;
                         break;
 
@@ -59,13 +71,17 @@ public sealed partial class ParquetDeltaMergeEngine
                 }
             }
 
-            return (upserted, ignoredDeletes, rejected);
+            return new AppliedDelta(upserted, ignoredDeletes, rejected, alignment.Drift);
         }
 
         public async Task WriteAsync(Stream output, CancellationToken cancellationToken)
         {
-            var fields = _fields
-                ?? throw new InvalidOperationException($"Nothing to write for dataset '{definition.Name}': no file supplied a schema");
+            if (_fields.Count == 0)
+            {
+                throw new InvalidOperationException($"Nothing to write for dataset '{definition.Name}': no file supplied a schema");
+            }
+
+            var fields = _fields.ToArray();
 
             await using var writer = await ParquetWriter.CreateAsync(new ParquetSchema(fields), output, cancellationToken: cancellationToken);
             using var rowGroup = writer.CreateRowGroup();
@@ -82,23 +98,71 @@ public sealed partial class ParquetDeltaMergeEngine
             }
         }
 
-        /// <summary>The row reduced to the output columns, in output column order.</summary>
-        private string?[] Project(ParquetTable table, string?[] row, string key)
+        /// <summary>Reconciles the file's columns with the output's, widening the output for any column
+        /// it introduces, and returns where each output column is found in the file - or -1 when the
+        /// file does not carry it.</summary>
+        private Alignment Align(ParquetTable table)
         {
-            var fields = _fields!;
-            var projected = new string?[fields.Length];
+            // The first file establishes the schema rather than drifting from it, so its columns are
+            // not reported as new.
+            var establishing = _fields.Count == 0;
+            var added = new List<string>();
 
-            for (var column = 0; column < fields.Length; column++)
+            foreach (var field in table.Fields)
             {
-                var index = table.IndexOf(fields[column].Name);
-
-                if (index < 0)
+                if (IsChangeType(field.Name) || _columnByName.ContainsKey(field.Name))
                 {
-                    throw new InvalidOperationException(
-                        $"'{key}' has no column '{fields[column].Name}' expected by dataset '{definition.Name}'");
+                    continue;
                 }
 
-                projected[column] = row[index];
+                _columnByName[field.Name] = _fields.Count;
+                _fields.Add(field);
+                added.Add(field.Name);
+            }
+
+            if (added.Count > 0)
+            {
+                Widen();
+            }
+
+            var indexes = new int[_fields.Count];
+            var missing = new List<string>();
+
+            for (var column = 0; column < _fields.Count; column++)
+            {
+                var name = _fields[column].Name;
+                indexes[column] = table.IndexOf(name);
+
+                if (indexes[column] < 0)
+                {
+                    missing.Add(name);
+                }
+            }
+
+            return new Alignment(indexes, new SchemaDrift(missing, establishing ? [] : added));
+        }
+
+        /// <summary>Grows the rows already held so they carry a null for each newly added column.</summary>
+        private void Widen()
+        {
+            for (var index = 0; index < _rows.Count; index++)
+            {
+                var row = _rows[index];
+                Array.Resize(ref row, _fields.Count);
+                _rows[index] = row;
+            }
+        }
+
+        /// <summary>The row reduced to the output columns, in output column order, with a null for any
+        /// column the file does not carry.</summary>
+        private static string?[] Project(Alignment alignment, string?[] row)
+        {
+            var indexes = alignment.Indexes;
+            var projected = new string?[indexes.Length];
+
+            for (var column = 0; column < indexes.Length; column++)
+            {
+                projected[column] = indexes[column] < 0 ? null : row[indexes[column]];
             }
 
             return projected;
@@ -133,5 +197,17 @@ public sealed partial class ParquetDeltaMergeEngine
 
         private bool IsChangeType(string name)
             => string.Equals(name, definition.ChangeTypeHeaderName, StringComparison.OrdinalIgnoreCase);
+
+        private sealed record Alignment(int[] Indexes, SchemaDrift Drift);
+    }
+
+    /// <summary>What one delta did to the merged state.</summary>
+    private sealed record AppliedDelta(long Upserted, long IgnoredDeletes, long Rejected, SchemaDrift Drift);
+
+    /// <summary>How one file's columns differed from the output's: <paramref name="Missing"/> columns the
+    /// output carries and the file does not, <paramref name="Added"/> columns the file introduced.</summary>
+    private sealed record SchemaDrift(IReadOnlyList<string> Missing, IReadOnlyList<string> Added)
+    {
+        public bool Any => Missing.Count > 0 || Added.Count > 0;
     }
 }

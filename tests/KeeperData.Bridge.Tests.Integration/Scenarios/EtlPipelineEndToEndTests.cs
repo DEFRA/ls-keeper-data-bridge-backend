@@ -244,6 +244,55 @@ public sealed class EtlPipelineEndToEndTests(ITestOutputHelper output, LocalStac
             "a database is uploaded only once it is complete, so a partial load publishes nothing");
     }
 
+    /// <summary>The preprod case: the extract carried ADDRESS_PK until the column was removed from it.
+    /// The column survives in the snapshot, and is null only for the rows the later file supplies.</summary>
+    [Fact]
+    public async Task ColumnRemovedFromTheExtract_IsNullifiedRatherThanFailingTheRun()
+    {
+        await using var host = await CreateHostAsync();
+
+        await host.PutEncryptedSourceFileAsync(FirstDelta,
+            $"{Header.Replace("|CHANGE_TYPE", "|ADDRESS_PK|CHANGE_TYPE")}\n" +
+            $"01/001/0001|{KeyColumns}|Old Farm|ADDR001|I\n" +
+            $"01/001/0002|{KeyColumns}|Keep Farm|ADDR002|I\n");
+
+        await host.PutEncryptedSourceFileAsync(SecondDelta, Psv(("01/001/0001", "Updated Farm", "U")));
+
+        await host.RunPipelineAsync();
+
+        var rows = await QueryAddressPkAsync(host, "keeper_data_bridge_20251114121333.duckdb");
+
+        rows.Should().BeEquivalentTo(new[]
+        {
+            ("01/001/0001", (string?)null),
+            ("01/001/0002", "ADDR002")
+        }, "the updated row loses the value the extract no longer supplies; the untouched row keeps its own");
+    }
+
+    /// <summary>The same drift the other way round: a column the extract gains later is kept rather than
+    /// silently discarded, and is null for the rows that predate it.</summary>
+    [Fact]
+    public async Task ColumnAddedToTheExtract_IsKeptRatherThanDiscarded()
+    {
+        await using var host = await CreateHostAsync();
+
+        await host.PutEncryptedSourceFileAsync(FirstDelta, Psv(("01/001/0001", "Old Farm", "I")));
+
+        await host.PutEncryptedSourceFileAsync(SecondDelta,
+            $"{Header.Replace("|CHANGE_TYPE", "|ADDRESS_PK|CHANGE_TYPE")}\n" +
+            $"01/001/0002|{KeyColumns}|New Farm|ADDR002|I\n");
+
+        await host.RunPipelineAsync();
+
+        var rows = await QueryAddressPkAsync(host, "keeper_data_bridge_20251114121333.duckdb");
+
+        rows.Should().BeEquivalentTo(new[]
+        {
+            ("01/001/0001", (string?)null),
+            ("01/001/0002", "ADDR002")
+        }, "the new column is added to the snapshot and back-filled null for the rows already held");
+    }
+
     [Fact]
     public async Task Pipeline_HandlesAFileOfRealisticSize()
     {
@@ -362,6 +411,35 @@ public sealed class EtlPipelineEndToEndTests(ITestOutputHelper output, LocalStac
             while (await reader.ReadAsync())
             {
                 rows.Add((reader.GetString(0), reader.GetString(1)));
+            }
+
+            return rows;
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    private static async Task<List<(string Cph, string? AddressPk)>> QueryAddressPkAsync(
+        EtlPipelineTestHost host, string key)
+    {
+        var path = await host.DownloadToTempAsync(EtlPipelineFolders.Staging, key, ".duckdb");
+
+        try
+        {
+            using var connection = new DuckDBConnection($"Data Source={path}");
+            await connection.OpenAsync();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT CPH, ADDRESS_PK FROM sam_cph_holdings ORDER BY CPH";
+
+            using var reader = await command.ExecuteReaderAsync();
+
+            var rows = new List<(string, string?)>();
+            while (await reader.ReadAsync())
+            {
+                rows.Add((reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1)));
             }
 
             return rows;

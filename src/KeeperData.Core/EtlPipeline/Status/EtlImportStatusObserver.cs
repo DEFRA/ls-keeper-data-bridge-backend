@@ -105,7 +105,9 @@ public sealed class EtlImportStatusObserver(
             SnapshotSourceTimestamp = snapshot.SourceTimestamp,
             RowCount = snapshot.RowCount,
             RowsUpserted = snapshot.RowsUpserted,
-            RowsIgnoredDeletes = snapshot.RowsIgnoredDeletes
+            RowsIgnoredDeletes = snapshot.RowsIgnoredDeletes,
+            ColumnsNullified = snapshot.ColumnsNullified,
+            ColumnsAdded = snapshot.ColumnsAdded
         },
 
         _ => null
@@ -123,7 +125,9 @@ public sealed class EtlImportStatusObserver(
             SnapshotSourceTimestamp = second.SnapshotSourceTimestamp ?? first.SnapshotSourceTimestamp,
             RowCount = second.RowCount ?? first.RowCount,
             RowsUpserted = second.RowsUpserted ?? first.RowsUpserted,
-            RowsIgnoredDeletes = second.RowsIgnoredDeletes ?? first.RowsIgnoredDeletes
+            RowsIgnoredDeletes = second.RowsIgnoredDeletes ?? first.RowsIgnoredDeletes,
+            ColumnsNullified = second.ColumnsNullified.Count > 0 ? second.ColumnsNullified : first.ColumnsNullified,
+            ColumnsAdded = second.ColumnsAdded.Count > 0 ? second.ColumnsAdded : first.ColumnsAdded
         });
 
     private static Guid ImportId(IPipelineContext context)

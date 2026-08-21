@@ -65,6 +65,9 @@ public class EtlImportDatasetResponse
     public long? RowCount { get; set; }
     public long? RowsUpserted { get; set; }
     public long? RowsIgnoredDeletes { get; set; }
+    public List<string> ColumnsNullified { get; set; } = [];
+/// <summary>Columns a file introduced, so they are null for the rows held before it.</summary>
+    public List<string> ColumnsAdded { get; set; } = [];
 }
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]

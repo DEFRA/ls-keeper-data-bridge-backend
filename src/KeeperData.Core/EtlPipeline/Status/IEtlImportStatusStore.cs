@@ -51,4 +51,6 @@ public sealed record EtlImportDatasetProgress(string Dataset)
     public long? RowCount { get; init; }
     public long? RowsUpserted { get; init; }
     public long? RowsIgnoredDeletes { get; init; }
+    public IReadOnlyList<string> ColumnsNullified { get; init; } = [];
+    public IReadOnlyList<string> ColumnsAdded { get; init; } = [];
 }

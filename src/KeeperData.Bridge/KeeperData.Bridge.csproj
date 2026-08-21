@@ -9,7 +9,6 @@
     <DockerComposeProjectPath>..\docker-compose.dcproj</DockerComposeProjectPath>
     <UserSecretsId>KeeperData.Bridge-20241201</UserSecretsId>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);1591;NU1902;NU1605;NU1603;CS0618;SYSLIB0057</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

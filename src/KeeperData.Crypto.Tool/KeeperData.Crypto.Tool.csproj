@@ -6,14 +6,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>kryp</AssemblyName>
-  <NoWarn>$(NoWarn);NU1902;NU1605;NU1603;CS0618;SYSLIB0057</NoWarn></PropertyGroup>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Bogus" Version="35.6.5" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.11" />
-    <PackageReference Include="System.CommandLine" Version="2.0.10" />
+    <PackageReference Include="System.CommandLine" Version="2.0.11" />
     <ProjectReference Include="..\KeeperData.Core\KeeperData.Core.csproj" />
     <ProjectReference Include="..\KeeperData.Infrastructure\KeeperData.Infrastructure.csproj" />
   </ItemGroup>

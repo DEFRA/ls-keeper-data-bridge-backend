@@ -1,6 +1,7 @@
 using KeeperData.Core.Crypto;
 using System.Security.Cryptography;
 using System.Text;
+using static KeeperData.Core.Telemetry.MetricNames;
 
 namespace KeeperData.Infrastructure.Crypto;
 
@@ -14,7 +15,7 @@ public class AesCryptoTransform : IAesCryptoTransform
     public async Task EncryptFileAsync(string inputFilePath, string outputFilePath, string password, byte[] salt,
         ProgressCallback? progressCallback = null, CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(inputFilePath))
+        if (!System.IO.File.Exists(inputFilePath))
         {
             throw new FileNotFoundException($"Input file not found: {inputFilePath}");
         }
@@ -35,7 +36,7 @@ public class AesCryptoTransform : IAesCryptoTransform
                                        ProgressCallback? progressCallback = null,
                                        CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(inputFilePath))
+        if (!System.IO.File.Exists(inputFilePath))
         {
             throw new FileNotFoundException($"Input file not found: {inputFilePath}");
         }
@@ -152,10 +153,7 @@ public class AesCryptoTransform : IAesCryptoTransform
             Array.Copy(salt, actualSalt, salt.Length);
         }
 
-        #pragma warning disable SYSLIB0060
-          using var pbkdf2 = new System.Security.Cryptography.Rfc2898DeriveBytes(password, actualSalt, PbeKeySpecIterationsDefault, System.Security.Cryptography.HashAlgorithmName.SHA1);
-          return pbkdf2.GetBytes(PbeKeySpecKeyLenDefault / 8);
-          #pragma warning restore SYSLIB0060
+        return Rfc2898DeriveBytes.Pbkdf2(password, actualSalt, PbeKeySpecIterationsDefault, HashAlgorithmName.SHA1, PbeKeySpecKeyLenDefault / 8);
     }
 
     private static async Task ProcessStreamAsync(Stream inputStream,

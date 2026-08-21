@@ -10,5 +10,11 @@
          on obsolete X509 APIs). Disable it so binding falls back to reflection, which is
          safe because trim analysis warnings are already suppressed above. -->
     <EnableConfigurationBindingGenerator>false</EnableConfigurationBindingGenerator>
+
+    <!-- For Nuget Upgrade, we need the following, else partial upgrades all rollback, due to transitive vulnerabilities -->
+    <NoWarn>$(NoWarn);NU1902;NU1903;NU1605;NU1603</NoWarn>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1902;NU1903;NU1605;NU1603</WarningsNotAsErrors>
+
+
   </PropertyGroup>
 </Project>

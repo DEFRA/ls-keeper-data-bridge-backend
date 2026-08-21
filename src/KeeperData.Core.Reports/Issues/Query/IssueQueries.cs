@@ -166,7 +166,7 @@ public class IssueQueries(IssueCollection issueCollection, IssueHistoryCollectio
         // Aggregation pipeline requires BsonDocument rendering
         var serializerRegistry = MongoDB.Bson.Serialization.BsonSerializer.SerializerRegistry;
         var documentSerializer = serializerRegistry.GetSerializer<IssueDocument>();
-        var renderedFilter = matchFilter.Render(documentSerializer, serializerRegistry);
+        var renderedFilter = matchFilter.Render(new RenderArgs<IssueDocument>(documentSerializer, serializerRegistry));
 
         var pipeline = new[]
         {

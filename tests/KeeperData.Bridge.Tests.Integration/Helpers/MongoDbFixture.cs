@@ -16,8 +16,7 @@ public class MongoDbFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        Container = new MongoDbBuilder()
-            .WithImage("mongo:7.0")
+        Container = new MongoDbBuilder("mongo:7.0")
             .WithPortBinding(27017, true)
             .Build();
 

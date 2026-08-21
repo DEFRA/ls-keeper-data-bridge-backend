@@ -186,9 +186,9 @@ public class MongoIndexExplainTests : IAsyncLifetime
             { "explain", new BsonDocument
                 {
                     { "find", collection.CollectionNamespace.CollectionName },
-                    { "filter", filter.Render(
+                    { "filter", filter.Render(new RenderArgs<BsonDocument>(
                         collection.DocumentSerializer,
-                        collection.Settings.SerializerRegistry) },
+                        collection.Settings.SerializerRegistry)) },
                 }
             },
             { "verbosity", "executionStats" }
@@ -196,9 +196,9 @@ public class MongoIndexExplainTests : IAsyncLifetime
 
         if (sort is not null)
         {
-            explainCommand["explain"]["sort"] = sort.Render(
+            explainCommand["explain"]["sort"] = sort.Render(new RenderArgs<BsonDocument>(
                 collection.DocumentSerializer,
-                collection.Settings.SerializerRegistry);
+                collection.Settings.SerializerRegistry));
         }
 
         var explainResult = await collection.Database.RunCommandAsync<BsonDocument>(explainCommand);

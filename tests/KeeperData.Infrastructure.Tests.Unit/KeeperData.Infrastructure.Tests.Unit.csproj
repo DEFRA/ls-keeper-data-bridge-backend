@@ -8,7 +8,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <UserSecretsId>KeeperData.Bridge-20241201</UserSecretsId>
-  <NoWarn>$(NoWarn);NU1902;NU1605;NU1603;CS0618;SYSLIB0057</NoWarn></PropertyGroup>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="AWSSDK.S3" Version="4.0.102.3" />

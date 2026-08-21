@@ -31,7 +31,7 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
 
     public async Task InitializeAsync()
     {
-        _mongo = new MongoDbBuilder().WithImage("mongo:7.0").WithPortBinding(27017, true).Build();
+        _mongo = new MongoDbBuilder("mongo:7.0").WithPortBinding(27017, true).Build();
         await _mongo.StartAsync();
 
         _store = new MongoEtlImportStatusStore(

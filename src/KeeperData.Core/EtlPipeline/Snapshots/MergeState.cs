@@ -59,8 +59,6 @@ public sealed partial class ParquetDeltaMergeEngine
                         Upsert(Project(alignment, row), CompositeKey(table, row, key));
                         upserted++;
                         break;
-
-                    // Delete processing is out of scope: the row is counted and left in the snapshot.
                     case ChangeType.Delete:
                         ignoredDeletes++;
                         break;
@@ -77,9 +75,7 @@ public sealed partial class ParquetDeltaMergeEngine
         public async Task WriteAsync(Stream output, CancellationToken cancellationToken)
         {
             if (_fields.Count == 0)
-            {
                 throw new InvalidOperationException($"Nothing to write for dataset '{definition.Name}': no file supplied a schema");
-            }
 
             var fields = _fields.ToArray();
 
@@ -90,9 +86,7 @@ public sealed partial class ParquetDeltaMergeEngine
             {
                 var values = new string?[_rows.Count];
                 for (var row = 0; row < _rows.Count; row++)
-                {
                     values[row] = _rows[row][column];
-                }
 
                 await rowGroup.WriteAsync(fields[column], (IReadOnlyCollection<string?>)values);
             }
@@ -103,28 +97,39 @@ public sealed partial class ParquetDeltaMergeEngine
         /// file does not carry it.</summary>
         private Alignment Align(ParquetTable table)
         {
-            // The first file establishes the schema rather than drifting from it, so its columns are
-            // not reported as new.
             var establishing = _fields.Count == 0;
+
+            var added = MergeNewColumns(table);
+            var (indexes, missing) = BuildIndexMap(table);
+
+            return new Alignment(indexes, new SchemaDrift(missing, establishing ? [] : added));
+        }
+
+        /// <summary>Adds any column the file introduces to the output schema, widening the rows already
+        /// held so they carry a null for it. Returns the names added, in the order they were found.</summary>
+        private List<string> MergeNewColumns(ParquetTable table)
+        {
             var added = new List<string>();
 
             foreach (var field in table.Fields)
             {
                 if (IsChangeType(field.Name) || _columnByName.ContainsKey(field.Name))
-                {
                     continue;
-                }
 
                 _columnByName[field.Name] = _fields.Count;
                 _fields.Add(field);
                 added.Add(field.Name);
             }
 
-            if (added.Count > 0)
-            {
-                Widen();
-            }
+            if (added.Count > 0) Widen();
 
+            return added;
+        }
+
+        /// <summary>For each output column, where it is found in the file - or -1 when the file does not
+        /// carry it - alongside the names of any output columns the file is missing.</summary>
+        private (int[] Indexes, List<string> Missing) BuildIndexMap(ParquetTable table)
+        {
             var indexes = new int[_fields.Count];
             var missing = new List<string>();
 
@@ -139,7 +144,7 @@ public sealed partial class ParquetDeltaMergeEngine
                 }
             }
 
-            return new Alignment(indexes, new SchemaDrift(missing, establishing ? [] : added));
+            return (indexes, missing);
         }
 
         /// <summary>Grows the rows already held so they carry a null for each newly added column.</summary>

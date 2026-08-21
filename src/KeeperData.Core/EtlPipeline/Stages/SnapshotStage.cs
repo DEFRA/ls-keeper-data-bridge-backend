@@ -148,7 +148,9 @@ public sealed class SnapshotStage(
                 Created = true,
                 RowCount = result.RowCount,
                 RowsUpserted = result.RowsUpserted,
-                RowsIgnoredDeletes = result.RowsIgnoredDeletes
+                RowsIgnoredDeletes = result.RowsIgnoredDeletes,
+                ColumnsNullified = result.ColumnsNullified,
+                ColumnsAdded = result.ColumnsAdded
             };
         }
         finally

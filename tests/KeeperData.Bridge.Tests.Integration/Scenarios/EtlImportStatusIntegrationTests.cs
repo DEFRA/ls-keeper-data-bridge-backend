@@ -81,8 +81,42 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
         dataset.RowCount.Should().Be(2);
         dataset.RowsUpserted.Should().Be(2);
         dataset.RowsIgnoredDeletes.Should().Be(0);
+        dataset.ColumnsNullified.Should().BeEmpty("nothing drifted, so the run says nothing about columns");
+        dataset.ColumnsAdded.Should().BeEmpty();
 
         status.DuckDbKey.Should().Be("keeper_data_bridge_20251113121333.duckdb");
+    }
+
+    /// <summary>Schema drift is tolerated, so nothing fails and nothing is in the caller's face; the run
+    /// has to say which columns it changed the shape of, or the only record of it is a log line.</summary>
+    [Fact]
+    public async Task A_run_that_tolerated_schema_drift_records_the_columns_it_drifted_on()
+    {
+        var importId = Guid.NewGuid();
+
+        await using var host = await CreateHostAsync();
+
+        await host.PutEncryptedSourceFileAsync(SourceFile, new StringBuilder()
+            .AppendLine(Header.Replace("|CHANGE_TYPE", "|ADDRESS_PK|CHANGE_TYPE"))
+            .AppendLine($"01/001/0001|{KeyColumns}|Keep Farm|ADDR001|I")
+            .ToString());
+
+        await host.PutEncryptedSourceFileAsync("LITP_SAMCPHHOLDING_20251113131333.csv", new StringBuilder()
+            .AppendLine($"{Header}|NEW_COLUMN")
+            .AppendLine($"01/001/0002|{KeyColumns}|Other Farm|I|VALUE")
+            .ToString());
+
+        await _store.CreateQueuedAsync(importId, "external", "sam_cph_holdings", CancellationToken.None);
+        await host.RunPipelineAsync(runId: importId, dataset: "sam_cph_holdings");
+
+        var status = (await _store.GetAsync(importId, CancellationToken.None))!;
+
+        status.Status.Should().Be(nameof(EtlImportStatus.Succeeded));
+
+        var dataset = status.Datasets.Should().ContainSingle().Subject;
+
+        dataset.ColumnsNullified.Should().Equal("ADDRESS_PK");
+        dataset.ColumnsAdded.Should().Equal("NEW_COLUMN");
     }
 
     [Fact]

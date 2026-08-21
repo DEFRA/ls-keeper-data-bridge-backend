@@ -2,7 +2,7 @@ namespace KeeperData.Core;
 
 public static class EtlConstants
 {
-    public const int DefaultLookbackDays = 250;
+    public const int DefaultLookbackDays = 1000;
     public const string DatePattern = "yyyyMMdd";
     public const string DateTimePattern = "yyyyMMddHHmmss";
     public const string CompositeKeyDelimiter = "@@";

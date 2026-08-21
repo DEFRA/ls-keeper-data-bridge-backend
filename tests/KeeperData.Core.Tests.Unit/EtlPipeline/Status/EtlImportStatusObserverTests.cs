@@ -94,6 +94,21 @@ public class EtlImportStatusObserverTests
     }
 
     [Fact]
+    public async Task Records_the_columns_the_snapshot_drifted_on()
+    {
+        await StageCompleted("snapshot", new SnapshotFile(StageRunner.Definition("sam_cph_holdings"))
+        {
+            Key = "sam_cph_holdings/sam_cph_holdings_20251115121333.parquet",
+            ColumnsNullified = ["ADDRESS_PK"],
+            ColumnsAdded = ["NEW_COLUMN"]
+        });
+
+        var dataset = _store.Progress.Single().Progress.Datasets.Single();
+        dataset.ColumnsNullified.Should().Equal("ADDRESS_PK");
+        dataset.ColumnsAdded.Should().Equal("NEW_COLUMN");
+    }
+
+    [Fact]
     public async Task Records_the_staging_database_key()
     {
         await StageCompleted("load-duckdb", new StagingDatabase

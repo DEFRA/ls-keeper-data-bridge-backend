@@ -73,6 +73,13 @@ public class EtlImportDatasetDocument
     public long? RowCount { get; set; }
     public long? RowsUpserted { get; set; }
     public long? RowsIgnoredDeletes { get; set; }
+
+    /// <summary>Columns held by the snapshot that a file applied did not carry. Present so schema drift
+    /// is visible to whoever is reading the run, rather than only in the logs.</summary>
+    public List<string> ColumnsNullified { get; set; } = [];
+
+    /// <summary>Columns a file introduced that no earlier file carried.</summary>
+    public List<string> ColumnsAdded { get; set; } = [];
 }
 
 [ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]

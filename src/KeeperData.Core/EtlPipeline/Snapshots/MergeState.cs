@@ -206,8 +206,5 @@ public sealed partial class ParquetDeltaMergeEngine
 
     /// <summary>How one file's columns differed from the output's: <paramref name="Missing"/> columns the
     /// output carries and the file does not, <paramref name="Added"/> columns the file introduced.</summary>
-    private sealed record SchemaDrift(IReadOnlyList<string> Missing, IReadOnlyList<string> Added)
-    {
-        public bool Any => Missing.Count > 0 || Added.Count > 0;
-    }
+    private sealed record SchemaDrift(IReadOnlyList<string> Missing, IReadOnlyList<string> Added);
 }

@@ -152,8 +152,10 @@ public class AesCryptoTransform : IAesCryptoTransform
             Array.Copy(salt, actualSalt, salt.Length);
         }
 
-        using var pbkdf2 = new Rfc2898DeriveBytes(password, actualSalt, PbeKeySpecIterationsDefault, HashAlgorithmName.SHA1);
-        return pbkdf2.GetBytes(PbeKeySpecKeyLenDefault / 8);
+        #pragma warning disable SYSLIB0060
+          using var pbkdf2 = new System.Security.Cryptography.Rfc2898DeriveBytes(password, actualSalt, PbeKeySpecIterationsDefault, System.Security.Cryptography.HashAlgorithmName.SHA1);
+          return pbkdf2.GetBytes(PbeKeySpecKeyLenDefault / 8);
+          #pragma warning restore SYSLIB0060
     }
 
     private static async Task ProcessStreamAsync(Stream inputStream,

@@ -11,6 +11,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="EtlPipeline\Views\Sql\krds-read-model.sql" LogicalName="KeeperData.Core.EtlPipeline.Views.Sql.krds-read-model.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="AWSSDK.Core" Version="4.0.100.9" />
     <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.100.7" />
     <PackageReference Include="CsvHelper" Version="33.1.0" />

@@ -85,6 +85,7 @@ public class EtlImportStatusController(
             ? document.Datasets.Sum(d => d.RowCount ?? 0)
             : null,
         DuckDbPath = Qualify(EtlPipelineFolders.Staging, document.DuckDbKey),
+        SqlitePath = Qualify(EtlPipelineFolders.Views, document.SqliteKey),
         Error = document.Error
     };
 
@@ -99,6 +100,12 @@ public class EtlImportStatusController(
         CompletedAtUtc = document.CompletedAtUtc,
         CurrentStage = document.CurrentStage,
         DuckDbPath = Qualify(EtlPipelineFolders.Staging, document.DuckDbKey),
+        SqlitePath = Qualify(EtlPipelineFolders.Views, document.SqliteKey),
+        SqliteTables = [.. document.SqliteTables.Select(t => new EtlImportViewTableResponse
+        {
+            Name = t.Name,
+            RowCount = t.RowCount
+        })],
         Error = document.Error,
         Stages = [.. document.Stages.Select(s => new EtlImportStageResponse
         {

@@ -35,6 +35,7 @@ public class EtlPipelineFactoryTests
             new Mock<IDeltaMergeEngine>().Object,
             snapshotLoggerMock.Object);
         var loadDuckDbStage = AutoMocked.Instance<LoadDuckDbStage>();
+        var exportSqliteStage = AutoMocked.Instance<ExportSqliteStage>();
 
         var sut = new EtlPipelineFactory(
             catalogueFactoryMock.Object,
@@ -43,7 +44,8 @@ public class EtlPipelineFactoryTests
             hcdtNormaliserMock.Object,
             normaliseLoggerMock.Object,
             snapshotStage,
-            loadDuckDbStage);
+            loadDuckDbStage,
+            exportSqliteStage);
 
         // Act
         var pipeline = sut.Create();
@@ -60,7 +62,8 @@ public class EtlPipelineFactoryTests
             "decrypt",
             "normalise",
             "snapshot",
-            "load-duckdb"
+            "load-duckdb",
+            "export-sqlite"
         );
     }
 }

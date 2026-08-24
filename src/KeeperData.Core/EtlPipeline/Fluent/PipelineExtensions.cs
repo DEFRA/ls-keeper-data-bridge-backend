@@ -30,4 +30,7 @@ public static class PipelineExtensions
 
     public static PipelineBuilder<StagingDatabase> LoadDuckDb(this PipelineBuilder<SnapshotFile> builder, LoadDuckDbStage stage)
         => builder.Then(stage);
+
+    public static PipelineBuilder<SqliteExportFile> ExportSqlite(this PipelineBuilder<StagingDatabase> builder, ExportSqliteStage stage)
+        => builder.Then(stage);
 }

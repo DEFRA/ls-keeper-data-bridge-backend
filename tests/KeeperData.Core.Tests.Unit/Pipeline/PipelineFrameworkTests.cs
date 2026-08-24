@@ -136,6 +136,7 @@ public class PipelineFrameworkTests
         await executor.RunAsync(definition, Context(), CancellationToken.None);
 
         observer.StartedWith.Should().Equal("double", "sum");
+        observer.RunningStages.Should().Equal("double", "sum");
         observer.Stages.Should().Equal(("double", 3), ("sum", 1));
         observer.LastItems.Should().Equal(12);
         observer.Completed.Should().BeTrue();
@@ -181,6 +182,7 @@ public class PipelineFrameworkTests
     private sealed class RecordingObserver : IPipelineRunObserver
     {
         public IReadOnlyList<string> StartedWith { get; private set; } = [];
+        public List<string> RunningStages { get; } = [];
         public List<(string Stage, int Count)> Stages { get; } = [];
         public IReadOnlyList<object> LastItems { get; private set; } = [];
         public bool Completed { get; private set; }
@@ -189,6 +191,12 @@ public class PipelineFrameworkTests
         public Task RunStartingAsync(IPipelineContext context, IReadOnlyList<string> stageNames, CancellationToken cancellationToken)
         {
             StartedWith = stageNames;
+            return Task.CompletedTask;
+        }
+
+        public Task StageStartingAsync(IPipelineContext context, string stageName, CancellationToken cancellationToken)
+        {
+            RunningStages.Add(stageName);
             return Task.CompletedTask;
         }
 
@@ -215,6 +223,9 @@ public class PipelineFrameworkTests
     private sealed class ThrowingObserver : IPipelineRunObserver
     {
         public Task RunStartingAsync(IPipelineContext context, IReadOnlyList<string> stageNames, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("observer boom");
+
+        public Task StageStartingAsync(IPipelineContext context, string stageName, CancellationToken cancellationToken)
             => throw new InvalidOperationException("observer boom");
 
         public Task StageCompletedAsync(IPipelineContext context, string stageName, IReadOnlyList<object> items, TimeSpan elapsed, CancellationToken cancellationToken)

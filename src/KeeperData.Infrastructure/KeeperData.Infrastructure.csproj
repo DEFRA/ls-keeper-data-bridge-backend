@@ -34,6 +34,25 @@
     <InternalsVisibleTo Include="KeeperData.Infrastructure.Tests.Unit" />
   </ItemGroup>
 
+  <!-- The bundled DuckDB SQLite extension must match the DuckDB the package links against, and the
+       repository is versioned by that number. Emitting the resolved version keeps the Docker build
+       from carrying a second copy of it that someone has to remember to update. Declared as Content
+       from AssignTargetPaths so it reaches the publish output of whichever host publishes this. -->
+  <Target Name="WriteDuckDbVersion" BeforeTargets="AssignTargetPaths">
+    <PropertyGroup>
+      <_DuckDbVersion>@(PackageReference->WithMetadataValue('Identity','DuckDB.NET.Data.Full')->'%(Version)')</_DuckDbVersion>
+      <_DuckDbVersionFile>$(IntermediateOutputPath)duckdb-version.txt</_DuckDbVersionFile>
+    </PropertyGroup>
+    <Error Condition="'$(_DuckDbVersion)' == ''" Text="DuckDB.NET.Data.Full is no longer a direct PackageReference, so the bundled SQLite extension can no longer be version-matched." />
+    <WriteLinesToFile File="$(_DuckDbVersionFile)" Lines="$(_DuckDbVersion)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Content Include="$(_DuckDbVersionFile)"
+               Link="duckdb-version.txt"
+               CopyToOutputDirectory="PreserveNewest"
+               CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <ProjectReference Include="..\KeeperData.Application\KeeperData.Application.csproj" />
     <ProjectReference Include="..\KeeperData.Core.Reports\KeeperData.Core.Reports.csproj" />

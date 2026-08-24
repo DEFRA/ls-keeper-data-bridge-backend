@@ -1,3 +1,5 @@
+using KeeperData.Core.EtlPipeline.Views;
+
 namespace KeeperData.Core.EtlPipeline.Status;
 
 /// <summary>Persistence for ETL import status, so a run survives an API restart and can
@@ -7,6 +9,8 @@ public interface IEtlImportStatusStore
     Task CreateQueuedAsync(Guid importId, string sourceType, string? dataset, CancellationToken cancellationToken);
 
     Task MarkRunningAsync(Guid importId, IReadOnlyList<string> stageNames, CancellationToken cancellationToken);
+
+    Task MarkStageRunningAsync(Guid importId, string stageName, CancellationToken cancellationToken);
 
     /// <summary>Records a completed stage and whatever it produced, and extends the lease.</summary>
     Task RecordStageAsync(Guid importId, EtlImportStageProgress progress, CancellationToken cancellationToken);
@@ -37,7 +41,9 @@ public sealed record EtlImportStageProgress(
     int ItemCount,
     TimeSpan Elapsed,
     IReadOnlyList<EtlImportDatasetProgress> Datasets,
-    string? DuckDbKey = null);
+    string? DuckDbKey = null,
+    string? SqliteKey = null,
+    IReadOnlyList<SqliteViewTable>? SqliteTables = null);
 
 /// <summary>What a stage produced for one dataset. Every field is optional: a stage only fills in
 /// the part of the picture it owns, and the store merges them.</summary>

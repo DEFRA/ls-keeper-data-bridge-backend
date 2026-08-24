@@ -1,6 +1,7 @@
 using System.Text;
 using FluentAssertions;
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Staging;
 using KeeperData.Core.EtlPipeline.Stages;
@@ -25,6 +26,14 @@ public class LoadDuckDbStageTests
         StageRunner.RunAsync(
             new LoadDuckDbStage(_storage, _writer, NullLogger<LoadDuckDbStage>.Instance),
             inputs);
+
+    private Task<List<StagingDatabase>> RunAsync(
+        EtlPipelineContext context,
+        params SnapshotFile[] inputs) =>
+        StageRunner.RunAsync(
+            new LoadDuckDbStage(_storage, _writer, NullLogger<LoadDuckDbStage>.Instance),
+            inputs,
+            context);
 
     private SnapshotFile Snapshot(string dataSet, string timestamp, string content = "parquet")
     {
@@ -69,6 +78,18 @@ public class LoadDuckDbStageTests
     public async Task Produces_no_database_for_an_empty_input()
     {
         var output = await RunAsync();
+
+        output.Should().BeEmpty();
+        Staging.Keys.Should().BeEmpty();
+        _writer.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Dataset_filtered_run_does_not_publish_a_partial_shared_database()
+    {
+        var output = await RunAsync(
+            StageRunner.Context(dataset: "sam_cph_holdings"),
+            Snapshot("sam_cph_holdings", "20251115121333"));
 
         output.Should().BeEmpty();
         Staging.Keys.Should().BeEmpty();

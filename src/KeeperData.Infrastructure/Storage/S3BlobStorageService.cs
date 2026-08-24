@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.ExceptionServices;
 using Amazon.S3;
 using Amazon.S3.Model;
 using KeeperData.Core.Storage;
@@ -475,6 +476,8 @@ internal class MultipartUploadStream : Stream
 
     public override async ValueTask DisposeAsync()
     {
+        Exception? finalizationFailure = null;
+
         if (!_disposed)
         {
             try
@@ -487,6 +490,7 @@ internal class MultipartUploadStream : Stream
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error finalizing multipart upload for {Key}", _key);
+                finalizationFailure = ex;
 
                 // Attempt to abort the upload
                 try
@@ -506,6 +510,11 @@ internal class MultipartUploadStream : Stream
         }
 
         await base.DisposeAsync().ConfigureAwait(false);
+
+        if (finalizationFailure is not null)
+        {
+            ExceptionDispatchInfo.Capture(finalizationFailure).Throw();
+        }
     }
 
     private async Task FinalizeUploadAsync()

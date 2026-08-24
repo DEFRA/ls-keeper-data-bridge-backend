@@ -7,6 +7,7 @@ using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Setup;
 using KeeperData.Core.EtlPipeline.Staging;
 using KeeperData.Core.EtlPipeline.Storage;
+using KeeperData.Core.EtlPipeline.Views;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Crypto;
@@ -60,10 +61,13 @@ public sealed class InMemoryEtlPipelineHost : IDisposable
     /// for nine prefixes it does not assert on.</param>
     /// <param name="stagingDatabaseWriter">Omit for the recording writer; pass the real DuckDB
     /// writer to cover the SQL as well.</param>
+    /// <param name="sqliteViewWriter">Omit for the recording writer; pass the real DuckDB writer to
+    /// cover the read-model transformation as well.</param>
     public static InMemoryEtlPipelineHost Create(
         DateTimeOffset now,
         IReadOnlyList<DataSetDefinition> definitions,
-        IStagingDatabaseWriter? stagingDatabaseWriter = null)
+        IStagingDatabaseWriter? stagingDatabaseWriter = null,
+        ISqliteViewWriter? sqliteViewWriter = null)
     {
         ArgumentNullException.ThrowIfNull(definitions);
 
@@ -90,6 +94,7 @@ public sealed class InMemoryEtlPipelineHost : IDisposable
         services.AddSingleton(folders);
         services.AddSingleton<IEtlPipelineStorageProvider>(folders);
         services.AddSingleton(stagingDatabaseWriter ?? new RecordingStagingDatabaseWriter());
+        services.AddSingleton(sqliteViewWriter ?? new RecordingSqliteViewWriter());
 
         services.AddSingleton<IPasswordSaltService, PasswordSaltService>();
         services.AddSingleton<IAesCryptoTransform, AesCryptoTransform>();

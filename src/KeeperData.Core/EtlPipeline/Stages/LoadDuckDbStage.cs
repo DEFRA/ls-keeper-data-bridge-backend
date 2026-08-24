@@ -30,6 +30,14 @@ public sealed class LoadDuckDbStage(
         IPipelineContext context,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (context is EtlPipelineContext { Dataset: not null } filtered)
+        {
+            logger.LogInformation(
+                "Dataset-filtered run for {Dataset} stops after snapshots; no partial shared staging database is produced",
+                filtered.Dataset);
+            yield break;
+        }
+
         var snapshots = new List<SnapshotFile>();
         await foreach (var snapshot in input.WithCancellation(cancellationToken))
             snapshots.Add(snapshot);

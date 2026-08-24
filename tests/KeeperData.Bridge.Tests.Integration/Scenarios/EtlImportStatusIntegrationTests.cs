@@ -3,6 +3,7 @@ using FluentAssertions;
 using KeeperData.Bridge.Tests.Integration.Helpers;
 using KeeperData.Core.Database;
 using KeeperData.Core.EtlPipeline.Status;
+using KeeperData.Core.EtlPipeline.Views;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
@@ -51,24 +52,24 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
         await using var host = await CreateHostAsync();
         await host.PutEncryptedSourceFileAsync(SourceFile, SourceContent());
 
-        await _store.CreateQueuedAsync(importId, "external", "sam_cph_holdings", CancellationToken.None);
+        await _store.CreateQueuedAsync(importId, "external", null, CancellationToken.None);
 
         (await _store.GetAsync(importId, CancellationToken.None))!.Status
             .Should().Be(nameof(EtlImportStatus.Queued), "the document exists before the run starts, so a poll immediately after the trigger finds it");
 
-        await host.RunPipelineAsync(runId: importId, dataset: "sam_cph_holdings");
+        await host.RunPipelineAsync(runId: importId);
 
         var status = (await _store.GetAsync(importId, CancellationToken.None))!;
 
         status.Status.Should().Be(nameof(EtlImportStatus.Succeeded));
-        status.Dataset.Should().Be("sam_cph_holdings");
+        status.Dataset.Should().BeNull();
         status.StartedAtUtc.Should().NotBeNull();
         status.CompletedAtUtc.Should().NotBeNull();
         status.CurrentStage.Should().BeNull("a finished run is not in a stage");
         status.Error.Should().BeNull();
 
         status.Stages.Select(s => s.Name)
-            .Should().Equal("discover", "decrypt", "normalise", "snapshot", "load-duckdb");
+            .Should().Equal("discover", "decrypt", "normalise", "snapshot", "load-duckdb", "export-sqlite");
 
         var dataset = status.Datasets.Should().ContainSingle().Subject;
 
@@ -85,6 +86,9 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
         dataset.ColumnsAdded.Should().BeEmpty();
 
         status.DuckDbKey.Should().Be("keeper_data_bridge_20251113121333.duckdb");
+        status.SqliteKey.Should().Be("krds-db_20251113121333.sqlite");
+        status.SqliteTables.Select(table => table.Name)
+            .Should().BeEquivalentTo(SqliteViewDefinition.TableNames);
     }
 
     /// <summary>Schema drift is tolerated, so nothing fails and nothing is in the caller's face; the run
@@ -216,6 +220,19 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
         (await store.GetAsync(importId, CancellationToken.None))!.Status.Should().Be(nameof(EtlImportStatus.Failed));
         (await store.GetInFlightAsync(CancellationToken.None))?.ImportId
             .Should().NotBe(importId, "an abandoned run must not block the next import forever");
+    }
+
+    [Fact]
+    public async Task Starting_a_stage_records_the_stage_that_is_actually_running()
+    {
+        var importId = Guid.NewGuid();
+
+        await _store.CreateQueuedAsync(importId, "external", null, CancellationToken.None);
+        await _store.MarkRunningAsync(importId, ["discover", "export-sqlite"], CancellationToken.None);
+        await _store.MarkStageRunningAsync(importId, "export-sqlite", CancellationToken.None);
+
+        (await _store.GetAsync(importId, CancellationToken.None))!.CurrentStage
+            .Should().Be("export-sqlite");
     }
 
     [Fact]

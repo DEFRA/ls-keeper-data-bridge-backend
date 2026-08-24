@@ -13,6 +13,11 @@ public interface IPipelineRunObserver
         IReadOnlyList<string> stageNames,
         CancellationToken cancellationToken);
 
+    Task StageStartingAsync(
+        IPipelineContext context,
+        string stageName,
+        CancellationToken cancellationToken);
+
     Task StageCompletedAsync(
         IPipelineContext context,
         string stageName,

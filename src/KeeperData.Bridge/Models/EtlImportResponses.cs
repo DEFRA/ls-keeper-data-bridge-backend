@@ -40,8 +40,22 @@ public class EtlImportStatusResponse
     /// presigned URL to download it.</summary>
     public string? DuckDbPath { get; set; }
 
+    /// <summary>Key of the SQLite read model this run produced. Ask the staging endpoint for a
+    /// presigned URL to download it.</summary>
+    public string? SqlitePath { get; set; }
+
+    /// <summary>Row counts per table in the SQLite read model.</summary>
+    public List<EtlImportViewTableResponse> SqliteTables { get; set; } = [];
+
     /// <summary>A summary safe to show a caller: never a stack trace or a configuration value.</summary>
     public string? Error { get; set; }
+}
+
+[ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
+public class EtlImportViewTableResponse
+{
+    public required string Name { get; set; }
+    public long RowCount { get; set; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
@@ -122,6 +136,8 @@ public class EtlImportSummaryResponse
     public long? RowCount { get; set; }
 
     public string? DuckDbPath { get; set; }
+
+    public string? SqlitePath { get; set; }
 
     public string? Error { get; set; }
 }

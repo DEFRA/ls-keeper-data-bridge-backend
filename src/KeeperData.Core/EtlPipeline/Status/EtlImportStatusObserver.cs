@@ -15,6 +15,12 @@ public sealed class EtlImportStatusObserver(
     public Task RunStartingAsync(IPipelineContext context, IReadOnlyList<string> stageNames, CancellationToken cancellationToken)
         => store.MarkRunningAsync(ImportId(context), stageNames, cancellationToken);
 
+    public Task StageStartingAsync(
+        IPipelineContext context,
+        string stageName,
+        CancellationToken cancellationToken)
+        => store.MarkStageRunningAsync(ImportId(context), stageName, cancellationToken);
+
     public Task StageCompletedAsync(
         IPipelineContext context,
         string stageName,
@@ -30,8 +36,10 @@ public sealed class EtlImportStatusObserver(
             .ToList();
 
         var duckDbKey = items.OfType<StagingDatabase>().FirstOrDefault()?.Key;
+        var sqliteExport = items.OfType<SqliteExportFile>().FirstOrDefault();
 
-        var progress = new EtlImportStageProgress(stageName, items.Count, elapsed, datasets, duckDbKey);
+        var progress = new EtlImportStageProgress(
+            stageName, items.Count, elapsed, datasets, duckDbKey, sqliteExport?.Key, sqliteExport?.Tables);
 
         return store.RecordStageAsync(ImportId(context), progress, cancellationToken);
     }

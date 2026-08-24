@@ -10,5 +10,12 @@ namespace KeeperData.Bridge.Extensions
             && o.Key.EndsWith(StagingFileNaming.DatabaseExtension, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(o => o.Key, StringComparer.Ordinal)
             .FirstOrDefault();
+
+        /// <summary>The newest SQLite read model. Prefix-scoped rather than extension-scoped, because
+        /// views/ also holds the legacy cphs_ export.</summary>
+        public static StorageObjectInfo? GetLatestSqliteView(this IReadOnlyList<StorageObjectInfo> objects) =>
+            objects.Where(o => ViewsFileNaming.IsDatabaseKey(o.Key))
+            .OrderByDescending(o => o.Key, StringComparer.Ordinal)
+            .FirstOrDefault();
     }
 }

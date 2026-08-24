@@ -5,6 +5,7 @@ using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline.Staging;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Storage;
+using KeeperData.Core.EtlPipeline.Views;
 using KeeperData.Core.Pipeline;
 using KeeperData.Infrastructure.EtlPipeline.Staging;
 using KeeperData.Infrastructure.Tests.Unit.EtlPipeline.EndToEnd.Harness;
@@ -15,10 +16,12 @@ namespace KeeperData.Infrastructure.Tests.Unit.EtlPipeline.EndToEnd;
 
 /// <summary>
 /// End-to-end coverage of the ETL pipeline with no docker and no network:
-/// source -> discover -> decrypt -> normalise -> snapshot -> load.
+/// source -> discover -> decrypt -> normalise -> snapshot -> load -> export.
 ///
 /// Real crypto, real Parquet, real delta merge, real executor, real stage graph. Only blob storage
-/// is substituted, plus the staging database writer in all but one test. Deliberately carries no
+/// is substituted, plus the staging database writer in all but one test, and the read-model writer
+/// throughout - the transformation itself is covered by DuckDbSqliteViewWriterTests, because these
+/// fixtures do not carry the columns it reads. Deliberately carries no
 /// "Dependence" trait, so it runs in the per-commit CI job alongside the unit tests.
 ///
 /// The LocalStack suite in KeeperData.Bridge.Tests.Integration still covers the S3 wiring these
@@ -165,6 +168,10 @@ public sealed class EtlPipelineEndToEndCiTests
 
         host.Folders.Folder(EtlPipelineFolders.Raw).Keys.Should().HaveCount(3,
             "only the named dataset's files are decrypted");
+        host.Folders.Folder(EtlPipelineFolders.Staging).Keys.Should().BeEmpty(
+            "a filtered run cannot publish a partial database under the shared staging name");
+        host.Folders.Folder(EtlPipelineFolders.Views).Keys.Should().BeEmpty(
+            "the read model requires all of its source tables");
     }
 
     [Fact]
@@ -371,6 +378,47 @@ public sealed class EtlPipelineEndToEndCiTests
         }
     }
 
+    [Fact]
+    public async Task ExportStage_MaterialisesTheSqliteView_FromTheStagingDatabase()
+    {
+        var viewWriter = new RecordingSqliteViewWriter();
+
+        using var host = CreateHost(EtlFixtures.AllThree, sqliteViewWriter: viewWriter);
+        await SeedAllThreeAsync(host);
+
+        await host.RunAsync();
+
+        host.Folders.Folder(EtlPipelineFolders.Views).Keys.Should().ContainSingle()
+            .Which.Should().Be(
+                ViewsFileNaming.DatabaseKey(EtlFixtures.LatestSourceTimestamp),
+                "the read model carries the same source timestamp as the staging database it came from");
+
+        var request = viewWriter.OnlyCall;
+        request.Sql.Should().Be(SqliteViewDefinition.Sql, "the embedded transformation is what runs");
+        request.TableNames.Should().BeEquivalentTo(SqliteViewDefinition.TableNames);
+    }
+
+    [Fact]
+    public async Task ExportStage_PublishesNothing_WhenTheTransformationFails()
+    {
+        using var host = CreateHost(EtlFixtures.AllThree, sqliteViewWriter: new FailingSqliteViewWriter());
+        await SeedAllThreeAsync(host);
+
+        var act = async () => await host.RunAsync();
+
+        await act.Should().ThrowAsync<PipelineExecutionException>();
+        host.Folders.Folder(EtlPipelineFolders.Views).Keys.Should().BeEmpty(
+            "a failed run must leave no read model for a consumer to pick up");
+    }
+
+    private sealed class FailingSqliteViewWriter : ISqliteViewWriter
+    {
+        public Task<SqliteViewWriteResult> WriteAsync(
+            SqliteViewWriteRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Binder Error: no such table sam_cph_holder");
+    }
+
     private static async Task<List<(string, string)>> QueryPairsAsync(DuckDBConnection connection, string sql)
     {
         using var command = connection.CreateCommand();
@@ -389,8 +437,10 @@ public sealed class EtlPipelineEndToEndCiTests
 
     private static InMemoryEtlPipelineHost CreateHost(
         IReadOnlyList<DataSetDefinition>? definitions = null,
-        IStagingDatabaseWriter? writer = null)
-        => InMemoryEtlPipelineHost.Create(EtlFixtures.RunClock, definitions ?? EtlFixtures.AllThree, writer);
+        IStagingDatabaseWriter? writer = null,
+        ISqliteViewWriter? sqliteViewWriter = null)
+        => InMemoryEtlPipelineHost.Create(
+            EtlFixtures.RunClock, definitions ?? EtlFixtures.AllThree, writer, sqliteViewWriter);
 
     private static async Task SeedAllThreeAsync(InMemoryEtlPipelineHost host)
     {

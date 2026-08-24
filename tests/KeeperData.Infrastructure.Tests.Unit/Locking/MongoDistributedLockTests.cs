@@ -103,7 +103,7 @@ public class MongoDistributedLockTests
         _indexManagerMock.Verify(im => im.CreateOneAsync(It.IsAny<CreateIndexModel<DistributedLock>>(), It.IsAny<CreateOneIndexOptions>(), It.IsAny<CancellationToken>()), Times.Once);
         capturedIndexModel.Should().NotBeNull();
         capturedIndexModel!.Options.ExpireAfter.Should().Be(TimeSpan.Zero);
-        var renderedKeys = capturedIndexModel.Keys.Render(BsonSerializer.SerializerRegistry.GetSerializer<DistributedLock>(), BsonSerializer.SerializerRegistry);
+        var renderedKeys = capturedIndexModel.Keys.Render(new RenderArgs<DistributedLock>(BsonSerializer.SerializerRegistry.GetSerializer<DistributedLock>(), BsonSerializer.SerializerRegistry));
         renderedKeys.ToString().Should().Be("{ \"ExpiresAtUtc\" : 1 }");
     }
 

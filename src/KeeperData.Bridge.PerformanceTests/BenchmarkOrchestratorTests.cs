@@ -41,8 +41,7 @@ public class BenchmarkOrchestratorTests : IAsyncLifetime
     {
         _output.WriteLine("=== Starting MongoDB container for benchmark tests ===");
 
-        _mongoDbContainer = new MongoDbBuilder()
-            .WithImage("mongo:7.0")
+        _mongoDbContainer = new MongoDbBuilder("mongo:7.0")
             .Build();
 
         await _mongoDbContainer.StartAsync();
@@ -391,7 +390,7 @@ public class BenchmarkOrchestratorTests : IAsyncLifetime
 
         var pointLookup = report!.ExplainResults.First(e => e.QueryName == "PointLookup");
         pointLookup.NReturned.Should().Be(1);
-        pointLookup.TotalDocsExamined.Should().BeLessOrEqualTo(1);
+        pointLookup.TotalDocsExamined.Should().BeLessThanOrEqualTo(1);
 
         var rangeQuery = report.ExplainResults.First(e => e.QueryName == "RangeQuery");
         rangeQuery.TotalKeysExamined.Should().BeGreaterThan(0);

@@ -1,10 +1,7 @@
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline.Fluent;
 using KeeperData.Core.EtlPipeline.Stages;
-using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Pipeline;
-using Microsoft.Extensions.Logging;
-using XsvHcdtHelper;
 
 namespace KeeperData.Core.EtlPipeline;
 
@@ -13,9 +10,7 @@ namespace KeeperData.Core.EtlPipeline;
 public sealed class EtlPipelineFactory(
     IExternalCatalogueServiceFactory catalogueFactory,
     DecryptStage decryptStage,
-    IEtlPipelineStorageProvider storageProvider,
-    IXsvHcdtNormaliser hcdtNormaliser,
-    ILogger<NormaliseStage> normaliseLogger,
+    NormaliseStage normaliseStage,
     SnapshotStage snapshotStage,
     LoadDuckDbStage loadDuckDbStage,
     ExportSqliteStage exportSqliteStage) : IEtlPipelineFactory
@@ -25,7 +20,7 @@ public sealed class EtlPipelineFactory(
             .InputSource(new S3RawFolderSource(catalogueFactory))
             .Discover()               // -> DiscoveredFileSet
             .Decrypt(decryptStage)    // -> RawFileSet        (raw/)
-            .Normalise(storageProvider, hcdtNormaliser, normaliseLogger)     // -> NormalisedFileSet (normalised/*.parquet)
+            .Normalise(normaliseStage) // -> NormalisedFileSet (normalised/*.parquet)
             .Snapshot(snapshotStage)  // -> SnapshotFile      (snapshots/*.parquet)
             .LoadDuckDb(loadDuckDbStage) // -> StagingDatabase (staging/*.duckdb)
             .ExportSqlite(exportSqliteStage) // -> SqliteExportFile (views/*.sqlite)

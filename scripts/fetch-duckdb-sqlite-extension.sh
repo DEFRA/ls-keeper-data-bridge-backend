@@ -25,7 +25,8 @@ mkdir -p "${output_directory}"
 
 # -f so an unknown version fails the build loudly rather than leaving an HTML error page behind and
 # only failing at run time, in a task with no egress to recover from it.
-curl -fSL --retry 3 --retry-all-errors --retry-delay 2 \
+curl -fSL --proto '=https' --proto-redir '=https' \
+	--retry 3 --retry-all-errors --retry-delay 2 \
 	"${url}" -o "${output_directory}/${file_name}.gz"
 gunzip -f "${output_directory}/${file_name}.gz"
 

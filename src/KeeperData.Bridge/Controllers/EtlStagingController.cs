@@ -58,9 +58,9 @@ public class EtlStagingController(
 
             return PresignedUrlReady(latest, presignedUrl, expiry);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            logger.LogWarning("Get latest DuckDB staging request was cancelled");
+            logger.LogWarning(ex, "Get latest DuckDB staging request was cancelled");
             return RequestCancelled();
         }
         catch (Exception ex)
@@ -114,9 +114,9 @@ public class EtlStagingController(
                 ExpiresAt = DateTime.UtcNow.Add(expiry)
             });
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            logger.LogWarning("Get latest SQLite read model request was cancelled");
+            logger.LogWarning(ex, "Get latest SQLite read model request was cancelled");
             return RequestCancelled();
         }
         catch (Exception ex)

@@ -102,22 +102,34 @@ CREATE TABLE target.PartyRole (
 -- The source extracts do not carry a database primary key, so IDs are derived
 -- from stable source keys. This is SHA-1 name-derived and UUID-shaped, with
 -- RFC 4122 version/variant bits set for interoperability.
+CREATE OR REPLACE TEMP MACRO source_digest(kind, source_key) AS (
+    sha1('sam-read-model-v1|' || kind || '|' || source_key)
+);
+
 CREATE OR REPLACE TEMP MACRO source_guid(kind, source_key) AS (
     CASE WHEN source_key IS NULL THEN NULL ELSE
         concat(
-            substr(sha1('sam-read-model-v1|' || kind || '|' || source_key), 1, 8), '-',
-            substr(sha1('sam-read-model-v1|' || kind || '|' || source_key), 9, 4), '-',
-            '5', substr(sha1('sam-read-model-v1|' || kind || '|' || source_key), 14, 3), '-',
-            '8', substr(sha1('sam-read-model-v1|' || kind || '|' || source_key), 18, 3), '-',
-            substr(sha1('sam-read-model-v1|' || kind || '|' || source_key), 21, 12)
+            substr(source_digest(kind, source_key), 1, 8), '-',
+            substr(source_digest(kind, source_key), 9, 4), '-',
+            '5', substr(source_digest(kind, source_key), 14, 3), '-',
+            '8', substr(source_digest(kind, source_key), 18, 3), '-',
+            substr(source_digest(kind, source_key), 21, 12)
         )
     END
+);
+
+CREATE OR REPLACE TEMP MACRO holding_guid(cph) AS (
+    source_guid('holding', cph)
 );
 
 -- Source extracts use a single hyphen and empty strings as missing-value
 -- sentinels. Keep source identifiers separate and normalise descriptive data.
 CREATE OR REPLACE TEMP MACRO null_dash(value) AS (
     NULLIF(NULLIF(NULLIF(trim(value), ''), '-'), ',')
+);
+
+CREATE OR REPLACE TEMP MACRO valid_cphh(value) AS (
+    regexp_matches(value, '^[0-9]{2}/[0-9]{3}/[0-9]{4}/[0-9]{2}$')
 );
 
 CREATE OR REPLACE TEMP VIEW normalized_role_party_ids AS
@@ -212,7 +224,7 @@ GROUP BY null_dash(CPH);
 
 INSERT INTO target.Holding
 SELECT
-    source_guid('holding', h.Cph),
+    holding_guid(h.Cph),
     h.Cph,
     a.FeatureName,
     a.CphType,
@@ -255,13 +267,13 @@ SELECT
     any_value(null_dash(ANIMAL_GROUP_ID_MCH_TO_DAT)) AS AnimalGroupToDate
 FROM sam_herd
 WHERE CPHH IS NOT NULL
-  AND regexp_matches(CPHH, '^[0-9]{2}/[0-9]{3}/[0-9]{4}/[0-9]{2}$')
+    AND valid_cphh(CPHH)
 GROUP BY HERDMARK, CPHH;
 
 INSERT INTO target.Herd
 SELECT
     source_guid('herd', h.HERDMARK || '|' || h.CPHH),
-    source_guid('holding', h.Cph),
+    holding_guid(h.Cph),
     h.HERDMARK,
     h.CPHH,
     h.AnimalSpeciesCode,
@@ -294,7 +306,7 @@ SELECT
         profile.Cph || '|' || profile.AnimalSpeciesCode || '|' || COALESCE(profile.AnimalProductionUsageCode, '') || '|' ||
         COALESCE(profile.DiseaseType, '') || '|' || COALESCE(profile.Interval, '') || '|' || COALESCE(profile.IntervalUnitOfTime, '')
     ),
-    source_guid('holding', profile.Cph),
+    holding_guid(profile.Cph),
     profile.AnimalSpeciesCode,
     profile.AnimalProductionUsageCode,
     profile.DiseaseType,
@@ -321,7 +333,7 @@ SELECT DISTINCT
 FROM sam_herd,
      UNNEST(string_split(COALESCE(KEEPER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> ''
-  AND regexp_matches(CPHH, '^[0-9]{2}/[0-9]{3}/[0-9]{4}/[0-9]{2}$')
+    AND valid_cphh(CPHH)
 UNION
 SELECT DISTINCT
     trim(token) AS PARTY_ID,
@@ -331,25 +343,21 @@ SELECT DISTINCT
 FROM sam_herd,
      UNNEST(string_split(COALESCE(OWNER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> ''
-  AND regexp_matches(CPHH, '^[0-9]{2}/[0-9]{3}/[0-9]{4}/[0-9]{2}$');
+    AND valid_cphh(CPHH);
 
 INSERT INTO target.PartyRole
 SELECT
     source_guid('party-role', role.PARTY_ID || '|' || role.Cph || '|' || COALESCE(role.HerdId, '') || '|' || role.Role),
     source_guid('party', role.PARTY_ID),
-    source_guid('holding', role.Cph),
+    holding_guid(role.Cph),
     role.HerdId,
     role.Role
 FROM normalized_party_role role
 JOIN normalized_party party ON party.PARTY_ID = role.PARTY_ID
 JOIN normalized_holding_cph holding ON holding.Cph = role.Cph
+LEFT JOIN target.Herd herd ON herd.Id = role.HerdId
 WHERE role.HerdId IS NULL
-   OR EXISTS (
-       SELECT 1
-       FROM normalized_herd herd
-       JOIN normalized_holding_cph herd_holding ON herd_holding.Cph = herd.Cph
-       WHERE source_guid('herd', herd.HERDMARK || '|' || herd.CPHH) = role.HerdId
-   );
+    OR herd.Id IS NOT NULL;
 
 CREATE INDEX ix_party_email ON target.main.Party (Email);
 CREATE INDEX ix_holding_cph ON target.main.Holding (Cph);

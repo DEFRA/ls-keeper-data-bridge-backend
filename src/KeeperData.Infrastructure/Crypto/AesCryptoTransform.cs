@@ -140,6 +140,10 @@ public class AesCryptoTransform : IAesCryptoTransform
         await DecryptStreamAsync(inputStream, outputStream, password, saltBytes, totalBytes, progressCallback, cancellationToken);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Security",
+        "S5344:Passwords should not be stored in plaintext or with a fast hashing algorithm",
+        Justification = "PBKDF2 parameters (32 iterations, SHA1, 8-byte salt) are fixed by the external file format and match the counterparty PBEKeySpec implementation. They cannot be changed unilaterally without breaking interoperability and rendering existing encrypted files unreadable. Tracked under <TICKET-ID>.")]
     private static byte[] DeriveKey(string password, byte[] salt)
     {
         var actualSalt = salt;

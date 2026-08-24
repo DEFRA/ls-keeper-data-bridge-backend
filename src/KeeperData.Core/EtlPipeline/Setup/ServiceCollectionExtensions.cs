@@ -20,6 +20,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IDeltaMergeEngine, ParquetDeltaMergeEngine>();
 
         services.AddScoped<DecryptStage>();
+        services.AddScoped<NormaliseStage>();
         services.AddScoped<SnapshotStage>();
         services.AddScoped<LoadDuckDbStage>();
         services.AddScoped<ExportSqliteStage>();

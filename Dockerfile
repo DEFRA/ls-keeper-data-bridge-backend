@@ -36,7 +36,11 @@ COPY ["nuget.config", "."]
 RUN --mount=type=secret,id=nuget_auth_token,required=false \
     if [ -f /run/secrets/nuget_auth_token ]; then \
         token="$(cat /run/secrets/nuget_auth_token)"; \
-        dotnet nuget update source DEFRA --username "github-actions" --password "$token" --store-password-in-clear-text --configfile ./nuget.config; \
+        dotnet nuget update source DEFRA \
+            --username "github-actions" \
+            --password "$token" \
+            --store-password-in-clear-text \
+            --configfile ./nuget.config; \
     else \
         dotnet nuget remove source DEFRA --configfile ./nuget.config || true; \
     fi; \
@@ -52,7 +56,13 @@ COPY ["src/", "."]
 
 FROM build AS publish
 WORKDIR "/src/KeeperData.Bridge"
-RUN dotnet publish "KeeperData.Bridge.csproj" -v n -c "${BUILD_CONFIGURATION}" -o /app/publish -r linux-x64 --no-restore /p:UseAppHost=false
+RUN dotnet publish "KeeperData.Bridge.csproj" \
+    -v n \
+    -c "${BUILD_CONFIGURATION}" \
+    -o /app/publish \
+    -r linux-x64 \
+    --no-restore \
+    /p:UseAppHost=false
 
 ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 

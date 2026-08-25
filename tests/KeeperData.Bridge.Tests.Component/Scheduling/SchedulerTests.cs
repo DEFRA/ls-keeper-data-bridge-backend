@@ -16,13 +16,6 @@ public class SchedulerTests
 
         var coordinatorMock = new Mock<IIngestionRunCoordinator>();
 
-        coordinatorMock.Setup(x => x.RunAsync(It.IsAny<CancellationToken>()))
-            .Returns(() =>
-            {
-                jobDidRun.Set();
-                return Task.CompletedTask;
-            });
-
         var host = Host.CreateDefaultBuilder()
             .ConfigureServices((hostContext, services) =>
             {
@@ -36,6 +29,10 @@ public class SchedulerTests
                     // Durable as don't want a timed trigger in tests
                     var jobKey = new JobKey("TestJob");
                     q.AddJob<ImportBulkFilesJob>(opts => opts.WithIdentity(jobKey).StoreDurably());
+
+                    // The job body is a no-op while the old ETL is switched off, so execution is
+                    // observed through the scheduler instead of through the coordinator.
+                    q.AddJobListener(new JobCompletionListener(jobDidRun));
                 });
                 services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
             }).Build();
@@ -51,6 +48,27 @@ public class SchedulerTests
         await host.StopAsync();
 
         Assert.True(completedInTime, "The job did not complete in the expected time.");
-        coordinatorMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
+        coordinatorMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private sealed class JobCompletionListener(ManualResetEventSlim signal) : IJobListener
+    {
+        public string Name => nameof(JobCompletionListener);
+
+        public Task JobToBeExecuted(IJobExecutionContext context, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task JobExecutionVetoed(IJobExecutionContext context, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task JobWasExecuted(IJobExecutionContext context, JobExecutionException? jobException, CancellationToken cancellationToken = default)
+        {
+            if (jobException is null)
+            {
+                signal.Set();
+            }
+
+            return Task.CompletedTask;
+        }
     }
 }

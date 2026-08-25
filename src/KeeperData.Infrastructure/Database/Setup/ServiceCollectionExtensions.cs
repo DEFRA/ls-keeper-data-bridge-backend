@@ -18,6 +18,8 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Conventions;
 using MongoDB.Bson.Serialization.Serializers;
+using MongoDB.Driver;
+using MongoDB.Driver.Authentication.AWS;
 using System.Diagnostics.CodeAnalysis;
 
 namespace KeeperData.Infrastructure.Database.Setup;
@@ -75,6 +77,11 @@ public static class ServiceCollectionExtensions
                 {
                     BsonSerializer.RegisterSerializer(typeof(Guid), new GuidSerializer(GuidRepresentation.Standard));
                     ConventionRegistry.Register("CamelCase", new ConventionPack { new CamelCaseElementNameConvention() }, _ => true);
+
+                    // Deployed environments authenticate to DocumentDB with authMechanism=MONGODB-AWS, which
+                    // driver 3.x only supports once this opt-in runs. The registry throws on a second call.
+                    MongoClientSettings.Extensions.AddAWSAuthentication();
+
                     s_mongoSerializersRegistered = true;
                 }
             }

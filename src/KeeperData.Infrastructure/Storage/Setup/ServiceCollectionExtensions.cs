@@ -5,6 +5,8 @@ using KeeperData.Infrastructure.Storage.Clients;
 using KeeperData.Infrastructure.Storage.Configuration;
 using KeeperData.Infrastructure.Storage.Factories;
 using KeeperData.Infrastructure.Storage.Factories.Implementations;
+using KeeperData.Infrastructure.Storage.KeyRotation;
+using KeeperData.Infrastructure.Storage.KeyRotation.Setup;
 using KeeperData.Infrastructure.Storage.Readers;
 using KeeperData.Infrastructure.Storage.Readers.Implementations;
 using Microsoft.Extensions.Configuration;
@@ -30,11 +32,25 @@ public static class ServiceCollectionExtensions
             ? new AmazonS3Config { ServiceURL = storageConfiguration.ExternalStorage.ServiceUrl }
             : defaultAmazonS3Config;
 
+        // The external client uses rotatable credentials: latest validated rotated key from
+        // Mongo when key rotation is configured, otherwise the env-var configured fallback.
+        // Preserve the original fail-fast on missing fallback credentials.
+        var fallbackAccessKey = Environment.GetEnvironmentVariable(storageConfiguration.ExternalStorage.AccessKeySecretName);
+        var fallbackSecretKey = Environment.GetEnvironmentVariable(storageConfiguration.ExternalStorage.SecretKeySecretName);
+
+        if (string.IsNullOrWhiteSpace(fallbackAccessKey) || string.IsNullOrWhiteSpace(fallbackSecretKey))
+            throw new InvalidOperationException($"Missing AWS credentials for '{nameof(ExternalStorageClient)}'");
+
+        var rotatableCredentials = new RotatableExternalCredentials(fallbackAccessKey, fallbackSecretKey);
+        services.AddSingleton(rotatableCredentials);
+        services.AddSingleton(new ExternalStorageS3Config(externalS3Config));
+
         factory.AddClientWithCredentials<ExternalStorageClient>(
                 storageConfiguration.ExternalStorage.BucketName,
-                storageConfiguration.ExternalStorage.AccessKeySecretName,
-                storageConfiguration.ExternalStorage.SecretKeySecretName,
+                rotatableCredentials,
                 externalS3Config);
+
+        services.AddKeyRotationDependencies(configuration);
 
         if (!storageConfiguration.UseFileSystem)
         {

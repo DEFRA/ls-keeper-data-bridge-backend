@@ -56,8 +56,7 @@ public class PerformanceTests : IAsyncLifetime
 
         // Start LocalStack container
         _output.WriteLine("Starting LocalStack container...");
-        _localStackContainer = new LocalStackBuilder()
-            .WithImage("localstack/localstack:3.0")
+        _localStackContainer = new LocalStackBuilder("localstack/localstack:3.0")
             .Build();
 
         await _localStackContainer.StartAsync();
@@ -78,8 +77,7 @@ public class PerformanceTests : IAsyncLifetime
 
         // Start MongoDB container
         _output.WriteLine("Starting MongoDB container...");
-        _mongoDbContainer = new MongoDbBuilder()
-            .WithImage("mongo:7.0")
+        _mongoDbContainer = new MongoDbBuilder("mongo:7.0")
             .Build();
 
         await _mongoDbContainer.StartAsync();
@@ -323,6 +321,12 @@ public class PerformanceTests : IAsyncLifetime
             SamCPHHolder = dataSetDefinition,
             SamHerd = dataSetDefinition,
             SamParty = dataSetDefinition,
+            SamTla = dataSetDefinition,
+            Amls2CommonLand = dataSetDefinition,
+            Amls2Port = dataSetDefinition,
+            CtsAgent = dataSetDefinition,
+            AmesHaulier = dataSetDefinition,
+            SamShowground = dataSetDefinition,
             All = [dataSetDefinition]
         };
         services.AddSingleton<Core.ETL.Abstract.IDataSetDefinitions>(dataSetDefinitions);
@@ -579,7 +583,7 @@ public class PerformanceTests : IAsyncLifetime
         _output.WriteLine("Verifying data integrity...");
 
         queryResults.Count.Should().BeGreaterThan(0, "Should have ingested records");
-        queryResults.Count.Should().BeLessOrEqualTo(expectedRecordCount, "Should not have more records than generated");
+        queryResults.Count.Should().BeLessThanOrEqualTo(expectedRecordCount, "Should not have more records than generated");
 
         var sampleSize = Math.Min(5, queryResults.Count);
         for (int i = 0; i < sampleSize; i++)

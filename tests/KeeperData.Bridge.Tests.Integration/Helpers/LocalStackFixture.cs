@@ -17,8 +17,7 @@ public class LocalStackFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        Container = new LocalStackBuilder()
-            .WithImage("localstack/localstack:2.3")
+        Container = new LocalStackBuilder("localstack/localstack:2.3")
             .WithEnvironment("SERVICES", "s3")
             .WithEnvironment("DEBUG", "1")
             .WithEnvironment("AWS_DEFAULT_REGION", "us-east-1")

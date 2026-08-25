@@ -1,32 +1,60 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3.19" />
-    <PackageReference Include="AWSSDK.Core" Version="4.0.3.8" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.17.1" />
-    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.5.6" />
-    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.13" />
-    <PackageReference Include="Elastic.CommonSchema.Serilog" Version="8.11.1" />
-    <PackageReference Include="GovukNotify" Version="7.2.0" />
-    <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" Version="8.0.11" />
-    <PackageReference Include="MongoDB.Driver" Version="2.28.0" />
-    <PackageReference Include="Serilog.AspNetCore" Version="8.0.2" />
-    <PackageReference Include="Serilog.Enrichers.ClientInfo" Version="2.1.2" />
+    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.101" />
+    <PackageReference Include="AWSSDK.Core" Version="4.0.102" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.102.3" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.100.10" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.100.10" />
+    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.5" />
+    <PackageReference Include="Elastic.CommonSchema.Serilog" Version="9.0.0" />
+    <PackageReference Include="Elastic.Serilog.Enrichers.Web" Version="9.0.0" />
+    <PackageReference Include="GovukNotify" Version="8.1.0" />
+    <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <PackageReference Include="MongoDB.Driver" Version="3.11.0" />
+    <!-- Driver 3.x moved MONGODB-AWS out of MongoDB.Driver; keep this version in step with it. -->
+    <PackageReference Include="MongoDB.Driver.Authentication.AWS" Version="3.11.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Enrichers.ClientInfo" Version="2.9.0" />
     <PackageReference Include="Serilog.Enrichers.CorrelationId" Version="3.0.1" />
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
-    <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
-    <PackageReference Include="Serilog.Settings.Configuration" Version="8.0.2" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Serilog.Settings.Configuration" Version="10.0.1" />
     <PackageReference Include="Amazon.CloudWatch.EMF" Version="2.2.0" />
-    <PackageReference Include="Humanizer.Core" Version="2.14.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.9" />
+    <PackageReference Include="Humanizer.Core" Version="3.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="KeeperData.Infrastructure.Tests.Unit" />
+  </ItemGroup>
+
+  <!-- The bundled DuckDB SQLite extension must match the DuckDB the package links against, and the
+       repository is versioned by that number. Emitting the resolved version keeps the Docker build
+       from carrying a second copy of it that someone has to remember to update. Declared as Content
+       from AssignTargetPaths so it reaches the publish output of whichever host publishes this. -->
+  <Target Name="WriteDuckDbVersion" BeforeTargets="AssignTargetPaths">
+    <PropertyGroup>
+      <_DuckDbVersion>@(PackageReference->WithMetadataValue('Identity','DuckDB.NET.Data.Full')->'%(Version)')</_DuckDbVersion>
+      <_DuckDbVersionFile>$(IntermediateOutputPath)duckdb-version.txt</_DuckDbVersionFile>
+    </PropertyGroup>
+    <Error Condition="'$(_DuckDbVersion)' == ''" Text="DuckDB.NET.Data.Full is no longer a direct PackageReference, so the bundled SQLite extension can no longer be version-matched." />
+    <WriteLinesToFile File="$(_DuckDbVersionFile)" Lines="$(_DuckDbVersion)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Content Include="$(_DuckDbVersionFile)"
+               Link="duckdb-version.txt"
+               CopyToOutputDirectory="PreserveNewest"
+               CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <ProjectReference Include="..\KeeperData.Application\KeeperData.Application.csproj" />

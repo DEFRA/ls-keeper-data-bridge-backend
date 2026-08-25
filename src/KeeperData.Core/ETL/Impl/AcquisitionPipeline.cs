@@ -119,11 +119,11 @@ public class AcquisitionPipeline(
         }
     }
 
-    private (IBlobStorageServiceReadOnly SourceBlobs, ExternalCatalogueService ExternalCatalogueService, IBlobStorageService DestinationBlobs)
+    private (IBlobStorageServiceReadOnly SourceBlobs, IExternalCatalogueService ExternalCatalogueService, IBlobStorageService DestinationBlobs)
         InitializeStorageServices(Guid importId, string sourceType)
     {
         var sourceBlobs = blobStorageServiceFactory.GetSource(sourceType);
-        var catalogueService = ExternalCatalogueServiceFactory.Create(sourceBlobs);
+        var catalogueService = ExternalCatalogueServiceFactory.CreateLegacy(sourceBlobs);
         var destinationBlobs = blobStorageServiceFactory.Get();
 
         logger.LogDebug("Initialized blob storage services for ImportId: {ImportId}", importId);

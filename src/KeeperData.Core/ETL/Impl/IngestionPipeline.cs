@@ -108,18 +108,18 @@ public class IngestionPipeline(
         }
     }
 
-    private (IBlobStorageService BlobStorage, ExternalCatalogueService CatalogueService) InitializeStorageServices(Guid importId)
+    private (IBlobStorageService BlobStorage, IExternalCatalogueService CatalogueService) InitializeStorageServices(Guid importId)
     {
         Debug.WriteLine($"[keepetl] Initializing blob storage services for ImportId: {importId}");
         var blobs = blobStorageServiceFactory.Get();
-        var catalogueService = ExternalCatalogueServiceFactory.Create(blobs);
+        var catalogueService = ExternalCatalogueServiceFactory.CreateLegacy(blobs);
 
         logger.LogDebug("Initialized blob storage services for ImportId: {ImportId}", importId);
 
         return (blobs, catalogueService);
     }
 
-    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(Guid importId, ExternalCatalogueService catalogueService, CancellationToken ct)
+    private async Task<(ImmutableList<FileSet> FileSets, int TotalFiles)> DiscoverFilesAsync(Guid importId, IExternalCatalogueService catalogueService, CancellationToken ct)
     {
         Debug.WriteLine($"[keepetl] Step 1: Discovering files for ImportId: {importId}");
         logger.LogInformation("Step 1: Discovering files for ImportId: {ImportId}", importId);
@@ -128,8 +128,7 @@ public class IngestionPipeline(
         var totalFiles = fileSets.Sum(fs => fs.Files.Length);
 
         Debug.WriteLine($"[keepetl] Discovered {fileSets.Count} file set(s) containing {totalFiles} file(s) for ImportId: {importId}");
-        logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {importId}", fileSets.Count, totalFiles, importId);
-
+        logger.LogInformation("Discovered {FileSetCount} file set(s) containing {TotalFileCount} file(s) for ImportId: {ImportId}", fileSets.Count, totalFiles, importId);
         return (fileSets, totalFiles);
     }
 
@@ -476,13 +475,9 @@ public class IngestionPipeline(
         {
             var changeType = csv.GetField(headers.ChangeTypeHeaderName)?.ToUpperInvariant() ?? string.Empty;
 
-            if (!IsValidChangeType(changeType))
+            // Validate record - skip if invalid
+            if (!TryValidateRecord(changeType, collectionName, csv, headers, fileKey, fileMetrics))
             {
-                var primaryKeyValue = string.Join(EtlConstants.CompositeKeyDelimiter, headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty));
-                Debug.WriteLine($"[keepetl] Invalid change type '{changeType}' for record with primary key '{primaryKeyValue}' in file {fileKey}, skipping record");
-                logger.LogWarning("Invalid change type '{ChangeType}' for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
-                    changeType, primaryKeyValue, fileKey);
-                fileMetrics.RecordsSkipped++;
                 continue;
             }
 
@@ -492,44 +487,11 @@ public class IngestionPipeline(
             var ingestionSettings = throttler.Settings.Ingestion;
             if (batch.Count >= ingestionSettings.BatchSize)
             {
-                var batchStopwatch = Stopwatch.StartNew();
-                Debug.WriteLine($"[keepetl] -- NEW BATCH (size:{ingestionSettings.BatchSize}) --");
-                Debug.WriteLine($"[keepetl] Processing batch of {batch.Count} documents for collection {collectionName}");
-
-                var batchMetrics = await ProcessBatchAsync(importId, collection, batch, fileKey, collectionName, definition, lineageEvents, ct);
-
-                await FlushLineageEventsAsync(lineageEvents, ct);
-
-                var batchDto = new KeeperData.Core.Reporting.Dtos.BatchProcessingMetrics
-                {
-                    RecordsProcessed = batchMetrics.RecordsProcessed,
-                    RecordsCreated = batchMetrics.RecordsCreated,
-                    RecordsUpdated = batchMetrics.RecordsUpdated,
-                    RecordsDeleted = batchMetrics.RecordsDeleted
-                };
-                fileMetrics.AddBatch(batchDto);
-                totals = totals.Add(new IngestionTotals
-                {
-                    RecordsCreated = batchMetrics.RecordsCreated,
-                    RecordsUpdated = batchMetrics.RecordsUpdated,
-                    RecordsDeleted = batchMetrics.RecordsDeleted
-                });
-
-                batchStopwatch.Stop();
-                totalMongoProcessingMs += batchStopwatch.ElapsedMilliseconds;
-
-                Debug.WriteLine($"[keepetl] Processed batch of {ingestionSettings.BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {fileMetrics.RecordsProcessed}, Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}");
-                Debug.WriteLine($"[keepetl] -- END BATCH ({batchStopwatch.Elapsed.TotalSeconds}s, {batchStopwatch.ElapsedMilliseconds}ms) --");
-
-                if (ingestionSettings.BatchDelayMs > 0)
-                {
-                    Debug.WriteLine($"[keepetl] Throttling: waiting {ingestionSettings.BatchDelayMs}ms before next batch");
-                    await throttler.DelayAsync(ingestionSettings.BatchDelayMs, ct);
-                }
-
-                Debug.WriteLine($"[keepetl] ");
-
-                batch.Clear();
+                var (elapsed, updatedTotals) = await ProcessAndClearBatchAsync(
+                    importId, collection, batch, fileKey, collectionName, definition,
+                    lineageEvents, fileMetrics, totals, ct);
+                totalMongoProcessingMs += elapsed;
+                totals = updatedTotals;
             }
 
             if (fileMetrics.RecordsProcessed > lastReportedRecordCount &&
@@ -603,6 +565,110 @@ public class IngestionPipeline(
         return changeType == ChangeType.Delete ||
                changeType == ChangeType.Update ||
                changeType == ChangeType.Insert;
+    }
+
+    private static bool IsValid5CharAlphaCph(string? cphValue)
+    {
+        if (string.IsNullOrWhiteSpace(cphValue))
+        {
+            return false;
+        }
+
+        // CPH should be exactly 5 alpha characters
+        return cphValue.Length == 5 && cphValue.All(char.IsLetter);
+    }
+
+    private bool TryValidateRecord(
+        string changeType,
+        string collectionName,
+        CsvReader csv,
+        CsvHeaders headers,
+        string fileKey,
+        FileMetricsTracker fileMetrics)
+    {
+        // Validate change type
+        if (!IsValidChangeType(changeType))
+        {
+            var primaryKeyValue = string.Join(EtlConstants.CompositeKeyDelimiter,
+                headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty));
+            Debug.WriteLine($"[keepetl] Invalid change type '{changeType}' for record with primary key '{primaryKeyValue}' in file {fileKey}, skipping record");
+            logger.LogWarning("Invalid change type '{ChangeType}' for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
+                changeType, primaryKeyValue, fileKey);
+            fileMetrics.RecordsSkipped++;
+            return false;
+        }
+
+        // Validate CPH format for amls2_port collection
+        if (collectionName == "amls2_port")
+        {
+            var cphValue = csv.GetField("CPH");
+            if (!IsValid5CharAlphaCph(cphValue))
+            {
+                var primaryKeyValue = string.Join(EtlConstants.CompositeKeyDelimiter,
+                    headers.PrimaryKeyHeaderNames.Select(pkHeader => csv.GetField(pkHeader) ?? string.Empty));
+                Debug.WriteLine($"[keepetl] Invalid CPH format '{cphValue}' (expected 5 alpha characters) for record with primary key '{primaryKeyValue}' in file {fileKey}, skipping record");
+                logger.LogWarning("Invalid CPH format '{CPH}' (expected 5 alpha characters) for record with primary key '{PrimaryKey}' in file {FileKey}, skipping record",
+                    cphValue, primaryKeyValue, fileKey);
+                fileMetrics.RecordsSkipped++;
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private async Task<(long ElapsedMs, IngestionTotals UpdatedTotals)> ProcessAndClearBatchAsync(
+        Guid importId,
+        IMongoCollection<BsonDocument> collection,
+        List<(BsonDocument Document, string ChangeType)> batch,
+        string fileKey,
+        string collectionName,
+        DataSetDefinition definition,
+        List<RecordLineageEvent> lineageEvents,
+        FileMetricsTracker fileMetrics,
+        IngestionTotals totals,
+        CancellationToken ct)
+    {
+        var ingestionSettings = throttler.Settings.Ingestion;
+        var batchStopwatch = Stopwatch.StartNew();
+
+        Debug.WriteLine($"[keepetl] -- NEW BATCH (size:{ingestionSettings.BatchSize}) --");
+        Debug.WriteLine($"[keepetl] Processing batch of {batch.Count} documents for collection {collectionName}");
+
+        var batchMetrics = await ProcessBatchAsync(importId, collection, batch, fileKey, collectionName, definition, lineageEvents, ct);
+        await FlushLineageEventsAsync(lineageEvents, ct);
+
+        var batchDto = new KeeperData.Core.Reporting.Dtos.BatchProcessingMetrics
+        {
+            RecordsProcessed = batchMetrics.RecordsProcessed,
+            RecordsCreated = batchMetrics.RecordsCreated,
+            RecordsUpdated = batchMetrics.RecordsUpdated,
+            RecordsDeleted = batchMetrics.RecordsDeleted
+        };
+        fileMetrics.AddBatch(batchDto);
+
+        var updatedTotals = totals.Add(new IngestionTotals
+        {
+            RecordsCreated = batchMetrics.RecordsCreated,
+            RecordsUpdated = batchMetrics.RecordsUpdated,
+            RecordsDeleted = batchMetrics.RecordsDeleted
+        });
+
+        batchStopwatch.Stop();
+
+        Debug.WriteLine($"[keepetl] Processed batch of {ingestionSettings.BatchSize} records from {fileKey} in {batchStopwatch.ElapsedMilliseconds}ms. Total processed: {fileMetrics.RecordsProcessed}, Created: {fileMetrics.RecordsCreated}, Updated: {fileMetrics.RecordsUpdated}, Deleted: {fileMetrics.RecordsDeleted}");
+        Debug.WriteLine($"[keepetl] -- END BATCH ({batchStopwatch.Elapsed.TotalSeconds}s, {batchStopwatch.ElapsedMilliseconds}ms) --");
+
+        if (ingestionSettings.BatchDelayMs > 0)
+        {
+            Debug.WriteLine($"[keepetl] Throttling: waiting {ingestionSettings.BatchDelayMs}ms before next batch");
+            await throttler.DelayAsync(ingestionSettings.BatchDelayMs, ct);
+        }
+
+        Debug.WriteLine($"[keepetl] ");
+        batch.Clear();
+
+        return (batchStopwatch.ElapsedMilliseconds, updatedTotals);
     }
 
     private void LogProgressIfNeeded(int recordsProcessed, string fileKey)

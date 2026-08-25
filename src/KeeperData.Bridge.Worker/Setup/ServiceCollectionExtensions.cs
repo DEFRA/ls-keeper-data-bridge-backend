@@ -1,4 +1,5 @@
 using KeeperData.Bridge.Worker.Configuration;
+using KeeperData.Bridge.Worker.Coordination;
 using KeeperData.Bridge.Worker.Jobs;
 using KeeperData.Bridge.Worker.Tasks;
 using KeeperData.Bridge.Worker.Tasks.Implementations;
@@ -18,6 +19,9 @@ public static class ServiceCollectionExtensions
             .AddQuartz(configuration)
             .AddJobs()
             .AddTasks();
+
+        services.Configure<IngestionRunOptions>(configuration.GetSection(IngestionRunOptions.SectionName));
+        services.Configure<EtlImportOptions>(configuration.GetSection(EtlImportOptions.SectionName));
     }
 
     private static IServiceCollection AddQuartz(this IServiceCollection services, IConfiguration configuration)
@@ -47,6 +51,17 @@ public static class ServiceCollectionExtensions
                     .WithIdentity($"{cleanseReportConfig.JobType}-trigger")
                     .WithCronSchedule(cleanseReportConfig.CronSchedule));
             }
+
+            var rotateKeysConfig = scheduledJobConfiguration.FirstOrDefault(x => x.JobType == nameof(RotateExternalStorageKeysJob));
+            if (!string.IsNullOrWhiteSpace(rotateKeysConfig?.CronSchedule) && rotateKeysConfig.IsEnabled)
+            {
+                q.AddJob<RotateExternalStorageKeysJob>(opts => opts.WithIdentity(rotateKeysConfig.JobType));
+
+                q.AddTrigger(opts => opts
+                    .ForJob(rotateKeysConfig.JobType)
+                    .WithIdentity($"{rotateKeysConfig.JobType}-trigger")
+                    .WithCronSchedule(rotateKeysConfig.CronSchedule));
+            }
         });
 
         services.AddQuartzHostedService(q =>
@@ -61,14 +76,20 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<ImportBulkFilesJob>();
         services.AddScoped<CleanseReportJob>();
+        services.AddScoped<RotateExternalStorageKeysJob>();
 
         return services;
     }
 
     private static IServiceCollection AddTasks(this IServiceCollection services)
     {
+        services.AddSingleton<ILockRenewingRunner, LockRenewingRunner>();
+        services.AddScoped<IIngestionRunCoordinator, IngestionRunCoordinator>();
+        services.AddScoped<IIngestionRunExecutor, IngestionRunExecutor>();
+        services.AddScoped<IEtlImportCoordinator, EtlImportCoordinator>();
         services.AddScoped<ITaskProcessBulkFiles, TaskProcessBulkFiles>();
         services.AddScoped<ITaskRunCleanseReport, TaskRunCleanseReport>();
+        services.AddScoped<ITaskRotateExternalStorageKeys, TaskRotateExternalStorageKeys>();
 
         return services;
     }

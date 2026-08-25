@@ -383,6 +383,38 @@ public class BlobStorageServiceUnitTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task OpenWriteAsync_WhenMultipartCompletionFails_ShouldAbortAndRethrowOnDispose()
+    {
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+        var exception = new AmazonS3Exception("Failed to complete multipart upload");
+
+        _mockS3Client
+            .Setup(x => x.InitiateMultipartUploadAsync(It.IsAny<InitiateMultipartUploadRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new InitiateMultipartUploadResponse { UploadId = "test-upload-id" });
+        _mockS3Client
+            .Setup(x => x.UploadPartAsync(It.IsAny<UploadPartRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UploadPartResponse { ETag = "part-etag" });
+        _mockS3Client
+            .Setup(x => x.CompleteMultipartUploadAsync(It.IsAny<CompleteMultipartUploadRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(exception);
+        _mockS3Client
+            .Setup(x => x.AbortMultipartUploadAsync(It.IsAny<AbortMultipartUploadRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AbortMultipartUploadResponse());
+
+        var stream = await service.OpenWriteAsync("test-key");
+        await stream.WriteAsync("content"u8.ToArray());
+
+        var act = async () => await stream.DisposeAsync();
+
+        await act.Should().ThrowAsync<AmazonS3Exception>().Where(thrown => ReferenceEquals(thrown, exception));
+        _mockS3Client.Verify(
+            x => x.AbortMultipartUploadAsync(
+                It.Is<AbortMultipartUploadRequest>(request => request.Key == "test-key"),
+                It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+    }
+
     #endregion
 
     #region SetMetadataAsync Tests

@@ -32,7 +32,9 @@ public class ODataToMongoFilterTranslatorTests
 
         // Assert
         result.Should().NotBeNull();
-        var renderedFilter = result.Render(BsonSerializer.SerializerRegistry.GetSerializer<BsonDocument>(), BsonSerializer.SerializerRegistry);
+        var renderedFilter = result.Render(new RenderArgs<BsonDocument>(
+            BsonSerializer.SerializerRegistry.GetSerializer<BsonDocument>(),
+            BsonSerializer.SerializerRegistry));
         renderedFilter.ToString().Should().Contain("CPH");
     }
 
@@ -94,7 +96,9 @@ public class ODataToMongoFilterTranslatorTests
 
         // Assert
         result.Should().NotBeNull();
-        var renderedFilter = result.Render(BsonSerializer.SerializerRegistry.GetSerializer<BsonDocument>(), BsonSerializer.SerializerRegistry);
+        var renderedFilter = result.Render(new RenderArgs<BsonDocument>(
+            BsonSerializer.SerializerRegistry.GetSerializer<BsonDocument>(),
+            BsonSerializer.SerializerRegistry));
         var filterString = renderedFilter.ToString();
         filterString.Should().Contain("CPH");
         filterString.Should().Contain("IsDeleted");
@@ -118,7 +122,9 @@ public class ODataToMongoFilterTranslatorTests
 
         // Assert
         result.Should().NotBeNull();
-        var renderedFilter = result.Render(BsonSerializer.SerializerRegistry.GetSerializer<BsonDocument>(), BsonSerializer.SerializerRegistry);
+        var renderedFilter = result.Render(new RenderArgs<BsonDocument>(
+            BsonSerializer.SerializerRegistry.GetSerializer<BsonDocument>(),
+            BsonSerializer.SerializerRegistry));
         var filterString = renderedFilter.ToString();
         filterString.Should().Contain("Name");
     }

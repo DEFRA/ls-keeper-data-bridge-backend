@@ -8,7 +8,7 @@ namespace KeeperData.Bridge.Authentication;
 public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthenticationSchemeOptions>
 {
     private const string AuthorizationHeaderName = "Authorization";
-    private const string ApiKeyPrefix = "ApiKey ";
+    private const string ApiKeyPrefix = ApiKeyAuthenticationSchemeOptions.DefaultScheme + " ";
 
     public ApiKeyAuthenticationHandler(
         IOptionsMonitor<ApiKeyAuthenticationSchemeOptions> options,

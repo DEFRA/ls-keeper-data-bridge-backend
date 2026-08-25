@@ -4,7 +4,13 @@ using System.Collections.Immutable;
 namespace KeeperData.Core.ETL.Impl;
 
 
-public record DataSetDefinition(string Name, string FilePrefixFormat, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName, string[] Accumulators, string DatePattern = EtlConstants.DatePattern, string DateTimePattern = EtlConstants.DateTimePattern);
+public enum FileFormat
+{
+    SimplePsv,
+    Hcdt
+}
+
+public record DataSetDefinition(string Name, string FilePrefixFormat, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName, string[] Accumulators, string DatePattern = EtlConstants.DatePattern, string DateTimePattern = EtlConstants.DateTimePattern, FileFormat Format = FileFormat.SimplePsv, DataSetIngestionMode IngestionMode = DataSetIngestionMode.Snapshot);
 
 public class DataSetDefinitions : IDataSetDefinitions
 {
@@ -19,6 +25,20 @@ public class DataSetDefinitions : IDataSetDefinitions
     public required DataSetDefinition SamHerd { get; init; }
 
     public required DataSetDefinition SamParty { get; init; }
+
+
+    public required DataSetDefinition SamTla { get; init; }
+    
+    public required DataSetDefinition Amls2CommonLand { get; init; }
+
+    public required DataSetDefinition Amls2Port { get; init; }
+
+    public required DataSetDefinition CtsAgent { get; init; }
+
+    public required DataSetDefinition AmesHaulier { get; init; }
+
+    public required DataSetDefinition SamShowground { get; init; }
+
 
     public ImmutableArray<DataSetDefinition> All { get; init; }
 

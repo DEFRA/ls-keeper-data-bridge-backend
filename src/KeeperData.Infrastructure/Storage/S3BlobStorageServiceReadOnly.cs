@@ -195,7 +195,7 @@ public class S3BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDispos
                 _bucketName,
                 prefix,
                 stopwatch.ElapsedMilliseconds);
-            throw;
+            throw new BlobStorageListException(_bucketName, GetFullPrefix(prefix), ex);
         }
     }
 
@@ -244,7 +244,7 @@ public class S3BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDispos
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to list page of objects in container {Container} with prefix {Prefix}", _bucketName, prefix);
-            throw;
+            throw new BlobStorageListException(_bucketName, GetFullPrefix(prefix), ex);
         }
     }
 

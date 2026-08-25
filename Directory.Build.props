@@ -10,5 +10,6 @@
          on obsolete X509 APIs). Disable it so binding falls back to reflection, which is
          safe because trim analysis warnings are already suppressed above. -->
     <EnableConfigurationBindingGenerator>false</EnableConfigurationBindingGenerator>
+
   </PropertyGroup>
 </Project>

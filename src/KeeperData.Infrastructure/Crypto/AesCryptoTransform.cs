@@ -1,6 +1,7 @@
 using KeeperData.Core.Crypto;
 using System.Security.Cryptography;
 using System.Text;
+using static KeeperData.Core.Telemetry.MetricNames;
 
 namespace KeeperData.Infrastructure.Crypto;
 
@@ -14,7 +15,7 @@ public class AesCryptoTransform : IAesCryptoTransform
     public async Task EncryptFileAsync(string inputFilePath, string outputFilePath, string password, byte[] salt,
         ProgressCallback? progressCallback = null, CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(inputFilePath))
+        if (!System.IO.File.Exists(inputFilePath))
         {
             throw new FileNotFoundException($"Input file not found: {inputFilePath}");
         }
@@ -35,7 +36,7 @@ public class AesCryptoTransform : IAesCryptoTransform
                                        ProgressCallback? progressCallback = null,
                                        CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(inputFilePath))
+        if (!System.IO.File.Exists(inputFilePath))
         {
             throw new FileNotFoundException($"Input file not found: {inputFilePath}");
         }
@@ -139,6 +140,10 @@ public class AesCryptoTransform : IAesCryptoTransform
         await DecryptStreamAsync(inputStream, outputStream, password, saltBytes, totalBytes, progressCallback, cancellationToken);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Security",
+        "S5344:Passwords should not be stored in plaintext or with a fast hashing algorithm",
+        Justification = "PBKDF2 parameters (32 iterations, SHA1, 8-byte salt) are fixed by the external file format and match the counterparty PBEKeySpec implementation. They cannot be changed unilaterally without breaking interoperability and rendering existing encrypted files unreadable. Tracked under <TICKET-ID>.")]
     private static byte[] DeriveKey(string password, byte[] salt)
     {
         var actualSalt = salt;
@@ -152,8 +157,7 @@ public class AesCryptoTransform : IAesCryptoTransform
             Array.Copy(salt, actualSalt, salt.Length);
         }
 
-        using var pbkdf2 = new Rfc2898DeriveBytes(password, actualSalt, PbeKeySpecIterationsDefault, HashAlgorithmName.SHA1);
-        return pbkdf2.GetBytes(PbeKeySpecKeyLenDefault / 8);
+        return Rfc2898DeriveBytes.Pbkdf2(password, actualSalt, PbeKeySpecIterationsDefault, HashAlgorithmName.SHA1, PbeKeySpecKeyLenDefault / 8);
     }
 
     private static async Task ProcessStreamAsync(Stream inputStream,

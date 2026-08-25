@@ -1,8 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
 using KeeperData.Core.EtlPipeline.Staging;
 using KeeperData.Core.EtlPipeline.Storage;
+using KeeperData.Core.EtlPipeline.Views;
 using KeeperData.Infrastructure.EtlPipeline.Staging;
 using KeeperData.Infrastructure.EtlPipeline.Storage;
+using KeeperData.Infrastructure.EtlPipeline.Views;
 using KeeperData.Infrastructure.Storage.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +31,9 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddScoped<IStagingDatabaseWriter, DuckDbStagingDatabaseWriter>();
+
+        services.Configure<DuckDbConfiguration>(configuration.GetSection(nameof(DuckDbConfiguration)));
+        services.AddScoped<ISqliteViewWriter, DuckDbSqliteViewWriter>();
 
         return services;
     }

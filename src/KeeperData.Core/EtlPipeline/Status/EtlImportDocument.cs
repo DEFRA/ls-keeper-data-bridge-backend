@@ -42,9 +42,22 @@ public class EtlImportDocument
 
     public string? DuckDbKey { get; set; }
 
+    /// <summary>Key of the SQLite read model built from the staging database.</summary>
+    public string? SqliteKey { get; set; }
+
+    /// <summary>Row counts per table in the SQLite read model.</summary>
+    public List<EtlImportViewTableDocument> SqliteTables { get; set; } = [];
+
     /// <summary>Exception message only - never a stack trace, and never anything carrying a salt,
     /// password or presigned URL.</summary>
     public string? Error { get; set; }
+}
+
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
+public class EtlImportViewTableDocument
+{
+    public required string Name { get; set; }
+    public long RowCount { get; set; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]

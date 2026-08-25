@@ -68,6 +68,16 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
         await _imports.UpdateOneAsync(d => d.ImportId == importId, update, cancellationToken: cancellationToken);
     }
 
+    public async Task MarkStageRunningAsync(Guid importId, string stageName, CancellationToken cancellationToken)
+    {
+        var now = UtcNow;
+        var update = Builders<EtlImportDocument>.Update
+            .Set(d => d.CurrentStage, stageName)
+            .Set(d => d.LeaseExpiresAtUtc, now.Add(LeaseDuration));
+
+        await _imports.UpdateOneAsync(d => d.ImportId == importId, update, cancellationToken: cancellationToken);
+    }
+
     public async Task RecordStageAsync(Guid importId, EtlImportStageProgress progress, CancellationToken cancellationToken)
     {
         var document = await LoadAsync(importId, cancellationToken);
@@ -98,7 +108,21 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
             document.DuckDbKey = progress.DuckDbKey;
         }
 
-        document.CurrentStage = progress.StageName;
+        if (progress.SqliteKey is not null)
+        {
+            document.SqliteKey = progress.SqliteKey;
+        }
+
+        if (progress.SqliteTables is { Count: > 0 })
+        {
+            document.SqliteTables =
+                [.. progress.SqliteTables.Select(table => new EtlImportViewTableDocument
+                {
+                    Name = table.Name,
+                    RowCount = table.RowCount
+                })];
+        }
+
         document.LeaseExpiresAtUtc = now.Add(LeaseDuration);
 
         await ReplaceAsync(document, cancellationToken);

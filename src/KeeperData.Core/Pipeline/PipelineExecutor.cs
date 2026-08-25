@@ -36,6 +36,8 @@ public sealed class PipelineExecutor(
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                await NotifyAsync(o => o.StageStartingAsync(context, step.Name, cancellationToken));
+
                 var stageStopwatch = Stopwatch.StartNew();
                 var output = step.Invoke(ToStream(current, cancellationToken), context, cancellationToken);
                 current = await DrainAsync(output, cancellationToken);

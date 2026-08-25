@@ -5,6 +5,7 @@ using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Staging;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Status;
+using KeeperData.Core.EtlPipeline.Views;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage.Dtos;
 using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
@@ -34,6 +35,15 @@ public class EtlImportStatusObserverTests
 
         _store.Started.Should().ContainSingle()
             .Which.Should().BeEquivalentTo((_importId, new[] { "discover", "decrypt" }));
+    }
+
+    [Fact]
+    public async Task Records_the_stage_that_is_actually_running()
+    {
+        await Sut().StageStartingAsync(Context(), "export-sqlite", CancellationToken.None);
+
+        _store.StagesStarted.Should().ContainSingle()
+            .Which.Should().Be((_importId, "export-sqlite"));
     }
 
     [Fact]
@@ -118,6 +128,21 @@ public class EtlImportStatusObserverTests
         });
 
         _store.Progress.Single().Progress.DuckDbKey.Should().Be("keeper_data_bridge_20251115121333.duckdb");
+    }
+
+    [Fact]
+    public async Task Records_the_sqlite_read_model_and_its_table_row_counts()
+    {
+        await StageCompleted("export-sqlite", new SqliteExportFile
+        {
+            Key = "krds-db_20251115121333.sqlite",
+            Tables = [new SqliteViewTable("Party", 162_981), new SqliteViewTable("Holding", 111_247)]
+        });
+
+        var progress = _store.Progress.Single().Progress;
+        progress.SqliteKey.Should().Be("krds-db_20251115121333.sqlite");
+        progress.SqliteTables.Should().BeEquivalentTo(
+            [new SqliteViewTable("Party", 162_981), new SqliteViewTable("Holding", 111_247)]);
     }
 
     [Fact]

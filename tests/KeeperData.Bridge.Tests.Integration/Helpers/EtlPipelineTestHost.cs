@@ -10,6 +10,7 @@ using KeeperData.Core.EtlPipeline.Setup;
 using KeeperData.Core.EtlPipeline.Staging;
 using KeeperData.Core.EtlPipeline.Status;
 using KeeperData.Core.EtlPipeline.Storage;
+using KeeperData.Core.EtlPipeline.Views;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Crypto;
@@ -82,13 +83,15 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
         DateTimeOffset now,
         DataSetDefinition? definition = null,
         IStagingDatabaseWriter? stagingDatabaseWriter = null,
-        IEtlImportStatusStore? statusStore = null)
+        IEtlImportStatusStore? statusStore = null,
+        ISqliteViewWriter? sqliteViewWriter = null)
         => CreateAsync(
             s3Client,
             now,
             [definition ?? StandardDataSetDefinitionsBuilder.Build().SamCPHHolding],
             stagingDatabaseWriter,
-            statusStore);
+            statusStore,
+            sqliteViewWriter);
 
     /// <summary>Creates the bucket and wires the pipeline against it for several datasets at once,
     /// so a run can be observed routing each dataset into its own prefix.</summary>
@@ -97,7 +100,8 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
         DateTimeOffset now,
         IReadOnlyList<DataSetDefinition> definitions,
         IStagingDatabaseWriter? stagingDatabaseWriter = null,
-        IEtlImportStatusStore? statusStore = null)
+        IEtlImportStatusStore? statusStore = null,
+        ISqliteViewWriter? sqliteViewWriter = null)
     {
         ArgumentNullException.ThrowIfNull(definitions);
 
@@ -111,7 +115,8 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
 
         var timeProvider = new FakeTimeProvider(now);
 
-        var services = BuildServices(s3Client, bucketName, definitions, timeProvider, stagingDatabaseWriter, statusStore);
+        var services = BuildServices(
+            s3Client, bucketName, definitions, timeProvider, stagingDatabaseWriter, statusStore, sqliteViewWriter);
 
         return new EtlPipelineTestHost(s3Client, bucketName, services, timeProvider, definitions);
     }
@@ -122,7 +127,8 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
         IReadOnlyList<DataSetDefinition> definitions,
         TimeProvider timeProvider,
         IStagingDatabaseWriter? stagingDatabaseWriter,
-        IEtlImportStatusStore? statusStore)
+        IEtlImportStatusStore? statusStore,
+        ISqliteViewWriter? sqliteViewWriter)
     {
         var services = new ServiceCollection();
 
@@ -176,6 +182,8 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
         {
             services.AddSingleton(stagingDatabaseWriter);
         }
+
+        services.AddSingleton<ISqliteViewWriter>(sqliteViewWriter ?? new RecordingSqliteViewWriter());
 
         services.AddEtlPipeline();
 

@@ -17,6 +17,8 @@ servers:
 tags:
   - name: Import
     description: Bulk data import, reporting, lineage, collection management, and storage operations.
+  - name: ETL
+    description: ETL pipeline status and generated database artifacts.
   - name: Query
     description: OData-style querying of MongoDB collections.
   - name: Cleanse
@@ -48,6 +50,179 @@ tags:
       write-only and never returned.
 
 paths:
+  # ═══════════════════════════════════════════════════════════════════
+  # ETL pipeline
+  # ═══════════════════════════════════════════════════════════════════
+  /etl/imports:
+    post:
+      tags: [ETL]
+      operationId: startEtlImport
+      summary: Start an ETL pipeline run
+      parameters:
+        - name: sourceType
+          in: query
+          schema:
+            type: string
+            default: external
+            enum: [internal, external]
+        - name: dataset
+          in: query
+          description: |
+            Restricts processing to one configured dataset. Filtered runs stop
+            after snapshots and do not publish shared DuckDB or SQLite artifacts.
+          schema:
+            type: string
+            nullable: true
+      responses:
+        '202':
+          description: ETL import queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartEtlImportResponse'
+        '400':
+          description: Invalid source type or unknown dataset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Another ETL import is already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EtlImportConflictResponse'
+    get:
+      tags: [ETL]
+      operationId: listEtlImports
+      summary: List recent ETL imports
+      parameters:
+        - $ref: '#/components/parameters/Skip'
+        - $ref: '#/components/parameters/Top'
+      responses:
+        '200':
+          description: Page of ETL imports, newest first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EtlImportListResponse'
+        '400':
+          description: Invalid pagination parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /etl/imports/{importId}:
+    get:
+      tags: [ETL]
+      operationId: getEtlImport
+      summary: Get ETL import status and artifact details
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: ETL import status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EtlImportStatusResponse'
+        '404':
+          description: ETL import not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /etl/staging/sqlite/latest:
+    get:
+      tags: [ETL]
+      operationId: getLatestEtlSqlite
+      summary: Get a download URL for the latest SQLite read model
+      description: |
+        Returns a presigned download URL for the newest `views/krds-db_*.sqlite`
+        artifact produced by a successful ETL pipeline run. The URL is valid for
+        60 minutes by default and cannot be requested for longer than 60 minutes.
+      parameters:
+        - name: expiresInMinutes
+          in: query
+          description: Presigned URL lifetime in minutes. Values are clamped to 1–60.
+          schema:
+            type: integer
+            default: 60
+            minimum: 1
+            maximum: 60
+      responses:
+        '200':
+          description: Download URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EtlArtifactLatestResponse'
+        '404':
+          description: No SQLite read model has been produced yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: The request was cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: The download URL could not be generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /etl/staging/duckdb/latest:
+    get:
+      tags: [ETL]
+      operationId: getLatestEtlDuckDb
+      summary: Get a download URL for the latest DuckDB staging database
+      parameters:
+        - name: expiresInMinutes
+          in: query
+          description: Presigned URL lifetime in minutes. Values are clamped to 1–10080.
+          schema:
+            type: integer
+            default: 60
+            minimum: 1
+            maximum: 10080
+      responses:
+        '200':
+          description: Download URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EtlArtifactLatestResponse'
+        '404':
+          description: No DuckDB staging database has been produced yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: The request was cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: The download URL could not be generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # ═══════════════════════════════════════════════════════════════════
   # Import
   # ═══════════════════════════════════════════════════════════════════
@@ -1769,6 +1944,246 @@ components:
         timestamp:
           type: string
           format: date-time
+
+    EtlArtifactLatestResponse:
+      type: object
+      required: [objectKey, downloadUrl, size, lastModified, expiresAt]
+      properties:
+        objectKey:
+          type: string
+          example: views/krds-db_20260821070003.sqlite
+        downloadUrl:
+          type: string
+          format: uri
+        size:
+          type: integer
+          format: int64
+        lastModified:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    StartEtlImportResponse:
+      type: object
+      required: [importId, status]
+      properties:
+        importId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/EtlImportStatus'
+
+    EtlImportConflictResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        inFlightImportId:
+          type: string
+          format: uuid
+          nullable: true
+
+    EtlImportStatus:
+      type: string
+      enum: [Queued, Running, Succeeded, Failed, Rejected]
+
+    EtlImportListResponse:
+      type: object
+      required: [skip, top, count, totalCount, imports]
+      properties:
+        skip:
+          type: integer
+        top:
+          type: integer
+        count:
+          type: integer
+        totalCount:
+          type: integer
+          format: int64
+        imports:
+          type: array
+          items:
+            $ref: '#/components/schemas/EtlImportSummaryResponse'
+
+    EtlImportSummaryResponse:
+      type: object
+      required: [importId, status, sourceType, requestedAtUtc, datasetCount, sourceFileCount]
+      properties:
+        importId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/EtlImportStatus'
+        sourceType:
+          type: string
+        dataset:
+          type: string
+          nullable: true
+        requestedAtUtc:
+          type: string
+          format: date-time
+        startedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        completedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        currentStage:
+          type: string
+          nullable: true
+        datasetCount:
+          type: integer
+        sourceFileCount:
+          type: integer
+        rowCount:
+          type: integer
+          format: int64
+          nullable: true
+        duckDbPath:
+          type: string
+          nullable: true
+        sqlitePath:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+
+    EtlImportStatusResponse:
+      type: object
+      required: [importId, status, sourceType, requestedAtUtc, stages, datasets, sqliteTables]
+      properties:
+        importId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/EtlImportStatus'
+        sourceType:
+          type: string
+        dataset:
+          type: string
+          nullable: true
+        requestedAtUtc:
+          type: string
+          format: date-time
+        startedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        completedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        currentStage:
+          type: string
+          nullable: true
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/EtlImportStageResponse'
+        datasets:
+          type: array
+          items:
+            $ref: '#/components/schemas/EtlImportDatasetResponse'
+        duckDbPath:
+          type: string
+          nullable: true
+        sqlitePath:
+          type: string
+          nullable: true
+        sqliteTables:
+          type: array
+          items:
+            $ref: '#/components/schemas/EtlImportViewTableResponse'
+        error:
+          type: string
+          nullable: true
+
+    EtlImportStageResponse:
+      type: object
+      required: [name, itemCount, elapsedMs, completedAtUtc]
+      properties:
+        name:
+          type: string
+        itemCount:
+          type: integer
+        elapsedMs:
+          type: integer
+          format: int64
+        completedAtUtc:
+          type: string
+          format: date-time
+
+    EtlImportDatasetResponse:
+      type: object
+      required: [dataset, sourceFiles, rawPaths, normalisedPaths, columnsNullified, columnsAdded]
+      properties:
+        dataset:
+          type: string
+        sourceFiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EtlImportSourceFileResponse'
+        rawPaths:
+          type: array
+          items:
+            type: string
+        normalisedPaths:
+          type: array
+          items:
+            type: string
+        snapshotPath:
+          type: string
+          nullable: true
+        snapshotSourceTimestampUtc:
+          type: string
+          format: date-time
+          nullable: true
+        rowCount:
+          type: integer
+          format: int64
+          nullable: true
+        rowsUpserted:
+          type: integer
+          format: int64
+          nullable: true
+        rowsIgnoredDeletes:
+          type: integer
+          format: int64
+          nullable: true
+        columnsNullified:
+          type: array
+          items:
+            type: string
+        columnsAdded:
+          type: array
+          items:
+            type: string
+
+    EtlImportSourceFileResponse:
+      type: object
+      required: [key, size]
+      properties:
+        key:
+          type: string
+        size:
+          type: integer
+          format: int64
+
+    EtlImportViewTableResponse:
+      type: object
+      required: [name, rowCount]
+      properties:
+        name:
+          type: string
+        rowCount:
+          type: integer
+          format: int64
 
     # ── Import ────────────────────────────────────────────────────
     StartBulkImportResponse:

@@ -28,11 +28,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Set up .NET 8.0
+      - name: Set up .NET 10.0
         uses: actions/setup-dotnet@v3
         with:
           dotnet-version: |
-            8.0
+            10.0
           source-url: https://nuget.pkg.github.com/DEFRA/index.json
           config-file: ./nuget.config
         env:
@@ -75,5 +75,9 @@ jobs:
         run: |
           ./.sonar/scanner/dotnet-sonarscanner begin /k:"DEFRA_ls-keeper-data-bridge-backend" /o:"defra" /d:sonar.token="$SONAR_TOKEN" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml
           dotnet build KeeperData.Bridge.sln --no-incremental
+          version="$(tr -d '[:space:]' < ./src/KeeperData.Infrastructure/bin/Debug/net10.0/duckdb-version.txt)"
+          chmod +x ./scripts/fetch-duckdb-sqlite-extension.sh
+          ./scripts/fetch-duckdb-sqlite-extension.sh "$version" "$HOME/duckdb-extensions" linux_amd64
+          export DUCKDB_SQLITE_EXTENSION_PATH="$HOME/duckdb-extensions/sqlite_scanner.duckdb_extension"
           ./.sonar/coverage/dotnet-coverage collect "dotnet test KeeperData.Bridge.sln --filter \"Dependence!=docker&testtype!=performance\"" -f xml -o "coverage.xml"
           ./.sonar/scanner/dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"

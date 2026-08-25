@@ -8,6 +8,7 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
 {
     public List<(Guid ImportId, string SourceType, string? Dataset)> Queued { get; } = [];
     public List<(Guid ImportId, IReadOnlyList<string> Stages)> Started { get; } = [];
+    public List<(Guid ImportId, string Stage)> StagesStarted { get; } = [];
     public List<(Guid ImportId, EtlImportStageProgress Progress)> Progress { get; } = [];
     public List<Guid> Succeeded { get; } = [];
     public List<(Guid ImportId, string Error)> Failed { get; } = [];
@@ -26,6 +27,12 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
     public Task MarkRunningAsync(Guid importId, IReadOnlyList<string> stageNames, CancellationToken cancellationToken)
     {
         Started.Add((importId, stageNames));
+        return Task.CompletedTask;
+    }
+
+    public Task MarkStageRunningAsync(Guid importId, string stageName, CancellationToken cancellationToken)
+    {
+        StagesStarted.Add((importId, stageName));
         return Task.CompletedTask;
     }
 

@@ -230,35 +230,50 @@ WHERE null_dash(CPH) IS NOT NULL;
 -- therefore a deterministic tie-break, not a currency rule - which is the point, because any_value
 -- could return different values between runs for identical input. arg_max skips rows whose argument
 -- is null, so each column takes the most recent value it actually has.
+--
+-- The date alone does not settle it: rows can share one. The row fingerprint breaks those ties, and
+-- being row-level rather than value-level it settles every column on the same row. The leading flag
+-- keeps an undated row from outranking a dated one, which a bare concatenation would do because '|'
+-- sorts above the digits a date starts with.
+CREATE OR REPLACE TEMP VIEW holding_source AS
+SELECT
+    h.*,
+    concat(
+        CASE WHEN h.FEATURE_ADDRESS_FROM_DATE IS NULL THEN '0' ELSE '1' END,
+        COALESCE(h.FEATURE_ADDRESS_FROM_DATE, ''), '|',
+        md5(to_json(h)::VARCHAR)
+    ) AS record_order
+FROM sam_cph_holdings h;
+
 CREATE OR REPLACE TEMP VIEW holding_attributes AS
 SELECT
     null_dash(CPH) AS Cph,
-    arg_max(null_placeholder(FEATURE_NAME), FEATURE_ADDRESS_FROM_DATE) AS FeatureName,
-    arg_max(lower(null_dash(CPH_TYPE)), FEATURE_ADDRESS_FROM_DATE) AS CphType,
+    arg_max(null_placeholder(FEATURE_NAME), record_order) AS FeatureName,
+    arg_max(lower(null_dash(CPH_TYPE)), record_order) AS CphType,
     max(epoch_seconds(FEATURE_ADDRESS_FROM_DATE)) AS StartDate,
-    arg_max(epoch_seconds(FEATURE_ADDRESS_TO_DATE), FEATURE_ADDRESS_FROM_DATE) AS EndDate,
-    arg_max(null_dash(ADDRESS_PK), FEATURE_ADDRESS_FROM_DATE) AS AddressPk,
-    arg_max(null_dash(SAON_START_NUMBER), FEATURE_ADDRESS_FROM_DATE) AS SaonStartNumber,
-    arg_max(null_dash(SAON_START_NUMBER_SUFFIX), FEATURE_ADDRESS_FROM_DATE) AS SaonStartNumberSuffix,
-    arg_max(null_dash(SAON_END_NUMBER), FEATURE_ADDRESS_FROM_DATE) AS SaonEndNumber,
-    arg_max(null_dash(SAON_END_NUMBER_SUFFIX), FEATURE_ADDRESS_FROM_DATE) AS SaonEndNumberSuffix,
-    arg_max(null_dash(SAON_DESCRIPTION), FEATURE_ADDRESS_FROM_DATE) AS SaonDescription,
-    arg_max(null_dash(PAON_START_NUMBER), FEATURE_ADDRESS_FROM_DATE) AS PaonStartNumber,
-    arg_max(null_dash(PAON_START_NUMBER_SUFFIX), FEATURE_ADDRESS_FROM_DATE) AS PaonStartNumberSuffix,
-    arg_max(null_dash(PAON_END_NUMBER), FEATURE_ADDRESS_FROM_DATE) AS PaonEndNumber,
-    arg_max(null_dash(PAON_END_NUMBER_SUFFIX), FEATURE_ADDRESS_FROM_DATE) AS PaonEndNumberSuffix,
-    arg_max(null_dash(PAON_DESCRIPTION), FEATURE_ADDRESS_FROM_DATE) AS PaonDescription,
-    arg_max(null_dash(STREET), FEATURE_ADDRESS_FROM_DATE) AS Street,
-    arg_max(null_dash(TOWN), FEATURE_ADDRESS_FROM_DATE) AS Town,
-    arg_max(null_dash(LOCALITY), FEATURE_ADDRESS_FROM_DATE) AS Locality,
-    arg_max(title_case(UK_INTERNAL_CODE), FEATURE_ADDRESS_FROM_DATE) AS UkInternalCode,
-    arg_max(null_dash(POSTCODE), FEATURE_ADDRESS_FROM_DATE) AS Postcode,
-    arg_max(null_dash(COUNTRY_CODE), FEATURE_ADDRESS_FROM_DATE) AS CountryCode,
-    arg_max(null_dash(UDPRN), FEATURE_ADDRESS_FROM_DATE) AS Udprn,
-    arg_max(null_dash(EASTING), FEATURE_ADDRESS_FROM_DATE) AS Easting,
-    arg_max(null_dash(NORTHING), FEATURE_ADDRESS_FROM_DATE) AS Northing,
-    arg_max(null_dash(OS_MAP_REFERENCE), FEATURE_ADDRESS_FROM_DATE) AS OsMapReference
-FROM sam_cph_holdings
+    arg_max(epoch_seconds(FEATURE_ADDRESS_TO_DATE), record_order) AS EndDate,
+    arg_max(null_dash(ADDRESS_PK), record_order) AS AddressPk,
+    arg_max(null_dash(SAON_START_NUMBER), record_order) AS SaonStartNumber,
+    arg_max(null_dash(SAON_START_NUMBER_SUFFIX), record_order) AS SaonStartNumberSuffix,
+    arg_max(null_dash(SAON_END_NUMBER), record_order) AS SaonEndNumber,
+    arg_max(null_dash(SAON_END_NUMBER_SUFFIX), record_order) AS SaonEndNumberSuffix,
+    arg_max(null_dash(SAON_DESCRIPTION), record_order) AS SaonDescription,
+    arg_max(null_dash(PAON_START_NUMBER), record_order) AS PaonStartNumber,
+    arg_max(null_dash(PAON_START_NUMBER_SUFFIX), record_order) AS PaonStartNumberSuffix,
+    arg_max(null_dash(PAON_END_NUMBER), record_order) AS PaonEndNumber,
+    arg_max(null_dash(PAON_END_NUMBER_SUFFIX), record_order) AS PaonEndNumberSuffix,
+    arg_max(null_dash(PAON_DESCRIPTION), record_order) AS PaonDescription,
+    arg_max(null_dash(STREET), record_order) AS Street,
+    arg_max(null_dash(TOWN), record_order) AS Town,
+    arg_max(null_dash(LOCALITY), record_order) AS Locality,
+    arg_max(title_case(UK_INTERNAL_CODE), record_order) AS UkInternalCode,
+    arg_max(null_dash(POSTCODE), record_order) AS Postcode,
+    arg_max(null_dash(COUNTRY_CODE), record_order) AS CountryCode,
+    arg_max(null_dash(UDPRN), record_order) AS Udprn,
+    arg_max(null_dash(EASTING), record_order) AS Easting,
+    arg_max(null_dash(NORTHING), record_order) AS Northing,
+    arg_max(null_dash(OS_MAP_REFERENCE), record_order) AS OsMapReference
+FROM holding_source
 WHERE null_dash(CPH) IS NOT NULL
 GROUP BY null_dash(CPH);
 
@@ -294,17 +309,20 @@ SELECT
 FROM normalized_holding_cph h
 LEFT JOIN holding_attributes a ON a.Cph = h.Cph;
 
+-- Rows sharing a herdmark and CPHH all carry the same dates, the upstream extract having already
+-- collapsed them, so there is nothing to order by. min is arbitrary but stable, which is what the
+-- ticket asks for where no precedence is defined.
 CREATE OR REPLACE TEMP VIEW normalized_herd AS
 SELECT
     HERDMARK,
     CPHH,
     left(CPHH, 11) AS Cph,
-    any_value(null_dash(ANIMAL_SPECIES_CODE)) AS AnimalSpeciesCode,
-    any_value(null_dash(ANIMAL_PURPOSE_CODE)) AS AnimalPurposeCode,
-    any_value(null_dash(DISEASE_TYPE)) AS DiseaseType,
-    any_value(null_dash(INTERVALS)) AS Intervals,
-    any_value(null_dash(INTERVAL_UNIT_OF_TIME)) AS IntervalUnitOfTime,
-    any_value(null_dash(MOVEMENT_RSTRCTN_RSN_CODE)) AS MovementRestrictionReasonCode,
+    min(null_dash(ANIMAL_SPECIES_CODE)) AS AnimalSpeciesCode,
+    min(null_dash(ANIMAL_PURPOSE_CODE)) AS AnimalPurposeCode,
+    min(null_dash(DISEASE_TYPE)) AS DiseaseType,
+    min(null_dash(INTERVALS)) AS Intervals,
+    min(null_dash(INTERVAL_UNIT_OF_TIME)) AS IntervalUnitOfTime,
+    min(null_dash(MOVEMENT_RSTRCTN_RSN_CODE)) AS MovementRestrictionReasonCode,
     min(epoch_seconds(ANIMAL_GROUP_ID_MCH_FRM_DAT)) AS AnimalGroupFromDate,
     max(epoch_seconds(ANIMAL_GROUP_ID_MCH_TO_DAT)) AS AnimalGroupToDate
 FROM sam_herd

@@ -60,6 +60,11 @@ public static class SamExtractFixture
                  'SCOTLAND', NULL, NULL, NULL, NULL, NULL, '2025-06-01 00:00:00'),
                 ('  03/456/7890  ', 'Spaced Farm', 'EMERGENCY', NULL, 'Bodmin', 'PL31 1AA',
                  'NORTHERN IRELAND', '02', 'BEEF', NULL, NULL, NULL, '2025-01-01 00:00:00'),
+                -- Two records sharing a date, so the date alone cannot decide between them.
+                ('04/567/8901', 'Tied Alpha', 'PERMANENT', 'Alpha Street', 'Newport', 'NP1 1AA',
+                 'WALES', NULL, NULL, NULL, NULL, NULL, '2025-03-01 00:00:00'),
+                ('04/567/8901', 'Tied Beta', 'PERMANENT', 'Beta Street', 'Newport', 'NP1 1AA',
+                 'WALES', NULL, NULL, NULL, NULL, NULL, '2025-03-01 00:00:00'),
                 ('-', 'Sentinel Only', 'PERMANENT', NULL, 'Nowhere', NULL,
                  NULL, NULL, NULL, NULL, NULL, NULL, '2025-01-01 00:00:00');
 

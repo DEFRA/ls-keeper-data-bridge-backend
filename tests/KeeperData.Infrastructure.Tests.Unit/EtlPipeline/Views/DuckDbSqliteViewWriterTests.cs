@@ -82,7 +82,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         result.Tables.Should().BeEquivalentTo(new[]
         {
             new SqliteViewTable("Party", 6),
-            new SqliteViewTable("Holding", 3),
+            new SqliteViewTable("Holding", 4),
             new SqliteViewTable("Herd", 1),
             new SqliteViewTable("HoldingAnimalProfile", 2),
             new SqliteViewTable("PartyRole", 5)
@@ -132,7 +132,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = await RunAsync();
 
         Strings(target, "SELECT Cph FROM Holding ORDER BY Cph")
-            .Should().Equal("01/234/5678", "02/345/6789", "03/456/7890");
+            .Should().Equal("01/234/5678", "02/345/6789", "03/456/7890", "04/567/8901");
     }
 
     [Fact]
@@ -179,7 +179,11 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = await RunAsync();
 
         Strings(target, "SELECT CphType || '|' || UkInternalCode FROM Holding ORDER BY Cph")
-            .Should().Equal("permanent|England", "temporary|Scotland", "emergency|Northern Ireland");
+            .Should().Equal(
+                "permanent|England",
+                "temporary|Scotland",
+                "emergency|Northern Ireland",
+                "permanent|Wales");
     }
 
     [Fact]
@@ -330,6 +334,32 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     }
 
     [Fact]
+    public async Task Produces_identical_content_for_the_same_snapshot()
+    {
+        var first = await RunAsync("content-first.sqlite");
+        var second = await RunAsync("content-second.sqlite");
+
+        // Stable ids are not enough: where a CPH has rows the ordering date cannot separate, every
+        // column has to settle on the same row each time.
+        foreach (var table in SqliteViewDefinition.TableNames)
+        {
+            Rows(second, table).Should().Equal(Rows(first, table),
+                "{0} content must not vary between runs of one snapshot", table);
+        }
+    }
+
+    [Fact]
+    public async Task Settles_every_column_on_one_record_when_the_ordering_date_ties()
+    {
+        var target = await RunAsync();
+
+        // Which of the tied records wins is arbitrary; that no column is taken from the other is not.
+        Strings(target, "SELECT FeatureName || '|' || Street FROM Holding WHERE Cph='04/567/8901'")
+            .Should().ContainSingle()
+            .Which.Should().BeOneOf("Tied Alpha|Alpha Street", "Tied Beta|Beta Street");
+    }
+
+    [Fact]
     public async Task Leaves_the_source_database_untouched()
     {
         var before = Hash(_sourcePath);
@@ -432,6 +462,25 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         }
 
         return values;
+    }
+
+    private static List<string> Rows(string databasePath, string table)
+    {
+        using var connection = Open(databasePath);
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT * FROM {table} ORDER BY Id";
+
+        var rows = new List<string>();
+        using var reader = command.ExecuteReader();
+
+        while (reader.Read())
+        {
+            var values = new object[reader.FieldCount];
+            reader.GetValues(values);
+            rows.Add(string.Join("|", values.Select(value => value is DBNull ? "<null>" : value.ToString())));
+        }
+
+        return rows;
     }
 
     private static SqliteConnection Open(string databasePath)

@@ -5,29 +5,42 @@ using KeeperData.Infrastructure.Telemetry.Logging;
 using Serilog;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Reflection;
 
-var app = CreateWebApplication(args);
-await app.InitialiseAsync();
+var isBuildTimeOpenApiGeneration = IsBuildTimeOpenApiGeneration();
+var app = CreateWebApplication(args, isBuildTimeOpenApiGeneration);
+
+if (!isBuildTimeOpenApiGeneration)
+{
+    await app.InitialiseAsync();
+}
+
 await app.RunAsync();
 return;
 
 [ExcludeFromCodeCoverage]
-static WebApplication CreateWebApplication(string[] args)
+static WebApplication CreateWebApplication(string[] args, bool isBuildTimeOpenApiGeneration)
 {
     var builder = WebApplication.CreateBuilder(args);
-    ConfigureBuilder(builder);
+    ConfigureBuilder(builder, isBuildTimeOpenApiGeneration);
 
     var app = builder.Build();
 
-    app.ConfigureRequestPipeline();
+    app.ConfigureRequestPipeline(isBuildTimeOpenApiGeneration);
 
     return app;
 }
 
 [ExcludeFromCodeCoverage]
-static void ConfigureBuilder(WebApplicationBuilder builder)
+static void ConfigureBuilder(WebApplicationBuilder builder, bool isBuildTimeOpenApiGeneration)
 {
     builder.Configuration.AddEnvironmentVariables();
+
+    if (isBuildTimeOpenApiGeneration)
+    {
+        builder.Services.ConfigureOpenApiDocumentGeneration();
+        return;
+    }
 
     // Load certificates into Trust Store - Note must happen before Mongo and Http client connections.
     builder.Services.AddCustomTrustStore();
@@ -68,5 +81,9 @@ static void ConfigureBuilder(WebApplicationBuilder builder)
 
     builder.Services.ConfigureApi(builder.Configuration);
 }
+
+[ExcludeFromCodeCoverage]
+static bool IsBuildTimeOpenApiGeneration()
+    => Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider";
 
 public partial class Program { }

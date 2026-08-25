@@ -21,8 +21,15 @@ public static class WebApplicationExtensions
     }
 
     [ExcludeFromCodeCoverage]
-    public static void ConfigureRequestPipeline(this WebApplication app)
+    public static void ConfigureRequestPipeline(this WebApplication app, bool isBuildTimeOpenApiGeneration = false)
     {
+        if (isBuildTimeOpenApiGeneration)
+        {
+            app.MapOpenApi();
+            app.MapControllers();
+            return;
+        }
+
         var env = app.Services.GetRequiredService<IWebHostEnvironment>();
         var applicationLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
         var logger = app.Services.GetRequiredService<ILogger<Program>>();
@@ -40,17 +47,6 @@ public static class WebApplicationExtensions
 
         // Configure request localization for en-GB culture
         app.UseRequestLocalization();
-
-        // Enable Swagger and Swagger UI
-        app.UseSwagger();
-        app.UseSwaggerUI(options =>
-        {
-            options.SwaggerEndpoint("/swagger/v1/swagger.json", "KeeperData Bridge API v1");
-            options.RoutePrefix = "swagger"; // Access Swagger UI at /swagger
-            options.DocumentTitle = "KeeperData Bridge API";
-            options.DisplayRequestDuration();
-            options.EnableTryItOutByDefault();
-        });
 
         app.UseHeaderPropagation();
         app.UseRouting();
@@ -74,6 +70,9 @@ public static class WebApplicationExtensions
 
         // Root endpoint - allow anonymous access
         app.MapGet("/", () => "Alive!").AllowAnonymous();
+
+        // Generated API contract - allow anonymous access
+        app.MapOpenApi().AllowAnonymous();
 
         app.MapControllers();
     }

@@ -25,8 +25,8 @@ using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi;
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
 using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace KeeperData.Bridge.Setup
@@ -34,6 +34,65 @@ namespace KeeperData.Bridge.Setup
     [ExcludeFromCodeCoverage(Justification = "DI configuration code - tested through integration tests.")]
     public static class ServiceCollectionExtensions
     {
+        public static void ConfigureOpenApiDocumentGeneration(this IServiceCollection services)
+        {
+            services.AddControllers().AddJsonOptions(ConfigureJsonOptions);
+            services.ConfigureOpenApiDocument();
+        }
+
+        /// <summary>The OpenAPI schema service reads the HTTP JSON options rather than the MVC ones, so the
+        /// serializer contract has to be applied there for the generated schemas to match the API's JSON.</summary>
+        private static void ConfigureOpenApiDocument(this IServiceCollection services)
+        {
+            services.ConfigureHttpJsonOptions(options => ConfigureJsonSerializerOptions(options.SerializerOptions));
+
+            services.AddOpenApi("v1", options => options.AddDocumentTransformer((document, context, _) =>
+            {
+                document.Info = new OpenApiInfo
+                {
+                    Title = "KeeperData Bridge API",
+                    Version = "v1",
+                    Description = "API for managing data imports, querying MongoDB collections, and managing external catalogue files. "
+                        + "Calls routed through a CDP protected API gateway also need the platform's separate `x-api-key` header.",
+                    Contact = new OpenApiContact
+                    {
+                        Name = "DEFRA",
+                        Url = new Uri("https://github.com/DEFRA/ls-keeper-data-bridge-backend")
+                    }
+                };
+
+                var configuration = context.ApplicationServices.GetRequiredService<IConfiguration>();
+                var featureFlags = configuration.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
+
+                if (featureFlags.AuthenticationEnabled)
+                {
+                    document.Components ??= new OpenApiComponents();
+                    document.Components.SecuritySchemes = new Dictionary<string, IOpenApiSecurityScheme>
+                    {
+                        // Must match ApiKeyAuthenticationHandler, which reads the Authorization header
+                        // and requires the "ApiKey" scheme prefix.
+                        ["ApiKey"] = new OpenApiSecurityScheme
+                        {
+                            Description = "API key authentication, for example "
+                                + $"`Authorization: {ApiKeyAuthenticationSchemeOptions.DefaultScheme} <your-key>`.",
+                            Type = SecuritySchemeType.Http,
+                            Scheme = ApiKeyAuthenticationSchemeOptions.DefaultScheme
+                        }
+                    };
+
+                    document.Security =
+                    [
+                        new OpenApiSecurityRequirement
+                        {
+                            [new OpenApiSecuritySchemeReference("ApiKey", document)] = []
+                        }
+                    ];
+                }
+
+                return Task.CompletedTask;
+            }));
+        }
+
         public static void ConfigureApi(this IServiceCollection services, IConfiguration configuration)
         {
             services.AddDefaultAWSOptions(configuration.GetAWSOptions());
@@ -47,7 +106,7 @@ namespace KeeperData.Bridge.Setup
 
             services.ConfigureAuthorization(configuration);
 
-            services.ConfigureSwagger(configuration);
+            services.ConfigureOpenApiDocument();
 
             services.AddApplicationLayer();
 
@@ -96,57 +155,6 @@ namespace KeeperData.Bridge.Setup
         private static void ConfigureFeatureFlags(this IServiceCollection services, IConfiguration configuration)
         {
             services.Configure<FeatureFlags>(configuration.GetSection(FeatureFlags.SectionName));
-        }
-
-        private static void ConfigureSwagger(this IServiceCollection services, IConfiguration configuration)
-        {
-            services.AddEndpointsApiExplorer();
-            services.AddSwaggerGen(options =>
-            {
-                options.SwaggerDoc("v1", new OpenApiInfo
-                {
-                    Title = "KeeperData Bridge API",
-                    Version = "v1",
-                    Description = "API for managing data imports, querying MongoDB collections, and managing external catalogue files",
-                    Contact = new OpenApiContact
-                    {
-                        Name = "DEFRA",
-                        Url = new Uri("https://github.com/DEFRA/ls-keeper-data-bridge-backend")
-                    }
-                });
-
-                // Include XML comments for better documentation
-                var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-                if (File.Exists(xmlPath))
-                {
-                    options.IncludeXmlComments(xmlPath);
-                }
-
-                // Check if authentication is enabled
-                var featureFlags = configuration.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
-
-                if (featureFlags.AuthenticationEnabled)
-                {
-                    // Add API Key authentication support in Swagger UI
-                    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
-                    {
-                        Description = "API Key authentication. Enter your API key in the 'X-API-Key' header.",
-                        Name = "X-API-Key",
-                        In = ParameterLocation.Header,
-                        Type = SecuritySchemeType.ApiKey,
-                        Scheme = "ApiKeyScheme"
-                    });
-
-                    options.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
-                    {
-                        {
-                            new OpenApiSecuritySchemeReference("ApiKey"),
-                            new List<string>()
-                        }
-                    });
-                }
-            });
         }
 
         private static void ConfigureAuthentication(this IServiceCollection services, IConfiguration configuration)
@@ -199,12 +207,7 @@ namespace KeeperData.Bridge.Setup
                     {
                         options.Filters.Add<OperationCancelledExceptionFilter>();
                     })
-                    .AddJsonOptions(opts =>
-                    {
-                        var enumConverter = new JsonStringEnumConverter();
-                        opts.JsonSerializerOptions.Converters.Add(enumConverter);
-                        opts.JsonSerializerOptions.Converters.Add(new BsonDocumentJsonConverter());
-                    });
+                    .AddJsonOptions(ConfigureJsonOptions);
 
                 return;
             }
@@ -235,12 +238,17 @@ namespace KeeperData.Bridge.Setup
                 options.Filters.Add(new AuthorizeFilter(policy));
                 options.Filters.Add<OperationCancelledExceptionFilter>();
             })
-            .AddJsonOptions(opts =>
-            {
-                var enumConverter = new JsonStringEnumConverter();
-                opts.JsonSerializerOptions.Converters.Add(enumConverter);
-                opts.JsonSerializerOptions.Converters.Add(new BsonDocumentJsonConverter());
-            });
+            .AddJsonOptions(ConfigureJsonOptions);
+        }
+
+        /// <summary>Shared so the generated OpenAPI schemas describe the JSON the API actually emits.</summary>
+        private static void ConfigureJsonOptions(Microsoft.AspNetCore.Mvc.JsonOptions options)
+            => ConfigureJsonSerializerOptions(options.JsonSerializerOptions);
+
+        private static void ConfigureJsonSerializerOptions(JsonSerializerOptions options)
+        {
+            options.Converters.Add(new JsonStringEnumConverter());
+            options.Converters.Add(new BsonDocumentJsonConverter());
         }
     }
 }

@@ -145,6 +145,70 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     }
 
     [Fact]
+    public async Task Takes_holding_attributes_from_the_most_recent_source_record()
+    {
+        var target = await RunAsync();
+
+        // Both records are current, so the date is a deterministic tie-break rather than a currency
+        // rule - but the address must still follow the record the name came from.
+        Strings(target, "SELECT FeatureName || '|' || Street FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Equal(["Main Farm|New Street"]);
+    }
+
+    [Fact]
+    public async Task Falls_back_to_an_earlier_record_when_the_latest_name_is_a_placeholder()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT FeatureName FROM Holding WHERE Cph='02/345/6789'")
+            .Should().Equal(["Known Farm"], "'Notknown' stands for absence, so it must not win");
+    }
+
+    [Fact]
+    public async Task Normalises_the_organisation_name_placeholder_to_null()
+    {
+        var target = await RunAsync();
+
+        Scalar(target, "SELECT count(*) FROM Party WHERE OrganisationName IS NOT NULL")
+            .Should().Be(0L, "'No Organisation Name' must not read as an organisation");
+    }
+
+    [Fact]
+    public async Task Normalises_the_casing_of_enum_like_values()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT CphType || '|' || UkInternalCode FROM Holding ORDER BY Cph")
+            .Should().Equal("permanent|England", "temporary|Scotland", "emergency|Northern Ireland");
+    }
+
+    [Fact]
+    public async Task Stores_dates_as_epoch_seconds()
+    {
+        var target = await RunAsync();
+
+        Scalar(target, "SELECT StartDate FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Be(new DateTimeOffset(2025, 6, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds());
+
+        Scalar(target, "SELECT AnimalGroupFromDate FROM Herd WHERE Herdmark='AB1234'")
+            .Should().Be(new DateTimeOffset(2008, 7, 16, 0, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds());
+
+        Strings(target, "SELECT typeof(StartDate) FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Equal(["integer"]);
+    }
+
+    [Fact]
+    public async Task Leaves_the_end_of_an_open_record_null()
+    {
+        var target = await RunAsync();
+
+        Scalar(target, "SELECT count(*) FROM Holding WHERE EndDate IS NOT NULL")
+            .Should().Be(0L, "the extract carries only records that have not ended");
+        Scalar(target, "SELECT count(*) FROM Herd WHERE AnimalGroupToDate IS NOT NULL")
+            .Should().Be(0L);
+    }
+
+    [Fact]
     public async Task Never_materialises_a_holding_a_relationship_merely_mentions()
     {
         var target = await RunAsync();

@@ -40,6 +40,8 @@ CREATE TABLE target.Holding (
     Cph TEXT NOT NULL UNIQUE,
     FeatureName TEXT,
     CphType TEXT,
+    StartDate INTEGER,
+    EndDate INTEGER,
     AddressPk TEXT,
     SaonStartNumber TEXT,
     SaonStartNumberSuffix TEXT,
@@ -74,8 +76,8 @@ CREATE TABLE target.Herd (
     Intervals TEXT,
     IntervalUnitOfTime TEXT,
     MovementRestrictionReasonCode TEXT,
-    AnimalGroupFromDate TEXT,
-    AnimalGroupToDate TEXT,
+    AnimalGroupFromDate INTEGER,
+    AnimalGroupToDate INTEGER,
     UNIQUE (Herdmark, Cphh)
 );
 
@@ -128,6 +130,37 @@ CREATE OR REPLACE TEMP MACRO null_dash(value) AS (
     NULLIF(NULLIF(NULLIF(trim(value), ''), '-'), ',')
 );
 
+-- Words the source writes in place of a value. Compared lower-cased because the
+-- extracts are inconsistent about capitalisation.
+CREATE OR REPLACE TEMP MACRO null_placeholder(value) AS (
+    CASE
+        WHEN lower(trim(value)) IN ('unknown', 'not known', 'notknown', 'no organisation name')
+        THEN NULL
+        ELSE null_dash(value)
+    END
+);
+
+-- DuckDB has no initcap. Word-wise, so a multi-word value keeps every initial.
+CREATE OR REPLACE TEMP MACRO title_case(value) AS (
+    CASE WHEN null_dash(value) IS NULL THEN NULL ELSE
+        array_to_string(
+            list_transform(
+                string_split(lower(null_dash(value)), ' '),
+                word -> CASE WHEN length(word) = 0 THEN word
+                             ELSE upper(word[1]) || word[2:] END
+            ),
+            ' '
+        )
+    END
+);
+
+-- Dates are carried as text and are date-only with no zone, so they are read as
+-- UTC to preserve the calendar date. TRY_CAST keeps an unparsable value from
+-- failing the run.
+CREATE OR REPLACE TEMP MACRO epoch_seconds(value) AS (
+    epoch(TRY_CAST(null_dash(value) AS TIMESTAMP))::BIGINT
+);
+
 CREATE OR REPLACE TEMP MACRO valid_cphh(value) AS (
     regexp_matches(value, '^[0-9]{2}/[0-9]{3}/[0-9]{4}/[0-9]{2}$')
 );
@@ -154,7 +187,7 @@ SELECT
     COALESCE(null_dash(p.PERSON_GIVEN_NAME2), null_dash(h.PERSON_GIVEN_NAME2)) AS PERSON_GIVEN_NAME2,
     COALESCE(null_dash(p.PERSON_INITIALS), null_dash(h.PERSON_INITIALS)) AS PERSON_INITIALS,
     COALESCE(null_dash(p.PERSON_FAMILY_NAME), null_dash(h.PERSON_FAMILY_NAME)) AS PERSON_FAMILY_NAME,
-    COALESCE(null_dash(p.ORGANISATION_NAME), null_dash(h.ORGANISATION_NAME)) AS ORGANISATION_NAME,
+    COALESCE(null_placeholder(p.ORGANISATION_NAME), null_placeholder(h.ORGANISATION_NAME)) AS ORGANISATION_NAME,
     p.TELEPHONE_NUMBER,
     p.MOBILE_NUMBER,
     p.INTERNET_EMAIL_ADDRESS,
@@ -192,32 +225,39 @@ SELECT DISTINCT null_dash(CPH) AS Cph
 FROM sam_cph_holdings
 WHERE null_dash(CPH) IS NOT NULL;
 
+-- Every source row for a CPH is current: the extract filters out ended records, so a CPH with
+-- several rows has several concurrent features rather than a history. FEATURE_ADDRESS_FROM_DATE is
+-- therefore a deterministic tie-break, not a currency rule - which is the point, because any_value
+-- could return different values between runs for identical input. arg_max skips rows whose argument
+-- is null, so each column takes the most recent value it actually has.
 CREATE OR REPLACE TEMP VIEW holding_attributes AS
 SELECT
     null_dash(CPH) AS Cph,
-    any_value(null_dash(FEATURE_NAME)) AS FeatureName,
-    any_value(null_dash(CPH_TYPE)) AS CphType,
-    any_value(null_dash(ADDRESS_PK)) AS AddressPk,
-    any_value(null_dash(SAON_START_NUMBER)) AS SaonStartNumber,
-    any_value(null_dash(SAON_START_NUMBER_SUFFIX)) AS SaonStartNumberSuffix,
-    any_value(null_dash(SAON_END_NUMBER)) AS SaonEndNumber,
-    any_value(null_dash(SAON_END_NUMBER_SUFFIX)) AS SaonEndNumberSuffix,
-    any_value(null_dash(SAON_DESCRIPTION)) AS SaonDescription,
-    any_value(null_dash(PAON_START_NUMBER)) AS PaonStartNumber,
-    any_value(null_dash(PAON_START_NUMBER_SUFFIX)) AS PaonStartNumberSuffix,
-    any_value(null_dash(PAON_END_NUMBER)) AS PaonEndNumber,
-    any_value(null_dash(PAON_END_NUMBER_SUFFIX)) AS PaonEndNumberSuffix,
-    any_value(null_dash(PAON_DESCRIPTION)) AS PaonDescription,
-    any_value(null_dash(STREET)) AS Street,
-    any_value(null_dash(TOWN)) AS Town,
-    any_value(null_dash(LOCALITY)) AS Locality,
-    any_value(null_dash(UK_INTERNAL_CODE)) AS UkInternalCode,
-    any_value(null_dash(POSTCODE)) AS Postcode,
-    any_value(null_dash(COUNTRY_CODE)) AS CountryCode,
-    any_value(null_dash(UDPRN)) AS Udprn,
-    any_value(null_dash(EASTING)) AS Easting,
-    any_value(null_dash(NORTHING)) AS Northing,
-    any_value(null_dash(OS_MAP_REFERENCE)) AS OsMapReference
+    arg_max(null_placeholder(FEATURE_NAME), FEATURE_ADDRESS_FROM_DATE) AS FeatureName,
+    arg_max(lower(null_dash(CPH_TYPE)), FEATURE_ADDRESS_FROM_DATE) AS CphType,
+    max(epoch_seconds(FEATURE_ADDRESS_FROM_DATE)) AS StartDate,
+    arg_max(epoch_seconds(FEATURE_ADDRESS_TO_DATE), FEATURE_ADDRESS_FROM_DATE) AS EndDate,
+    arg_max(null_dash(ADDRESS_PK), FEATURE_ADDRESS_FROM_DATE) AS AddressPk,
+    arg_max(null_dash(SAON_START_NUMBER), FEATURE_ADDRESS_FROM_DATE) AS SaonStartNumber,
+    arg_max(null_dash(SAON_START_NUMBER_SUFFIX), FEATURE_ADDRESS_FROM_DATE) AS SaonStartNumberSuffix,
+    arg_max(null_dash(SAON_END_NUMBER), FEATURE_ADDRESS_FROM_DATE) AS SaonEndNumber,
+    arg_max(null_dash(SAON_END_NUMBER_SUFFIX), FEATURE_ADDRESS_FROM_DATE) AS SaonEndNumberSuffix,
+    arg_max(null_dash(SAON_DESCRIPTION), FEATURE_ADDRESS_FROM_DATE) AS SaonDescription,
+    arg_max(null_dash(PAON_START_NUMBER), FEATURE_ADDRESS_FROM_DATE) AS PaonStartNumber,
+    arg_max(null_dash(PAON_START_NUMBER_SUFFIX), FEATURE_ADDRESS_FROM_DATE) AS PaonStartNumberSuffix,
+    arg_max(null_dash(PAON_END_NUMBER), FEATURE_ADDRESS_FROM_DATE) AS PaonEndNumber,
+    arg_max(null_dash(PAON_END_NUMBER_SUFFIX), FEATURE_ADDRESS_FROM_DATE) AS PaonEndNumberSuffix,
+    arg_max(null_dash(PAON_DESCRIPTION), FEATURE_ADDRESS_FROM_DATE) AS PaonDescription,
+    arg_max(null_dash(STREET), FEATURE_ADDRESS_FROM_DATE) AS Street,
+    arg_max(null_dash(TOWN), FEATURE_ADDRESS_FROM_DATE) AS Town,
+    arg_max(null_dash(LOCALITY), FEATURE_ADDRESS_FROM_DATE) AS Locality,
+    arg_max(title_case(UK_INTERNAL_CODE), FEATURE_ADDRESS_FROM_DATE) AS UkInternalCode,
+    arg_max(null_dash(POSTCODE), FEATURE_ADDRESS_FROM_DATE) AS Postcode,
+    arg_max(null_dash(COUNTRY_CODE), FEATURE_ADDRESS_FROM_DATE) AS CountryCode,
+    arg_max(null_dash(UDPRN), FEATURE_ADDRESS_FROM_DATE) AS Udprn,
+    arg_max(null_dash(EASTING), FEATURE_ADDRESS_FROM_DATE) AS Easting,
+    arg_max(null_dash(NORTHING), FEATURE_ADDRESS_FROM_DATE) AS Northing,
+    arg_max(null_dash(OS_MAP_REFERENCE), FEATURE_ADDRESS_FROM_DATE) AS OsMapReference
 FROM sam_cph_holdings
 WHERE null_dash(CPH) IS NOT NULL
 GROUP BY null_dash(CPH);
@@ -228,6 +268,8 @@ SELECT
     h.Cph,
     a.FeatureName,
     a.CphType,
+    a.StartDate,
+    a.EndDate,
     a.AddressPk,
     a.SaonStartNumber,
     a.SaonStartNumberSuffix,
@@ -263,8 +305,8 @@ SELECT
     any_value(null_dash(INTERVALS)) AS Intervals,
     any_value(null_dash(INTERVAL_UNIT_OF_TIME)) AS IntervalUnitOfTime,
     any_value(null_dash(MOVEMENT_RSTRCTN_RSN_CODE)) AS MovementRestrictionReasonCode,
-    any_value(null_dash(ANIMAL_GROUP_ID_MCH_FRM_DAT)) AS AnimalGroupFromDate,
-    any_value(null_dash(ANIMAL_GROUP_ID_MCH_TO_DAT)) AS AnimalGroupToDate
+    min(epoch_seconds(ANIMAL_GROUP_ID_MCH_FRM_DAT)) AS AnimalGroupFromDate,
+    max(epoch_seconds(ANIMAL_GROUP_ID_MCH_TO_DAT)) AS AnimalGroupToDate
 FROM sam_herd
 WHERE CPHH IS NOT NULL
     AND valid_cphh(CPHH)

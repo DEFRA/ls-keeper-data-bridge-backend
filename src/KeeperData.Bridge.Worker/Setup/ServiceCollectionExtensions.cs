@@ -62,6 +62,17 @@ public static class ServiceCollectionExtensions
                     .WithIdentity($"{rotateKeysConfig.JobType}-trigger")
                     .WithCronSchedule(rotateKeysConfig.CronSchedule));
             }
+
+            var etlImportConfig = scheduledJobConfiguration.FirstOrDefault(x => x.JobType == nameof(EtlImportJob));
+            if (!string.IsNullOrWhiteSpace(etlImportConfig?.CronSchedule) && etlImportConfig.IsEnabled)
+            {
+                q.AddJob<EtlImportJob>(opts => opts.WithIdentity(etlImportConfig.JobType));
+
+                q.AddTrigger(opts => opts
+                    .ForJob(etlImportConfig.JobType)
+                    .WithIdentity($"{etlImportConfig.JobType}-trigger")
+                    .WithCronSchedule(etlImportConfig.CronSchedule));
+            }
         });
 
         services.AddQuartzHostedService(q =>
@@ -77,6 +88,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ImportBulkFilesJob>();
         services.AddScoped<CleanseReportJob>();
         services.AddScoped<RotateExternalStorageKeysJob>();
+        services.AddScoped<EtlImportJob>();
 
         return services;
     }

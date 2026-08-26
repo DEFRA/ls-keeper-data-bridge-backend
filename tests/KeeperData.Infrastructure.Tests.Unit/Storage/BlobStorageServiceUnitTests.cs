@@ -745,6 +745,51 @@ public class BlobStorageServiceUnitTests
     }
 
     [Fact]
+    public async Task DeleteByPrefixAsync_WhenS3ReportsDeleteErrors_LogsAndThrows()
+    {
+        _mockS3Client.Setup(client => client.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListObjectsV2Response
+            {
+                S3Objects = [new S3Object { Key = "normalised/sam_cph_holdings/a.parquet" }],
+                IsTruncated = false
+            });
+        _mockS3Client.Setup(client => client.DeleteObjectsAsync(
+                It.IsAny<DeleteObjectsRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteObjectsResponse
+            {
+                DeleteErrors =
+                [
+                    new DeleteError
+                    {
+                        Key = "normalised/sam_cph_holdings/a.parquet",
+                        Code = "AccessDenied",
+                        Message = "Access denied"
+                    }
+                ]
+            });
+
+        using var service = new S3BlobStorageService(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer,
+            "normalised");
+
+        var act = () => service.DeleteByPrefixAsync("sam_cph_holdings/");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("S3 failed to delete 1 object(s) under the requested prefix.");
+        _loggerMock.Verify(
+            logger => logger.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((value, _) => value.ToString()!.Contains("AccessDenied")),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task DeleteByPrefixAsync_WhenListingIsCancelled_PreservesCancellation()
     {
         using var cancellation = new CancellationTokenSource();

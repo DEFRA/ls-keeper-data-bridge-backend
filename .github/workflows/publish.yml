@@ -31,6 +31,56 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           nuget-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # The API contract is generated from the controllers, so it is published alongside the image that
+  # serves it rather than being kept in the repository where it could drift.
+  publish-openapi:
+    name: Publish OpenAPI contract
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Depth 0 required to see the tag the build job created
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '10.0.x'
+          source-url: https://nuget.pkg.github.com/DEFRA/index.json
+          config-file: ./nuget.config
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate OpenAPI contract
+        run: dotnet build ./src/KeeperData.Bridge/KeeperData.Bridge.csproj --configuration Release
+      - name: Resolve release version
+        id: version
+        run: |
+          git fetch --tags --force
+          tag="$(git tag --points-at HEAD | sort -V | tail -n1)"
+          if [ -z "$tag" ]; then
+            echo "No version tag on $(git rev-parse HEAD); the build job tags the commit it publishes."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Attach contract to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ASSET: ./src/KeeperData.Bridge/obj/openapi/keeper-data-bridge-openapi.json
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+          else
+            gh release create "$TAG" "$ASSET" \
+              --title "$TAG" \
+              --notes "OpenAPI 3.1 contract for the Keeper Data Bridge API as deployed in \`$TAG\`." \
+              --latest
+          fi
   ## SonarCloud
   ## Uncomment to unable SonarCloud scan
   ## Requires project to be set up in SonarCloud

@@ -13,18 +13,7 @@ public class ImportBulkFilesJob(
 {
     public async Task Execute(IJobExecutionContext context)
     {
-        logger.LogInformation("ImportBulkFilesJob started at {startTime}", DateTime.UtcNow);
+        logger.LogInformation("ImportBulkFilesJob is disabled (time={time}, type={name})", DateTime.UtcNow, coordinator.GetType().Name);
 
-        try
-        {
-            await coordinator.RunAsync(context.CancellationToken);
-
-            logger.LogInformation("ImportBulkFilesJob completed at {endTime}", DateTime.UtcNow);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "ImportBulkFilesJob failed.");
-            throw;
-        }
     }
 }

@@ -39,6 +39,13 @@ jobs:
         run: dotnet restore ./working-dir/KeeperData.Bridge.sln
       - name: Build
         run: dotnet build ./working-dir/KeeperData.Bridge.sln --configuration Release --no-restore -warnaserror
+      # The build emits the API contract that the publish workflow releases, so a change that stops it
+      # generating has to fail here rather than at release time.
+      - name: Check OpenAPI contract was generated
+        run: |
+          spec=./working-dir/src/KeeperData.Bridge/obj/openapi/keeper-data-bridge-openapi.json
+          test -f "$spec"
+          grep -q '"/api/etl/imports"' "$spec"
       # The read-model tests load the same bundled extension production does, fetched here with the
       # same script the image build uses so both stay on the DuckDB version the package resolved.
       - name: Fetch DuckDB SQLite extension

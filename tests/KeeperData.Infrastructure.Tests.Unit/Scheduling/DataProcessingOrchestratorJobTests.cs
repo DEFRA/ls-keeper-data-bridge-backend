@@ -6,6 +6,8 @@ using Quartz;
 
 namespace KeeperData.Infrastructure.Tests.Unit.Scheduling
 {
+    // ImportBulkFilesJob dispatches nothing while the old ETL is switched off (commit 58169a3);
+    // restore the coordinator-dispatch tests from history when it is switched back on.
     public class DataProcessingOrchestratorJobTests
     {
         private readonly Mock<ILogger<ImportBulkFilesJob>> _loggerMock;
@@ -29,42 +31,11 @@ namespace KeeperData.Infrastructure.Tests.Unit.Scheduling
         }
 
         [Fact]
-        public async Task Execute_WhenSuccessful_CallsCoordinatorOnce()
+        public async Task Execute_WhileTheOldEtlIsDisabled_DoesNotStartAnIngestionRun()
         {
-            _coordinatorMock.Setup(x => x.RunAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-
             await _sut.Execute(_jobExecutionContextMock.Object);
 
-            _coordinatorMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
-        }
-
-        [Fact]
-        public async Task Execute_WhenCoordinatorFails_ThrowsException()
-        {
-            _coordinatorMock.Setup(x => x.RunAsync(It.IsAny<CancellationToken>()))
-                .ThrowsAsync(new InvalidOperationException("Invalid operation exception"));
-
-            async Task act() => await _sut.Execute(_jobExecutionContextMock.Object);
-
-            await Assert.ThrowsAsync<InvalidOperationException>(act);
-
-            _coordinatorMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
-        }
-
-        [Fact]
-        public async Task Execute_WhenCancellationIsRequested_StopsProcessingAndThrows()
-        {
-            var cts = new CancellationTokenSource();
-            _jobExecutionContextMock.Setup(c => c.CancellationToken).Returns(cts.Token);
-
-            _coordinatorMock
-                .Setup(x => x.RunAsync(It.IsAny<CancellationToken>()))
-                .Returns<CancellationToken>(async (token) => await Task.Delay(100, token));
-
-            var executionTask = _sut.Execute(_jobExecutionContextMock.Object);
-            cts.Cancel();
-
-            await Assert.ThrowsAsync<TaskCanceledException>(() => executionTask);
+            _coordinatorMock.Verify(x => x.RunAsync(It.IsAny<CancellationToken>()), Times.Never);
         }
     }
 }

@@ -261,13 +261,13 @@ dotnet format src/KeeperData.Bridge
 
 ### API Documentation
 
-The application provides API endpoints:
+The OpenAPI 3.1 description is generated from the controllers themselves, so it cannot drift from the API.
 
-- **POST /api/import** - Import data
-- **GET /api/query** - Query data
-- **GET /api/external-catalogue** - Access external catalogue
+- **Running service** - `GET /openapi/v1.json`
+- **Latest release** - `keeper-data-bridge-openapi.json`, attached to the newest [GitHub release](https://github.com/DEFRA/ls-keeper-data-bridge-backend/releases/latest)
+- **Locally** - `dotnet build src/KeeperData.Bridge` writes it to `src/KeeperData.Bridge/obj/openapi/`
 
-For detailed API documentation, refer to controller files in `src/KeeperData.Bridge/Controllers/`.
+The document is built from the `[ProducesResponseType]` attributes and XML doc comments on the controllers, so keep those accurate when changing an endpoint. There is no Swagger UI; load the document into your preferred viewer.
 
 ## Deployment
 

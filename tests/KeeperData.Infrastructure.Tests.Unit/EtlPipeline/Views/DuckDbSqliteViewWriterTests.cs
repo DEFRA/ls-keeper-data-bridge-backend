@@ -82,7 +82,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         result.Tables.Should().BeEquivalentTo(new[]
         {
             new SqliteViewTable("Party", 6),
-            new SqliteViewTable("Holding", 3),
+            new SqliteViewTable("Holding", 4),
             new SqliteViewTable("Herd", 1),
             new SqliteViewTable("HoldingAnimalProfile", 2),
             new SqliteViewTable("PartyRole", 5)
@@ -132,7 +132,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = await RunAsync();
 
         Strings(target, "SELECT Cph FROM Holding ORDER BY Cph")
-            .Should().Equal("01/234/5678", "02/345/6789", "03/456/7890");
+            .Should().Equal("01/234/5678", "02/345/6789", "03/456/7890", "04/567/8901");
     }
 
     [Fact]
@@ -142,6 +142,74 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
         Strings(target, "SELECT FeatureName || '|' || Town FROM Holding WHERE Cph='03/456/7890'")
             .Should().Equal(["Spaced Farm|Bodmin"]);
+    }
+
+    [Fact]
+    public async Task Takes_holding_attributes_from_the_most_recent_source_record()
+    {
+        var target = await RunAsync();
+
+        // Both records are current, so the date is a deterministic tie-break rather than a currency
+        // rule - but the address must still follow the record the name came from.
+        Strings(target, "SELECT FeatureName || '|' || Street FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Equal(["Main Farm|New Street"]);
+    }
+
+    [Fact]
+    public async Task Falls_back_to_an_earlier_record_when_the_latest_name_is_a_placeholder()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT FeatureName FROM Holding WHERE Cph='02/345/6789'")
+            .Should().Equal(["Known Farm"], "'Notknown' stands for absence, so it must not win");
+    }
+
+    [Fact]
+    public async Task Normalises_the_organisation_name_placeholder_to_null()
+    {
+        var target = await RunAsync();
+
+        Scalar(target, "SELECT count(*) FROM Party WHERE OrganisationName IS NOT NULL")
+            .Should().Be(0L, "'No Organisation Name' must not read as an organisation");
+    }
+
+    [Fact]
+    public async Task Normalises_the_casing_of_enum_like_values()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT CphType || '|' || UkInternalCode FROM Holding ORDER BY Cph")
+            .Should().Equal(
+                "permanent|England",
+                "temporary|Scotland",
+                "emergency|Northern Ireland",
+                "permanent|Wales");
+    }
+
+    [Fact]
+    public async Task Stores_dates_as_epoch_seconds()
+    {
+        var target = await RunAsync();
+
+        Scalar(target, "SELECT StartDate FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Be(new DateTimeOffset(2025, 6, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds());
+
+        Scalar(target, "SELECT AnimalGroupFromDate FROM Herd WHERE Herdmark='AB1234'")
+            .Should().Be(new DateTimeOffset(2008, 7, 16, 0, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds());
+
+        Strings(target, "SELECT typeof(StartDate) FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Equal(["integer"]);
+    }
+
+    [Fact]
+    public async Task Leaves_the_end_of_an_open_record_null()
+    {
+        var target = await RunAsync();
+
+        Scalar(target, "SELECT count(*) FROM Holding WHERE EndDate IS NOT NULL")
+            .Should().Be(0L, "the extract carries only records that have not ended");
+        Scalar(target, "SELECT count(*) FROM Herd WHERE AnimalGroupToDate IS NOT NULL")
+            .Should().Be(0L);
     }
 
     [Fact]
@@ -266,6 +334,32 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     }
 
     [Fact]
+    public async Task Produces_identical_content_for_the_same_snapshot()
+    {
+        var first = await RunAsync("content-first.sqlite");
+        var second = await RunAsync("content-second.sqlite");
+
+        // Stable ids are not enough: where a CPH has rows the ordering date cannot separate, every
+        // column has to settle on the same row each time.
+        foreach (var table in SqliteViewDefinition.TableNames)
+        {
+            Rows(second, table).Should().Equal(Rows(first, table),
+                "{0} content must not vary between runs of one snapshot", table);
+        }
+    }
+
+    [Fact]
+    public async Task Settles_every_column_on_one_record_when_the_ordering_date_ties()
+    {
+        var target = await RunAsync();
+
+        // Which of the tied records wins is arbitrary; that no column is taken from the other is not.
+        Strings(target, "SELECT FeatureName || '|' || Street FROM Holding WHERE Cph='04/567/8901'")
+            .Should().ContainSingle()
+            .Which.Should().BeOneOf("Tied Alpha|Alpha Street", "Tied Beta|Beta Street");
+    }
+
+    [Fact]
     public async Task Leaves_the_source_database_untouched()
     {
         var before = Hash(_sourcePath);
@@ -368,6 +462,25 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         }
 
         return values;
+    }
+
+    private static List<string> Rows(string databasePath, string table)
+    {
+        using var connection = Open(databasePath);
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT * FROM {table} ORDER BY Id";
+
+        var rows = new List<string>();
+        using var reader = command.ExecuteReader();
+
+        while (reader.Read())
+        {
+            var values = new object[reader.FieldCount];
+            reader.GetValues(values);
+            rows.Add(string.Join("|", values.Select(value => value is DBNull ? "<null>" : value.ToString())));
+        }
+
+        return rows;
     }
 
     private static SqliteConnection Open(string databasePath)

@@ -261,6 +261,33 @@ public class BlobStorageServiceReadOnlyUnitTests
     }
 
     [Fact]
+    public async Task ListPageAsync_WithTopLevelFolderAndNoPrefix_UsesExactFolderBoundary()
+    {
+        ListObjectsV2Request? capturedRequest = null;
+        _mockS3Client.Setup(x => x.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ListObjectsV2Request, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new ListObjectsV2Response
+            {
+                S3Objects = [],
+                IsTruncated = false
+            });
+
+        using var service = new S3BlobStorageServiceReadOnly(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer,
+            "normalised");
+
+        await service.ListPageAsync();
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Prefix.Should().Be("normalised/",
+            "the rooted service must not also match sibling keys such as normalised-backup/");
+    }
+
+    [Fact]
     public async Task ListPageAsync_WithPagination_ReturnsContinuationToken()
     {
         // Arrange

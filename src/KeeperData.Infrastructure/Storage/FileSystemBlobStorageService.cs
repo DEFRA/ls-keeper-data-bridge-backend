@@ -222,6 +222,39 @@ public class FileSystemBlobStorageService : IBlobStorageService
         return Task.CompletedTask;
     }
 
+    public async Task<ClearDownResult> DeleteByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+
+        var objects = await ListAsync(prefix, cancellationToken).ConfigureAwait(false);
+        var deletedKeys = new List<string>(objects.Count);
+
+        foreach (var item in objects)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await DeleteAsync(item.Key, cancellationToken).ConfigureAwait(false);
+            deletedKeys.Add(item.Key);
+        }
+
+        var rootDir = GetRootDirectory();
+        if (Directory.Exists(rootDir))
+            CleanEmptyDirectories(rootDir);
+
+        _logger.LogInformation(
+            "Prefix deletion completed for {BasePath}, prefix {Prefix}. Total objects deleted: {TotalDeleted}",
+            _basePath,
+            prefix,
+            deletedKeys.Count);
+
+        return new ClearDownResult
+        {
+            DeletedKeys = deletedKeys,
+            TotalDeleted = deletedKeys.Count
+        };
+    }
+
     public Task<ClearDownResult> ClearDownAsync(CancellationToken cancellationToken = default)
     {
         var rootDir = GetRootDirectory();

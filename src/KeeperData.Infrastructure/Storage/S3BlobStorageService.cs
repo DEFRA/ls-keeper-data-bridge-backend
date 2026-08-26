@@ -203,6 +203,92 @@ public class S3BlobStorageService : S3BlobStorageServiceReadOnly, IBlobStorageSe
         }
     }
 
+    public async Task<ClearDownResult> DeleteByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+
+        try
+        {
+            _logger.LogInformation(
+                "Starting prefix deletion for container {Container}, folder {Folder}, prefix {Prefix}",
+                _bucketName,
+                _topLevelFolder ?? "(none)",
+                prefix);
+
+            var objectKeys = new List<string>();
+            string? continuationToken = null;
+
+            // Complete the listing before deleting. This prevents mutations from invalidating a
+            // continuation token while a large prefix is being enumerated.
+            do
+            {
+                var page = await ListPageAsync(
+                    prefix,
+                    pageSize: 1000,
+                    continuationToken: continuationToken,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                objectKeys.AddRange(page.Items.Select(item => item.Key));
+                continuationToken = page.ContinuationToken;
+            }
+            while (!string.IsNullOrEmpty(continuationToken));
+
+            foreach (var batch in objectKeys.Chunk(1000))
+            {
+                var request = new DeleteObjectsRequest
+                {
+                    BucketName = _bucketName,
+                    Objects = batch
+                        .Select(key => new KeyVersion { Key = GetFullObjectKey(key) })
+                        .ToList()
+                };
+
+                var response = await _s3Client.DeleteObjectsAsync(request, cancellationToken).ConfigureAwait(false);
+
+                if (response.DeleteErrors is { Count: > 0 })
+                {
+                    foreach (var error in response.DeleteErrors)
+                    {
+                        _logger.LogWarning(
+                            "Failed to delete object {Key}: {Code} - {Message}",
+                            error.Key,
+                            error.Code,
+                            error.Message);
+                    }
+
+                    throw new InvalidOperationException(
+                        $"S3 failed to delete {response.DeleteErrors.Count} object(s) under the requested prefix.");
+                }
+            }
+
+            _logger.LogInformation(
+                "Prefix deletion completed for container {Container}, folder {Folder}, prefix {Prefix}. " +
+                "Total objects deleted: {TotalDeleted}",
+                _bucketName,
+                _topLevelFolder ?? "(none)",
+                prefix,
+                objectKeys.Count);
+
+            return new ClearDownResult
+            {
+                DeletedKeys = objectKeys,
+                TotalDeleted = objectKeys.Count
+            };
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Failed to delete objects by prefix from container {Container}, folder {Folder}, prefix {Prefix}",
+                _bucketName,
+                _topLevelFolder ?? "(none)",
+                prefix);
+            throw;
+        }
+    }
+
     public async Task<ClearDownResult> ClearDownAsync(CancellationToken cancellationToken = default)
     {
         try

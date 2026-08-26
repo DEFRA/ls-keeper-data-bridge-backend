@@ -701,5 +701,68 @@ public class BlobStorageServiceUnitTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task DeleteByPrefixAsync_DeletesOnlyMatchingKeysWithinTheConfiguredFolder()
+    {
+        ListObjectsV2Request? listRequest = null;
+        DeleteObjectsRequest? deleteRequest = null;
+
+        _mockS3Client.Setup(client => client.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(), It.IsAny<CancellationToken>()))
+            .Callback<ListObjectsV2Request, CancellationToken>((request, _) => listRequest = request)
+            .ReturnsAsync(new ListObjectsV2Response
+            {
+                S3Objects =
+                [
+                    new S3Object { Key = "normalised/sam_cph_holdings/a.parquet" },
+                    new S3Object { Key = "normalised/sam_cph_holdings/b.parquet" }
+                ],
+                IsTruncated = false
+            });
+        _mockS3Client.Setup(client => client.DeleteObjectsAsync(
+                It.IsAny<DeleteObjectsRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<DeleteObjectsRequest, CancellationToken>((request, _) => deleteRequest = request)
+            .ReturnsAsync(new DeleteObjectsResponse { DeletedObjects = [] });
+
+        using var service = new S3BlobStorageService(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer,
+            "normalised");
+
+        var result = await service.DeleteByPrefixAsync("sam_cph_holdings/");
+
+        listRequest.Should().NotBeNull();
+        listRequest!.Prefix.Should().Be("normalised/sam_cph_holdings/");
+        deleteRequest.Should().NotBeNull();
+        deleteRequest!.Objects.Select(item => item.Key).Should().Equal(
+            "normalised/sam_cph_holdings/a.parquet",
+            "normalised/sam_cph_holdings/b.parquet");
+        result.DeletedKeys.Should().Equal(
+            "sam_cph_holdings/a.parquet",
+            "sam_cph_holdings/b.parquet");
+        result.TotalDeleted.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task DeleteByPrefixAsync_WhenListingIsCancelled_PreservesCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        _mockS3Client.Setup(client => client.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(), cancellation.Token))
+            .ThrowsAsync(new OperationCanceledException(cancellation.Token));
+
+        using var service = new S3BlobStorageService(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer,
+            "raw");
+
+        var act = () => service.DeleteByPrefixAsync("LITP_SAMCPHHOLDING_", cancellation.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     #endregion
 }

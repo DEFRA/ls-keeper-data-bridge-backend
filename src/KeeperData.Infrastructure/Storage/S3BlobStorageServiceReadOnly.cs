@@ -133,7 +133,7 @@ public class S3BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDispos
             return prefix;
 
         if (string.IsNullOrEmpty(prefix))
-            return _topLevelFolder.TrimEnd('/');
+            return _topLevelFolder;
 
         return $"{_topLevelFolder}{prefix.TrimStart('/')}";
     }
@@ -240,6 +240,10 @@ public class S3BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDispos
                 ContinuationToken = response.NextContinuationToken,
                 IsTruncated = response.IsTruncated
             };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

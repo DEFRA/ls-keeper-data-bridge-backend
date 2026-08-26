@@ -139,6 +139,79 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /etl/storage:
+    delete:
+      tags: [ETL]
+      operationId: purgeEtlStorage
+      summary: Purge ETL stage data
+      description: |
+        Purges ETL stage data in non-production environments for test isolation and
+        clean-slate testing. A dataset-scoped `stage=all` purge covers inbound, raw,
+        normalised, and snapshots. It deliberately leaves the shared staging database
+        untouched; staging can only be purged with `dataset=all`. A request combining a
+        specific dataset with `stage=staging` returns 400 because the DuckDB database is
+        shared by all datasets.
+
+        Technical note: normalised and snapshot keys are selected through their dataset
+        subfolder. The flat inbound (`dest/` or QA `qasrc/`) and `raw/` folders are selected
+        with `DataSetFileNaming.DataSetKeyPrefix(definition)` and deleted through the storage
+        provider's prefix-deletion operation.
+      parameters:
+        - name: dataset
+          in: query
+          description: Configured dataset name, or all configured datasets.
+          schema:
+            type: string
+            default: all
+        - name: stage
+          in: query
+          description: ETL stage folder to purge.
+          schema:
+            type: string
+            default: all
+            enum: [all, inbound, raw, normalised, snapshots, staging]
+        - name: sourceType
+          in: query
+          description: Inbound storage source. Intermediate ETL stages always use internal storage.
+          schema:
+            type: string
+            default: internal
+            enum: [internal, external]
+      responses:
+        '200':
+          description: Storage purged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EtlStoragePurgeResponse'
+        '400':
+          description: |
+            Invalid dataset, stage, source type, or dataset-scoped staging purge. An unknown
+            dataset is rejected as not recognized; a dataset-scoped staging purge is rejected
+            because staging contains a shared all-dataset database.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Storage purge is forbidden in Production
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: The request was cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Storage purge failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /etl/staging/sqlite/latest:
     get:
       tags: [ETL]
@@ -1962,6 +2035,24 @@ components:
           type: string
           format: date-time
         expiresAt:
+          type: string
+          format: date-time
+
+    EtlStoragePurgeResponse:
+      type: object
+      required: [success, deletedCount, deletedKeys, message, purgedAtUtc]
+      properties:
+        success:
+          type: boolean
+        deletedCount:
+          type: integer
+        deletedKeys:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+        purgedAtUtc:
           type: string
           format: date-time
 

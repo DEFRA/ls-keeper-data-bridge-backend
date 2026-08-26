@@ -87,10 +87,7 @@ public sealed class EtlStorageController(
                 "Use dataset=all with stage=staging."));
         }
 
-        // A targeted all-stage purge must not remove the shared all-dataset DuckDB artifacts.
-        var stages = requestedStage == All
-            ? definition is null ? EveryStage : DatasetStages
-            : [requestedStage];
+        var stages = ResolveStages(requestedStage, definition);
 
         var deletedKeys = new List<string>();
 
@@ -162,6 +159,17 @@ public sealed class EtlStorageController(
             Staging => PipelineTarget(EtlPipelineFolders.Staging, null),
             _ => throw new InvalidOperationException($"Unsupported ETL storage stage '{stage}'.")
         };
+
+    private static string[] ResolveStages(string requestedStage, DataSetDefinition? definition)
+    {
+        if (requestedStage != All)
+        {
+            return [requestedStage];
+        }
+
+        // A targeted all-stage purge must not remove the shared all-dataset DuckDB artifacts.
+        return definition is null ? EveryStage : DatasetStages;
+    }
 
     private PurgeTarget PipelineTarget(string folder, string? prefix)
         => new(storageProvider.ForFolder(folder), prefix, folder);

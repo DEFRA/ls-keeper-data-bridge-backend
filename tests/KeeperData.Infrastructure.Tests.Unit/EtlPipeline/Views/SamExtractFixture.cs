@@ -71,7 +71,7 @@ public static class SamExtractFixture
             INSERT INTO sam_party (PARTY_ID, PERSON_TITLE, PERSON_GIVEN_NAME, PERSON_FAMILY_NAME,
                 ORGANISATION_NAME, TELEPHONE_NUMBER, INTERNET_EMAIL_ADDRESS, ROLES)
             VALUES
-                ('P1', 'Mr', 'Alan', 'Archer', NULL, '01392 000001', 'alan@example.test', 'keeper,owner'),
+                ('P1', 'Mr', 'Alan', 'Archer', NULL, '01392 000001', 'Alan.Archer@Example.TEST', 'keeper,owner'),
                 -- P2 is also a holder, so its sentinels must give way to the holder's real names.
                 ('P2', '-', '-', '-', NULL, ',', '', ''),
                 -- P3 carries the organisation placeholder, which must not make it an organisation.

@@ -44,6 +44,22 @@ public class OpenApiEndpointTests(AppWebApplicationFactory factory) : IClassFixt
     }
 
     [Fact]
+    public async Task GivenOpenApiRequest_ShouldRequireThePurgeScope()
+    {
+        var operation = (await GetDocumentAsync())
+            .GetProperty("paths")
+            .GetProperty("/api/etl/storage")
+            .GetProperty("delete");
+
+        var parameters = operation.GetProperty("parameters").EnumerateArray().ToArray();
+
+        parameters.Single(parameter => parameter.GetProperty("name").GetString() == "dataset")
+            .GetProperty("required").GetBoolean().Should().BeTrue();
+        parameters.Single(parameter => parameter.GetProperty("name").GetString() == "stage")
+            .GetProperty("required").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
     public async Task GivenOpenApiRequest_ShouldNotDescribeTheDocumentEndpointItself()
     {
         var paths = (await GetDocumentAsync()).GetProperty("paths");

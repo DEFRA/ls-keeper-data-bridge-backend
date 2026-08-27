@@ -36,6 +36,18 @@ public interface IBlobStorageService : IBlobStorageServiceReadOnly
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Deletes every object whose key starts with <paramref name="prefix"/> within this service's
+    /// configured top-level folder. An empty prefix deletes every object in that folder.
+    /// </summary>
+    /// <remarks>
+    /// Returned keys are relative to the configured top-level folder, consistently with
+    /// <see cref="IBlobStorageServiceReadOnly.ListAsync"/>.
+    /// </remarks>
+    Task<ClearDownResult> DeleteByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes all objects under the configured top-level folder prefix.
     /// Returns the list of deleted keys and the total count.
     /// </summary>

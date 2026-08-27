@@ -174,6 +174,20 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     }
 
     [Fact]
+    public async Task Stores_email_folded_so_it_can_be_found_whatever_case_it_was_supplied_in()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT Email FROM Party WHERE SourcePartyId='P1'")
+            .Should().Equal(["alan.archer@example.test"], "the source capitalises email inconsistently");
+
+        // The point of folding: an equality match finds the row, which is what keeps ix_party_email
+        // usable. Matching COLLATE NOCASE instead would work but could not use the index.
+        Scalar(target, "SELECT count(*) FROM Party WHERE Email = 'alan.archer@example.test'")
+            .Should().Be(1L);
+    }
+
+    [Fact]
     public async Task Normalises_the_casing_of_enum_like_values()
     {
         var target = await RunAsync();

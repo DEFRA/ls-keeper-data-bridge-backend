@@ -6,6 +6,7 @@ using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace KeeperData.Bridge.Controllers;
 
@@ -33,7 +34,8 @@ public sealed class EtlStorageController(
 
     /// <summary>
     /// Purges ETL stage data in non-production environments. A dataset-scoped purge deliberately
-    /// excludes staging because staging databases contain every dataset.
+    /// excludes staging because staging databases contain every dataset. Dataset and stage must be
+    /// supplied explicitly; use dataset=all and stage=all to request a complete purge.
     /// </summary>
     [HttpDelete]
     [ProducesResponseType(typeof(EtlStoragePurgeResponse), StatusCodes.Status200OK)]
@@ -42,8 +44,8 @@ public sealed class EtlStorageController(
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> PurgeStorage(
-        [FromQuery] string? dataset = All,
-        [FromQuery] string? stage = All,
+        [FromQuery, BindRequired] string? dataset,
+        [FromQuery, BindRequired] string? stage,
         [FromQuery] string? sourceType = BlobStorageSources.Internal,
         CancellationToken cancellationToken = default)
     {
@@ -52,6 +54,13 @@ public sealed class EtlStorageController(
             logger.LogWarning("Rejected an ETL storage purge request in Production");
             return StatusCode(StatusCodes.Status403Forbidden, Error(
                 "Storage purge endpoint is disabled in production environments."));
+        }
+
+        if (string.IsNullOrWhiteSpace(dataset) || string.IsNullOrWhiteSpace(stage))
+        {
+            return BadRequest(Error(
+                "The dataset and stage query parameters are required. " +
+                "Use the explicit value 'all' to request an all-dataset or all-stage purge."));
         }
 
         var requestedStage = Normalise(stage, All);

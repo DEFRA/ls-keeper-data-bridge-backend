@@ -103,7 +103,7 @@ public class EtlStorageControllerTests
     }
 
     [Fact]
-    public async Task All_datasets_and_all_stages_provides_a_complete_clean_slate()
+    public async Task Explicit_all_datasets_and_all_stages_provides_a_complete_clean_slate()
     {
         Page(_inbound, null, Object("inbound.csv"));
         Page(_raw, null, Object("raw.psv"));
@@ -111,7 +111,7 @@ public class EtlStorageControllerTests
         Page(_snapshots, null, Object("sam_cph_holdings/b.parquet"));
         Page(_staging, null, Object("krds-db.duckdb"));
 
-        var result = await Controller().PurgeStorage();
+        var result = await Controller().PurgeStorage("all", "all");
 
         result.Should().BeOfType<OkObjectResult>()
             .Which.Value.Should().BeOfType<EtlStoragePurgeResponse>()
@@ -122,6 +122,22 @@ public class EtlStorageControllerTests
                 "snapshots/sam_cph_holdings/b.parquet",
                 "staging/krds-db.duckdb"
             ]);
+    }
+
+    [Theory]
+    [InlineData(null, "all")]
+    [InlineData("all", null)]
+    [InlineData("", "all")]
+    [InlineData("all", " ")]
+    public async Task Dataset_and_stage_must_be_supplied_explicitly(string? dataset, string? stage)
+    {
+        var result = await Controller().PurgeStorage(dataset, stage);
+
+        result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.Value.Should().BeOfType<ErrorResponse>()
+            .Which.Message.Should().Contain("dataset and stage query parameters are required");
+        _blobFactory.VerifyNoOtherCalls();
+        _storageProvider.VerifyNoOtherCalls();
     }
 
     [Fact]

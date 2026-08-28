@@ -53,7 +53,7 @@ public sealed class EtlStorageController(
         [FromQuery] string? sourceType = BlobStorageSources.Internal,
         CancellationToken cancellationToken = default)
     {
-        if (environment.IsProduction() && !featureFlags.Value.EtlStoragePurgeEnabled)
+        if (IsStoragePurgeDisabled())
         {
             logger.LogWarning(
                 "Rejected an ETL storage purge request in Production because it was not explicitly enabled");
@@ -207,6 +207,9 @@ public sealed class EtlStorageController(
             Message = message,
             Timestamp = timeProvider.GetUtcNow().UtcDateTime
         };
+
+    private bool IsStoragePurgeDisabled()
+        => environment.IsProduction() && !featureFlags.Value.EtlStoragePurgeEnabled;
 
     private static string Normalise(string? value, string defaultValue)
         => string.IsNullOrWhiteSpace(value) ? defaultValue : value.Trim().ToLowerInvariant();

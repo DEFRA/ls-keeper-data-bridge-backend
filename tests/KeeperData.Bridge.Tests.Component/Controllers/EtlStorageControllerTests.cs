@@ -1,4 +1,5 @@
 using FluentAssertions;
+using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Controllers;
 using KeeperData.Bridge.Models;
 using KeeperData.Core.ETL.Abstract;
@@ -10,6 +11,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace KeeperData.Bridge.Tests.Component.Controllers;
@@ -25,6 +27,7 @@ public class EtlStorageControllerTests
     private readonly Mock<IBlobStorageService> _snapshots = new();
     private readonly Mock<IBlobStorageService> _staging = new();
     private readonly Mock<IWebHostEnvironment> _environment = new();
+    private bool _etlStoragePurgeEnabled;
 
     public EtlStorageControllerTests()
     {
@@ -180,6 +183,20 @@ public class EtlStorageControllerTests
         _storageProvider.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task Production_hosted_ephemeral_environment_can_explicitly_enable_the_endpoint()
+    {
+        _environment.SetupGet(e => e.EnvironmentName).Returns("Production");
+        _etlStoragePurgeEnabled = true;
+        Page(_raw, null, Object("raw.psv"));
+
+        var result = await Controller().PurgeStorage("all", "raw");
+
+        result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStoragePurgeResponse>()
+            .Which.DeletedKeys.Should().Equal("raw/raw.psv");
+    }
+
     [Theory]
     [InlineData("unknown", "normalised", "internal", "not recognized")]
     [InlineData("all", "other", "internal", "Invalid stage")]
@@ -235,6 +252,10 @@ public class EtlStorageControllerTests
             _storageProvider.Object,
             definitions.Object,
             _environment.Object,
+            Options.Create(new FeatureFlags
+            {
+                EtlStoragePurgeEnabled = _etlStoragePurgeEnabled
+            }),
             TimeProvider.System,
             Mock.Of<ILogger<EtlStorageController>>());
     }

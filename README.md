@@ -169,6 +169,11 @@ ASPNETCORE_ENVIRONMENT=Development
 ASPNETCORE_URLS=https://localhost:5001;http://localhost:5000
 ```
 
+CDP ephemeral deployments run with `ASPNETCORE_ENVIRONMENT=Production`. To enable the ETL storage
+purge endpoint for an ephemeral deployment, set `FeatureFlags__EtlStoragePurgeEnabled=true` in that
+environment's application configuration. The flag defaults to `false`, so the endpoint remains
+disabled in Production unless the deployment explicitly opts in.
+
 ## Running the Application
 
 ### Development Mode

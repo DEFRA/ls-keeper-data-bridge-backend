@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Models;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
@@ -7,6 +8,7 @@ using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.Extensions.Options;
 
 namespace KeeperData.Bridge.Controllers;
 
@@ -19,6 +21,7 @@ public sealed class EtlStorageController(
     IEtlPipelineStorageProvider storageProvider,
     IDataSetDefinitions dataSetDefinitions,
     IWebHostEnvironment environment,
+    IOptions<FeatureFlags> featureFlags,
     TimeProvider timeProvider,
     ILogger<EtlStorageController> logger) : ControllerBase
 {
@@ -33,9 +36,10 @@ public sealed class EtlStorageController(
     private static readonly string[] EveryStage = [.. DatasetStages, Staging];
 
     /// <summary>
-    /// Purges ETL stage data in non-production environments. A dataset-scoped purge deliberately
-    /// excludes staging because staging databases contain every dataset. Dataset and stage must be
-    /// supplied explicitly; use dataset=all and stage=all to request a complete purge.
+    /// Purges ETL stage data in non-production environments, or when explicitly enabled for a
+    /// Production-hosted ephemeral deployment. A dataset-scoped purge deliberately excludes staging
+    /// because staging databases contain every dataset. Dataset and stage must be supplied explicitly;
+    /// use dataset=all and stage=all to request a complete purge.
     /// </summary>
     [HttpDelete]
     [ProducesResponseType(typeof(EtlStoragePurgeResponse), StatusCodes.Status200OK)]
@@ -49,9 +53,10 @@ public sealed class EtlStorageController(
         [FromQuery] string? sourceType = BlobStorageSources.Internal,
         CancellationToken cancellationToken = default)
     {
-        if (environment.IsProduction())
+        if (IsStoragePurgeDisabled())
         {
-            logger.LogWarning("Rejected an ETL storage purge request in Production");
+            logger.LogWarning(
+                "Rejected an ETL storage purge request in Production because it was not explicitly enabled");
             return StatusCode(StatusCodes.Status403Forbidden, Error(
                 "Storage purge endpoint is disabled in production environments."));
         }
@@ -202,6 +207,9 @@ public sealed class EtlStorageController(
             Message = message,
             Timestamp = timeProvider.GetUtcNow().UtcDateTime
         };
+
+    private bool IsStoragePurgeDisabled()
+        => environment.IsProduction() && !featureFlags.Value.EtlStoragePurgeEnabled;
 
     private static string Normalise(string? value, string defaultValue)
         => string.IsNullOrWhiteSpace(value) ? defaultValue : value.Trim().ToLowerInvariant();

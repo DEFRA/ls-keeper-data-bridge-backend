@@ -161,6 +161,15 @@ CREATE OR REPLACE TEMP MACRO epoch_seconds(value) AS (
     epoch(TRY_CAST(null_dash(value) AS TIMESTAMP))::BIGINT
 );
 
+-- Email is looked up, not just displayed, and the source capitalises it inconsistently. The obvious
+-- fixes are both unavailable here: DuckDB rejects CREATE INDEX ... COLLATE, and a column-level
+-- COLLATE NOCASE is accepted but dropped on the way into SQLite, so the index would silently stay
+-- case-sensitive. Folding the stored value keeps ix_party_email usable for an equality match;
+-- callers lower-case the term they search for. Matching NOCASE instead costs a full scan.
+CREATE OR REPLACE TEMP MACRO normalized_email(value) AS (
+    lower(null_dash(value))
+);
+
 CREATE OR REPLACE TEMP MACRO valid_cphh(value) AS (
     regexp_matches(value, '^[0-9]{2}/[0-9]{3}/[0-9]{4}/[0-9]{2}$')
 );
@@ -214,7 +223,7 @@ SELECT
     null_dash(ORGANISATION_NAME),
     null_dash(TELEPHONE_NUMBER),
     null_dash(MOBILE_NUMBER),
-    null_dash(INTERNET_EMAIL_ADDRESS),
+    normalized_email(INTERNET_EMAIL_ADDRESS),
     null_dash(ROLES)
 FROM normalized_party;
 

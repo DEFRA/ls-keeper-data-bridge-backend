@@ -10,7 +10,18 @@ public enum FileFormat
     Hcdt
 }
 
-public record DataSetDefinition(string Name, string FilePrefixFormat, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName, string[] Accumulators, string DatePattern = EtlConstants.DatePattern, string DateTimePattern = EtlConstants.DateTimePattern, FileFormat Format = FileFormat.SimplePsv, DataSetIngestionMode IngestionMode = DataSetIngestionMode.Snapshot);
+/// <summary>How a source file's decryption password is obtained from its name.</summary>
+public enum PasswordDerivationPolicy
+{
+    /// <summary>The file name is the password.</summary>
+    FileNameVerbatim = 0,
+
+    /// <summary>CTS encodes the password in the name: the date from the trailing
+    /// yyyy-MM-dd-HHmmss timestamp, then every preceding underscore-separated segment reversed.</summary>
+    CtsDerived = 1
+}
+
+public record DataSetDefinition(string Name, string FilePrefixFormat, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName, string[] Accumulators, string DatePattern = EtlConstants.DatePattern, string DateTimePattern = EtlConstants.DateTimePattern, FileFormat Format = FileFormat.SimplePsv, DataSetIngestionMode IngestionMode = DataSetIngestionMode.Snapshot, PasswordDerivationPolicy PasswordDerivation = PasswordDerivationPolicy.FileNameVerbatim);
 
 public class DataSetDefinitions : IDataSetDefinitions
 {

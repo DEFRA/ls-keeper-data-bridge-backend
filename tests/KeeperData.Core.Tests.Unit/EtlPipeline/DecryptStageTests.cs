@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
 using KeeperData.Core.Crypto;
+using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Storage;
@@ -60,8 +61,8 @@ public class DecryptStageTests
                 return buffer;
             });
 
-        _passwordSalt.Setup(p => p.Get(It.IsAny<string>()))
-            .Returns((string fileName) => new PasswordSalt(fileName, Salt));
+        _passwordSalt.Setup(p => p.Get(It.IsAny<string>(), It.IsAny<PasswordDerivationPolicy>()))
+            .Returns((string fileName, PasswordDerivationPolicy _) => new PasswordSalt(fileName, Salt));
 
         // Stand-in for real decryption: write a recognisable payload to the output stream.
         _crypto.Setup(c => c.DecryptStreamAsync(
@@ -149,10 +150,22 @@ public class DecryptStageTests
     {
         await RunAsync(StageRunner.DiscoveredSet("SAM_CPH", "SAM_CPH_1.csv"));
 
-        _passwordSalt.Verify(p => p.Get("SAM_CPH_1.csv"), Times.Once);
+        _passwordSalt.Verify(p => p.Get("SAM_CPH_1.csv", PasswordDerivationPolicy.FileNameVerbatim), Times.Once);
         _crypto.Verify(c => c.DecryptStreamAsync(
             It.IsAny<Stream>(), It.IsAny<Stream>(), "SAM_CPH_1.csv", Salt,
             It.IsAny<long?>(), It.IsAny<ProgressCallback?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Derives_the_password_under_the_policy_the_dataset_declares()
+    {
+        var definition = StageRunner.Definition("CTS_LOCATION_IDENTIFIERS", PasswordDerivationPolicy.CtsDerived);
+
+        await RunAsync(StageRunner.DiscoveredSet(definition, "CTSM_CADS_PROD_BULK_2026-08-22-072824.csv.enc"));
+
+        _passwordSalt.Verify(
+            p => p.Get("CTSM_CADS_PROD_BULK_2026-08-22-072824.csv.enc", PasswordDerivationPolicy.CtsDerived),
+            Times.Once);
     }
 
     [Fact]

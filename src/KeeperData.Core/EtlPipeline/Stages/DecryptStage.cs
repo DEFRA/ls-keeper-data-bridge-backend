@@ -1,4 +1,5 @@
 using KeeperData.Core.Crypto;
+using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Pipeline;
@@ -56,7 +57,7 @@ public sealed class DecryptStage(
                 rawBlobsStorageService,
                 objectKey,
                 () => DecryptToRawAsync(
-                    objectKey, input.Definition.Name, sourceBlobsStorageService, rawBlobsStorageService, cancellationToken),
+                    objectKey, input.Definition, sourceBlobsStorageService, rawBlobsStorageService, cancellationToken),
                 logger);
 
             logger.LogInformation(
@@ -78,12 +79,12 @@ public sealed class DecryptStage(
     /// Nothing is buffered: the decrypted bytes go straight to the upload stream.</summary>
     private async Task<long> DecryptToRawAsync(
         string objectKey,
-        string datasetName,
+        DataSetDefinition definition,
         IBlobStorageServiceReadOnly sourceBlobs,
         IBlobStorageService rawBlobs,
         CancellationToken cancellationToken)
     {
-        var credentials = passwordSaltService.Get(objectKey);
+        var credentials = passwordSaltService.Get(objectKey, definition.PasswordDerivation);
         var sourceMetadata = await sourceBlobs.GetMetadataAsync(objectKey, cancellationToken);
 
         await using var encryptedStream = await sourceBlobs.OpenReadAsync(objectKey, cancellationToken);
@@ -105,7 +106,7 @@ public sealed class DecryptStage(
         {
             // A padding error is what a wrong key looks like, and the key is derived from the
             // filename and the salt alone. Say so, rather than reporting the padding.
-            throw new SourceFileDecryptionException(objectKey, datasetName, exception);
+            throw new SourceFileDecryptionException(objectKey, definition.Name, exception);
         }
 
         await byteCounter.FlushAsync(cancellationToken);

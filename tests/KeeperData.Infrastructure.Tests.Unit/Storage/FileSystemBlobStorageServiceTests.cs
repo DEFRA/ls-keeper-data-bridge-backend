@@ -294,6 +294,19 @@ public class FileSystemBlobStorageServiceTests : IAsyncLifetime
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task DeleteByPrefixAsync_ShouldDeleteOnlyMatchingFlatKeys()
+    {
+        await _sut.UploadAsync("LITP_SAMCPHHOLDING_20260819203115.psv", "holding"u8.ToArray());
+        await _sut.UploadAsync("LITP_SAMSHOWGROUND_20260819203115.psv", "showground"u8.ToArray());
+
+        var result = await _sut.DeleteByPrefixAsync("LITP_SAMCPHHOLDING_");
+
+        result.DeletedKeys.Should().Equal("LITP_SAMCPHHOLDING_20260819203115.psv");
+        (await _sut.ExistsAsync("LITP_SAMCPHHOLDING_20260819203115.psv")).Should().BeFalse();
+        (await _sut.ExistsAsync("LITP_SAMSHOWGROUND_20260819203115.psv")).Should().BeTrue();
+    }
+
     #endregion
 
     #region ClearDownAsync

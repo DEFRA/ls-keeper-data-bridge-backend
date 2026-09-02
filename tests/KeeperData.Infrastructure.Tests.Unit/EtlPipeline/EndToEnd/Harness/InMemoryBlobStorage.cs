@@ -90,6 +90,15 @@ public class InMemoryBlobStorage(string container) : IBlobStorageService
         return Task.CompletedTask;
     }
 
+    public Task<ClearDownResult> DeleteByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+    {
+        var keys = _objects.Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+        foreach (var key in keys)
+            _objects.TryRemove(key, out _);
+
+        return Task.FromResult(new ClearDownResult { DeletedKeys = keys, TotalDeleted = keys.Count });
+    }
+
     public Task<ClearDownResult> ClearDownAsync(CancellationToken cancellationToken = default)
     {
         var keys = _objects.Keys.ToList();

@@ -127,23 +127,27 @@ public sealed class InMemoryEtlPipelineHost : IDisposable
         return id;
     }
 
-    /// <summary>Encrypts PSV content the way the source system does and puts it in the source
-    /// container. The decrypt stage derives the password from the object key, so the content is
-    /// encrypted against the key it is stored under.</summary>
+    /// <summary>Encrypts PSV content the way the source system does and seeds it into the source
+    /// container at <paramref name="objectKey"/>, which carries the dataset's folder as a real
+    /// source key does. The source system encrypts against the file name, never the path.</summary>
     /// <param name="salt">Defaults to the salt this host is configured with. Pass another to
     /// produce the file you get when it was encrypted for a different environment.</param>
-    public async Task<string> PutEncryptedSourceFileAsync(string fileName, string psvContent, string? salt = null)
+    public async Task<string> PutEncryptedSourceFileAsync(string objectKey, string psvContent, string? salt = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
+
         var crypto = _services.GetRequiredService<IAesCryptoTransform>();
 
         using var plaintext = new MemoryStream(Encoding.UTF8.GetBytes(psvContent));
         using var encrypted = new MemoryStream();
 
+        var fileName = objectKey[(objectKey.LastIndexOf('/') + 1)..];
+
         await crypto.EncryptStreamAsync(plaintext, encrypted, fileName, salt ?? AesSalt, plaintext.Length);
 
-        Source.Seed(fileName, encrypted.ToArray());
+        Source.Seed(objectKey, encrypted.ToArray());
 
-        return fileName;
+        return objectKey;
     }
 
     /// <summary>Downloads an object from an ETL folder to a local file, for readers needing a path.</summary>

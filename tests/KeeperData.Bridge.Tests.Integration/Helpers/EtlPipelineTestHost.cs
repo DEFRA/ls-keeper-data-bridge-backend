@@ -38,7 +38,9 @@ namespace KeeperData.Bridge.Tests.Integration.Helpers;
 /// </summary>
 public sealed class EtlPipelineTestHost : IAsyncDisposable
 {
-    public const string SourcePrefix = "litprd";
+    /// <summary>The bucket root, as in production: a dataset's folder comes from its definition,
+    /// not from the storage service.</summary>
+    public const string SourcePrefix = "";
     public const string AesSalt = "Jr8Lm2PXzd7qNbVyWutRfGBxhkHTpE";
 
     private readonly IAmazonS3 _s3Client;
@@ -221,18 +223,22 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
     /// <summary>Moves the run clock, so a later run can see files stamped after the previous one.</summary>
     public void SetNow(DateTimeOffset now) => _timeProvider.SetUtcNow(now);
 
-    /// <summary>Encrypts PSV content the way the source system does and puts it in the source folder,
-    /// under the dataset's own naming convention.
+    /// <summary>Encrypts PSV content the way the source system does and puts it at
+    /// <paramref name="objectKey"/>, which carries the dataset's folder as a real source key does.
     ///
     /// <paramref name="salt"/> defaults to the salt this host is configured with; pass a different
     /// one to produce the file a caller gets when it was encrypted for another environment.</summary>
-    public async Task<string> PutEncryptedSourceFileAsync(string fileName, string psvContent, string? salt = null)
+    public async Task<string> PutEncryptedSourceFileAsync(string objectKey, string psvContent, string? salt = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
+
         var crypto = new AesCryptoTransform();
         var plaintext = new MemoryStream(Encoding.UTF8.GetBytes(psvContent));
         var encrypted = new MemoryStream();
 
-        // The decrypt stage derives the password from the object key, so encrypt against that key.
+        // The source system encrypts against the file name, never the path it is stored at.
+        var fileName = objectKey[(objectKey.LastIndexOf('/') + 1)..];
+
         await crypto.EncryptStreamAsync(plaintext, encrypted, fileName, salt ?? AesSalt, plaintext.Length);
 
         encrypted.Position = 0;
@@ -240,12 +246,12 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
         await _s3Client.PutObjectAsync(new PutObjectRequest
         {
             BucketName = BucketName,
-            Key = $"{SourcePrefix}/{fileName}",
+            Key = objectKey,
             InputStream = encrypted,
             ContentType = "application/octet-stream"
         });
 
-        return fileName;
+        return objectKey;
     }
 
     /// <summary>Every key under one of the pipeline folders, relative to that folder.</summary>

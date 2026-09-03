@@ -49,7 +49,8 @@ public static class EtlFixtures
 
     public static IReadOnlyList<DataSetDefinition> AllThree => [CphHolding, Herd, Party];
 
-    /// <summary>Source file name for a dataset at one of the fixture timestamps.</summary>
+    /// <summary>Source object key for a dataset at one of the fixture timestamps, carrying the
+    /// folder its definition names.</summary>
     public static string FileName(DataSetDefinition definition, string timestamp)
         => $"{string.Format(definition.FilePrefixFormat, timestamp)}.csv";
 

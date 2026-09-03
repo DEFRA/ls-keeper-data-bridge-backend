@@ -269,6 +269,26 @@ public class BulkListingExternalCatalogueServiceTests
             Times.Exactly(DaysInRange * definitions.Length));
     }
 
+    /// <summary>Storage is rooted at the bucket, so a standard definition carries its own folder.
+    /// Discovery must still find the file, and hand on the key it was found at.</summary>
+    [Fact]
+    public async Task FindsAFolderedDataSet_WhenStorageIsRootedAtTheBucket()
+    {
+        var samCphHolding = StandardDataSetDefinitionsBuilder.Build().SamCPHHolding;
+        samCphHolding.FilePrefixFormat.Should().StartWith("litprd/");
+
+        GivenStoredFiles(
+            FileFor(samCphHolding, new DateOnly(2024, 10, 5)),
+            FileFor(DataSetA, new DateOnly(2024, 10, 5)));
+
+        var fileSet = await _catalogue.GetFileSetAsync(samCphHolding, RangeStart, RangeEnd, CancellationToken.None);
+
+        _blobs.Verify(b => b.ListAsync("litprd/LITP_SAMCPHHOLDING_", It.IsAny<CancellationToken>()), Times.Once);
+
+        fileSet.Files.Should().ContainSingle()
+            .Which.StorageObject.Key.Should().Be("litprd/LITP_SAMCPHHOLDING_20241005120000.csv");
+    }
+
     private static IExternalCatalogueService CreateLegacyOver(StorageObjectInfo[] stored)
     {
         var legacyBlobs = new Mock<IBlobStorageServiceReadOnly>();

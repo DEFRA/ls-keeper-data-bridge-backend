@@ -345,6 +345,70 @@ public class BlobStorageServiceReadOnlyUnitTests
         capturedRequest!.MaxKeys.Should().Be(1000); // Should be capped at 1000
     }
 
+    /// <summary>The external source service is configured at the bucket root, so the folder a
+    /// dataset lives in comes from its own key prefix. An empty top level folder must therefore
+    /// leave the caller's prefix exactly as it is - a stray "/" matches nothing in S3.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public async Task ListPageAsync_WithoutATopLevelFolder_ListsTheCallersPrefixUnchanged(string? topLevelFolder)
+    {
+        ListObjectsV2Request? capturedRequest = null;
+        _mockS3Client.Setup(x => x.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ListObjectsV2Request, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new ListObjectsV2Response
+            {
+                S3Objects = [new S3Object { Key = "litprd/LITP_SAMCPHHOLDING_20260822120000.csv", Size = 10 }],
+                IsTruncated = false
+            });
+
+        _mockS3Client.Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
+            .Returns("https://test-url.com/object");
+
+        using var service = new S3BlobStorageServiceReadOnly(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer,
+            topLevelFolder);
+
+        var result = await service.ListPageAsync(prefix: "litprd/LITP_SAMCPHHOLDING_");
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Prefix.Should().Be("litprd/LITP_SAMCPHHOLDING_");
+
+        result.Items.Should().ContainSingle()
+            .Which.Key.Should().Be("litprd/LITP_SAMCPHHOLDING_20260822120000.csv",
+                "with nothing to strip, a key is returned as the folder it was found in");
+    }
+
+    [Fact]
+    public async Task GetMetadataAsync_WithoutATopLevelFolder_ReadsTheKeyUnchanged()
+    {
+        GetObjectMetadataRequest? capturedRequest = null;
+        _mockS3Client.Setup(x => x.GetObjectMetadataAsync(
+                It.IsAny<GetObjectMetadataRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<GetObjectMetadataRequest, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new GetObjectMetadataResponse { ContentLength = 100 });
+
+        _mockS3Client.Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
+            .Returns("https://test-url.com/object");
+
+        using var service = new S3BlobStorageServiceReadOnly(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer,
+            string.Empty);
+
+        await service.GetMetadataAsync("cads/cts/bulk/CT_LOCATION_IDENTIFIERS_2026-08-22-072826.csv");
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Key.Should().Be("cads/cts/bulk/CT_LOCATION_IDENTIFIERS_2026-08-22-072826.csv");
+    }
+
     #endregion
 
     #region GetMetadataAsync Tests

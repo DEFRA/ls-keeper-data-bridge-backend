@@ -169,16 +169,23 @@ public sealed class NormaliseStage(
 
         logger.LogInformation("H/C/D/T normalisation complete. Declared: {Declared}, Actual: {Actual}",
             report.DeclaredRecordCount, report.ActualDataRecords);
+
+        if (report.DeclaredRecordCount != report.ActualDataRecords)
+        {
+            logger.LogWarning(
+                "H/C/D/T trailer count disagrees with the records read. Declared: {Declared}, Actual: {Actual}",
+                report.DeclaredRecordCount, report.ActualDataRecords);
+        }
     }
 
     private async Task ConvertSimplePsvToParquetAsync(Stream source, Stream dest, CancellationToken ct)
     {
         using var reader = new StreamReader(source);
 
-        // Match legacy CsvHelper config. The delimiter is detected rather than assumed: the litprd
-        // feeds are pipe-delimited and the CTS lanes are comma-delimited, and parsing the latter with
-        // "|" leaves the whole line as a single column. Detection settles on the delimiter that gives a
-        // consistent field count, so a pipe file whose values contain commas still reads as pipes.
+        // Match legacy CsvHelper config. The delimiter is detected rather than assumed, so a
+        // comma-delimited cut of an otherwise pipe-delimited feed still reads. Detection settles on
+        // the delimiter that gives a consistent field count, so a pipe file whose values contain
+        // commas still reads as pipes.
         using var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             DetectDelimiter = true,

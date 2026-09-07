@@ -99,10 +99,12 @@ public class NormaliseStageTests
         const string relativeRawKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
         const string destinationKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.parquet";
 
-        const string inputHcdt = "H|SAMCPHHOLDING|20260101\n" +
-                                 "C|CPH|DISEASE_TYPE|CHANGETYPE\n" +
-                                 "D|12/345/6789|TB|I\n" +
-                                 "T|1\n";
+        // The framing the CTS extract writes: the H and T records name the file and when it was cut,
+        // the T record closing with the number of data records the file holds.
+        const string inputHcdt = "H|LITP_SAMCPHHOLDING_20260101.csv|01012026 07:28:26\r\n" +
+                                 "C|RECORD_TYPE|RECORD_COUNT|CPH|DISEASE_TYPE|CHANGETYPE\r\n" +
+                                 "D|1|12/345/6789|TB|I\r\n" +
+                                 "T|LITP_SAMCPHHOLDING_20260101.csv|01012026 07:28:26|1\r\n";
 
         _blobStorageMock.Setup(b => b.ExistsAsync(destinationKey, It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _blobStorageMock.Setup(b => b.OpenReadAsync(relativeRawKey, It.IsAny<CancellationToken>()))
@@ -178,17 +180,17 @@ public class NormaliseStageTests
         _blobStorageMock.Verify(b => b.OpenWriteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    /// <summary>The CTS lanes are comma-delimited where litprd is pipe-delimited, and the delimiter is
-    /// detected per file rather than declared, so both read with the same configuration.</summary>
+    /// <summary>The delimiter of a SimplePsv file is detected per file rather than declared, so a
+    /// comma-delimited cut reads on the same configuration as the pipe-delimited litprd feeds.</summary>
     [Fact]
     public async Task NormaliseStage_DetectsACommaDelimitedFile()
     {
-        const string rawFileKey = "raw/cts_location_identifiers/CT_LOCATION_IDENTIFIERS_2026-08-22-072826.xsvn.csv";
-        const string destinationKey = "cts_location_identifiers/CT_LOCATION_IDENTIFIERS_2026-08-22-072826.xsvn.parquet";
+        const string rawFileKey = "raw/sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
+        const string destinationKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.parquet";
 
-        const string inputCsv = "RECORD_TYPE,RECORD_COUNT,LID_ID,LID_IDENTIFIER\r\n" +
-                                "D,1,898949,31/124/0042\r\n" +
-                                "D,2,125602,21/173/0011\r\n";
+        const string inputCsv = "CPH,DISEASE_TYPE,CHANGETYPE\r\n" +
+                                "12/345/6789,TB,I\r\n" +
+                                "98/765/4321,BSE,U\r\n";
 
         _blobStorageMock.Setup(b => b.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _blobStorageMock.Setup(b => b.OpenReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -198,21 +200,19 @@ public class NormaliseStageTests
         _blobStorageMock.Setup(b => b.OpenWriteAsync(destinationKey, It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(outputStream);
 
-        var ctsDefinition = _dataSetDef with { Name = "cts_location_identifiers" };
-
-        await RunStageAsync(new RawFileSet(ctsDefinition) { Files = [rawFileKey] });
+        await RunStageAsync(new RawFileSet(_dataSetDef) { Files = [rawFileKey] });
 
         outputStream.Position = 0;
         await using var reader = await ParquetReader.CreateAsync(outputStream);
         using var rowGroup = reader.OpenRowGroupReader(0);
 
         var fields = reader.Schema.GetDataFields();
-        fields.Select(f => f.Name).Should().Equal("RECORD_TYPE", "RECORD_COUNT", "LID_ID", "LID_IDENTIFIER");
+        fields.Select(f => f.Name).Should().Equal("CPH", "DISEASE_TYPE", "CHANGETYPE");
         rowGroup.RowCount.Should().Be(2);
 
-        var identifiers = new string[rowGroup.RowCount];
-        await rowGroup.ReadAsync(fields[3], identifiers);
-        identifiers.Should().Equal("31/124/0042", "21/173/0011");
+        var holdings = new string[rowGroup.RowCount];
+        await rowGroup.ReadAsync(fields[0], holdings);
+        holdings.Should().Equal("12/345/6789", "98/765/4321");
     }
 
     [Fact]

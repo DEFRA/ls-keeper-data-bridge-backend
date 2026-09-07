@@ -37,10 +37,7 @@ public static class StandardDataSetDefinitionsBuilder
         // report it. The patterns carry no extension because a file is matched both in the source lane,
         // where it may be .csv, .csv.enc or .xsvn.csv, and in the normalised lane, where it is .parquet.
         // The baseline discriminates on the file name rather than on the folder, which a normalised key
-        // drops. A bulk file is named for the table alone - CT_LOCATION_IDENTIFIERS_{timestamp} - while a
-        // delta carries the run that produced it ahead of it, so the pattern is anchored at the start of
-        // the name or every delta would read as a baseline too. The second alternative covers a split cut
-        // named for its run instead, which is confirmed to occur but not confirmed in shape.
+        // drops: both lanes name the run that produced the file, and a baseline run is a _BULK_ one.
         var ctsLocationIdentifiers = list.With(new DataSetDefinition(
             "cts_location_identifiers",
             "cads/cts/**/CTSM_CADS_PROD_*_CT_LOCATION_IDENTIFIERS_{0}",
@@ -48,16 +45,11 @@ public static class StandardDataSetDefinitionsBuilder
             "LID_AUD_TYPE",
             [],
             DateTimePattern: "yyyy-MM-dd-HHmmss",
-            // Both lanes are plain comma-delimited files carrying a RECORD_TYPE column, not H/C/D/T
-            // framing: the first line is the column header and every data line reads D,<ordinal>,...
-            // The format is what the normaliser is chosen by, so declaring Hcdt would send them to a
-            // parser that requires a leading H record. It is the delimiter that differs from litprd,
-            // and NormaliseStage detects that per file.
-            Format: FileFormat.SimplePsv,
+            Format: FileFormat.Hcdt,
             IngestionMode: DataSetIngestionMode.Delta,
             PasswordDerivation: PasswordDerivationPolicy.CtsDerived,
             SourceKeyPattern: "cads/cts/{bulk,daily}/*CT_LOCATION_IDENTIFIERS*",
-            BaselineKeyPattern: "cads/cts/bulk/{CT_LOCATION_IDENTIFIERS_*,*_BULK_*_CT_LOCATION_IDENTIFIERS_*}",
+            BaselineKeyPattern: "cads/cts/bulk/*_BULK_*CT_LOCATION_IDENTIFIERS*",
             Audit: new AuditColumns("LID_AUD_ID", "LID_AUD_DATETIME"))
         {
             ExcludedColumns = ["LID_AUD_ID", "LID_AUD_TYPE", "LID_AUD_DATETIME", "RECORD_TYPE", "RECORD_COUNT"]

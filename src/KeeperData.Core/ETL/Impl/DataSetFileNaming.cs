@@ -12,6 +12,8 @@ namespace KeeperData.Core.ETL.Impl;
 public static class DataSetFileNaming
 {
     private static readonly ConcurrentDictionary<string, Regex[]> s_globs = new(StringComparer.Ordinal);
+    // Limit regex execution time to avoid pathological patterns causing long-running matches.
+    private static readonly TimeSpan s_regexTimeout = TimeSpan.FromMilliseconds(200);
 
     /// <summary>
     /// The prefixes storage must be listed under to see every file in the dataset. A glob dataset
@@ -74,7 +76,12 @@ public static class DataSetFileNaming
         => s_globs.GetOrAdd(pattern, CompileGlob).Any(lane => lane.IsMatch(key));
 
     private static Regex[] CompileGlob(string pattern)
-        => [.. Lanes(pattern).Select(lane => new Regex(GlobRegex(lane), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))];
+    {
+        return [.. Lanes(pattern).Select(lane => new Regex(
+            GlobRegex(lane),
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+            s_regexTimeout))];
+    }
 
     /// <summary>
     /// A pattern's alternative folders, so that one dataset spanning two lanes can be written as

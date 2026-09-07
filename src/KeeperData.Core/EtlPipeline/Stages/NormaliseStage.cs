@@ -127,7 +127,7 @@ public sealed class NormaliseStage(
         while (idx < headSpan.Length && char.IsWhiteSpace((char)headSpan[idx])) idx++;
         if (idx == headSpan.Length || char.ToUpperInvariant((char)headSpan[idx]) != 'H')
         {
-            throw new InvalidDataException($"H/C/D/T file invalid or misdeclared: {relativeRawKey} does not start with an H record.");
+            throw new XsvValidationException($"H/C/D/T file invalid or misdeclared: {relativeRawKey} does not start with an H record.");
         }
     }
 

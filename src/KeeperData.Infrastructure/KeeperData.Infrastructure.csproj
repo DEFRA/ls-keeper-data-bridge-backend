@@ -18,7 +18,7 @@
     <PackageReference Include="GovukNotify" Version="8.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" Version="10.0.11" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
-    <PackageReference Include="MongoDB.Driver" Version="3.11.0" />
+    <PackageReference Include="MongoDB.Driver" Version="3.11.1" />
     <!-- Driver 3.x moved MONGODB-AWS out of MongoDB.Driver; keep this version in step with it. -->
     <PackageReference Include="MongoDB.Driver.Authentication.AWS" Version="3.11.0" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />

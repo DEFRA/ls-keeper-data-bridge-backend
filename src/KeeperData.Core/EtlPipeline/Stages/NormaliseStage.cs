@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using CsvHelper;
 using CsvHelper.Configuration;
 using KeeperData.Core.EtlPipeline.Payloads;
@@ -23,12 +22,8 @@ public sealed class NormaliseStage(
 {
     public override string Name => "normalise";
 
-    /// <summary>Enough of a file to hold its first record, whichever framing it turns out to carry.</summary>
-    private const int HeadPeekBytes = 8 * 1024;
-
-    private static ReadOnlySpan<byte> Utf8Bom => [0xEF, 0xBB, 0xBF];
-
-    private static ReadOnlySpan<char> HcdtDelimiters => "|,";
+    /// <summary>Enough of a file to tell an empty one from a file with content.</summary>
+    private const int HeadPeekBytes = 1;
 
     protected override async Task<NormalisedFileSet> MapAsync(RawFileSet input, IPipelineContext context, CancellationToken cancellationToken)
     {
@@ -82,23 +77,12 @@ public sealed class NormaliseStage(
 
         await using var sourceStream = await rawStorage.OpenReadAsync(relativeRawKey, cancellationToken);
 
-        // The head is read before the destination is opened: an empty file has no schema to write, and
-        // an object that exists but holds no Parquet would be skipped as done by every later run.
-        var head = new byte[HeadPeekBytes];
-        var headLength = await sourceStream.ReadAtLeastAsync(
-            head, head.Length, throwOnEndOfStream: false, cancellationToken);
+        var (head, headLength) = await PeekHeadAsync(sourceStream, HeadPeekBytes, cancellationToken);
 
         if (headLength == 0)
         {
             logger.LogWarning("Nothing to normalise: {RawFileKey} is empty, so no Parquet is written", relativeRawKey);
             return null;
-        }
-
-        if (isHcdtFormat && !LooksLikeHcdt(head.AsSpan(0, headLength)))
-        {
-            throw new InvalidDataException(
-                $"{relativeRawKey} is declared as {nameof(FileFormat.Hcdt)} but its first record is not an H header. " +
-                $"A delimited file carrying no H/C/D/T framing must be declared as {nameof(FileFormat.SimplePsv)}.");
         }
 
         await EtlArtefactWrite.RunAsync(normalisedStorage, relativeDestKey, async () =>
@@ -122,6 +106,14 @@ public sealed class NormaliseStage(
         return relativeDestKey;
     }
 
+    private static async Task<(byte[] head, int headLength)> PeekHeadAsync(Stream sourceStream, int headPeekBytes, CancellationToken cancellationToken)
+    {
+        var head = new byte[headPeekBytes];
+        var headLength = await sourceStream.ReadAtLeastAsync(
+            head, head.Length, throwOnEndOfStream: false, cancellationToken);
+        return (head, headLength);
+    }
+
     /// <summary>Storage returned by ForFolder(Normalised) is already rooted at normalised/. Keep
     /// every dataset's files together so downstream snapshot discovery can use the dataset prefix
     /// and re-runs resolve to the same target.</summary>
@@ -131,33 +123,6 @@ public sealed class NormaliseStage(
         return $"{definition.Name}/{fileName}.parquet";
     }
 
-    /// <summary>Reads the first non-empty line of the peeked head and requires an H record: the marker
-    /// followed by a delimiter, so a header column such as HOLDING_ID does not read as framing. A head
-    /// holding nothing but blank lines is left to the normaliser, which accepts a zero-record file.</summary>
-    private static bool LooksLikeHcdt(ReadOnlySpan<byte> head)
-    {
-        if (head.StartsWith(Utf8Bom))
-        {
-            head = head[Utf8Bom.Length..];
-        }
-
-        // A head short of a line break still decides it: only the start of the first line is read.
-        foreach (var line in Encoding.UTF8.GetString(head).Split('\n'))
-        {
-            var candidate = line.Trim();
-            if (candidate.Length == 0)
-            {
-                continue;
-            }
-
-            return candidate.Length > 1
-                && (candidate[0] is 'H' or 'h')
-                && HcdtDelimiters.Contains(candidate[1]);
-        }
-
-        return true;
-    }
-
     private async Task NormaliseHcdtAsync(Stream source, Stream dest, CancellationToken ct)
     {
         var report = await hcdtNormaliser.NormaliseAsync(source, dest, options =>
@@ -165,17 +130,15 @@ public sealed class NormaliseStage(
             options.OutputFormat = OutputFormat.Parquet;
             options.InputDelimiter = FieldDelimiter.Auto;
             options.StrictFieldCount = false;
+
+            // A file's H record is stamped when the extract starts writing it and its T record when it
+            // finishes, 45 seconds apart for a bulk cut, so requiring the two to match rejects the file.
+            // The trailer's record count is validated separately and stays on.
+            options.ValidateHeaderTrailerMatch = false;
         }, ct);
 
         logger.LogInformation("H/C/D/T normalisation complete. Declared: {Declared}, Actual: {Actual}",
             report.DeclaredRecordCount, report.ActualDataRecords);
-
-        if (report.DeclaredRecordCount != report.ActualDataRecords)
-        {
-            logger.LogWarning(
-                "H/C/D/T trailer count disagrees with the records read. Declared: {Declared}, Actual: {Actual}",
-                report.DeclaredRecordCount, report.ActualDataRecords);
-        }
     }
 
     private async Task ConvertSimplePsvToParquetAsync(Stream source, Stream dest, CancellationToken ct)

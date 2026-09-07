@@ -44,6 +44,10 @@ public static class CtsFixtures
 
     public const string BulkTimestamp = "2026-08-22-072826";
 
+    /// <summary>The sample bulk's trailer is stamped 45 seconds after its header, so the two do not
+    /// match and normalisation must not require them to.</summary>
+    public static readonly TimeSpan BulkWriteDuration = TimeSpan.FromSeconds(45);
+
     public const string FirstDeltaTimestamp = "2026-08-23-063010";
     public const string SecondDeltaTimestamp = "2026-08-24-063014";
     public const string ThirdDeltaTimestamp = "2026-08-25-063014";
@@ -118,7 +122,7 @@ public static class CtsFixtures
     /// <summary>The baseline. 898949 is deleted by a later delta, 60423 and 287594 are updated by
     /// them, and the other two are only ever carried. The ordinals are renumbered for the cut down
     /// file, as the extract numbers them per file.</summary>
-    public static string BulkPartOne => Records(BulkPartOneName, BulkTimestamp, BulkColumns,
+    public static string BulkPartOne => Records(BulkPartOneName, BulkTimestamp, BulkWriteDuration, BulkColumns,
         "D|1|898949|1414957|11-SEP-02|31/124/0042|AH-31/124/0042|||1|11-SEP-02|m167623|29||1",
         "D|2|125602|126127|01-JUL-96|21/173/0011|AH-21/173/0011|||1|20-OCT-09|f800702|232||1",
         "D|3|171094|171840|01-JUL-96|32/199/9003|AH-32/199/9003|||2|20-OCT-09|f800702|232||1",
@@ -128,7 +132,7 @@ public static class CtsFixtures
     /// <summary>A second part of the same cut, carrying a row part 001 does not. Splits are confirmed
     /// to happen; the sample carries only one part, so this follows the naming the sample does show -
     /// the part number sits between the run and the table, and the timestamp stays last.</summary>
-    public static string BulkPartTwo => Records(BulkPartTwoName, BulkTimestamp, BulkColumns,
+    public static string BulkPartTwo => Records(BulkPartTwoName, BulkTimestamp, BulkWriteDuration, BulkColumns,
         "D|1|307566|308856|01-JUL-96|75/306/0062|AH-75/306/0062|||1|20-OCT-09|f800702|232||1");
 
     /// <summary>Framing and no data records, as two of the sample's five deltas are: nothing changed
@@ -227,14 +231,23 @@ public static class CtsFixtures
         => DataSetFileNaming.ExtractTimestamp(Definition, $"CT_LOCATION_IDENTIFIERS_{value}.csv");
 
     /// <summary>An H record naming the file and when it was cut, the C record naming the columns, one D
-    /// record per row, and a T record repeating the name and stamp and declaring the row count - CRLF
-    /// terminated, as the extract writes them. The H and T stamps are the extract's own ddMMyyyy
-    /// HH:mm:ss rendering of the timestamp the file is named for.</summary>
+    /// record per row, and a T record repeating the name and declaring the row count - CRLF terminated,
+    /// as the extract writes them. The stamps are the extract's own ddMMyyyy HH:mm:ss rendering of the
+    /// timestamp the file is named for.</summary>
     private static string Records(string fileName, string timestamp, string columns, params string[] rows)
+        => Records(fileName, timestamp, TimeSpan.Zero, columns, rows);
+
+    /// <summary>The trailer is stamped when the extract finished writing the file, so it is the header's
+    /// stamp only for a file written inside a second. The sample's deltas are; its bulk cut took 45
+    /// seconds, and its trailer says so.</summary>
+    private static string Records(
+        string fileName, string timestamp, TimeSpan writeDuration, string columns, params string[] rows)
     {
-        var cut = DateTimeOffset.ParseExact(timestamp, "yyyy-MM-dd-HHmmss", null).ToString("ddMMyyyy HH:mm:ss");
+        var started = DateTimeOffset.ParseExact(timestamp, "yyyy-MM-dd-HHmmss", null);
+        var cut = started.ToString("ddMMyyyy HH:mm:ss");
+        var finished = started.Add(writeDuration).ToString("ddMMyyyy HH:mm:ss");
 
         return string.Join("\r\n",
-            [$"H|{fileName}|{cut}", columns, .. rows, $"T|{fileName}|{cut}|{rows.Length}", string.Empty]);
+            [$"H|{fileName}|{cut}", columns, .. rows, $"T|{fileName}|{finished}|{rows.Length}", string.Empty]);
     }
 }

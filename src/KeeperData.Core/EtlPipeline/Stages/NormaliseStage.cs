@@ -43,7 +43,6 @@ public sealed class NormaliseStage(
                 normalisedFiles.Add(destKey);
             }
         }
-
         return new NormalisedFileSet(input.Definition)
         {
             RunId = etlContext.RunId,
@@ -85,6 +84,11 @@ public sealed class NormaliseStage(
             return null;
         }
 
+        if (isHcdtFormat)
+        {
+            EnsureHcdtHead(head, headLength, relativeDestKey: relativeDestKey, relativeRawKey);
+        }
+
         await EtlArtefactWrite.RunAsync(normalisedStorage, relativeDestKey, async () =>
         {
             await using var source = new HeadPeekStream(head.AsMemory(0, headLength), sourceStream);
@@ -112,6 +116,19 @@ public sealed class NormaliseStage(
         var headLength = await sourceStream.ReadAtLeastAsync(
             head, head.Length, throwOnEndOfStream: false, cancellationToken);
         return (head, headLength);
+    }
+
+    private static void EnsureHcdtHead(byte[] head, int headLength, string relativeDestKey, string relativeRawKey)
+    {
+        // Ensure the file actually starts with an H record. We peek only a small head so skip any leading
+        // whitespace and check the first non-whitespace character.
+        var headSpan = head.AsSpan(0, headLength);
+        var idx = 0;
+        while (idx < headSpan.Length && char.IsWhiteSpace((char)headSpan[idx])) idx++;
+        if (idx == headSpan.Length || char.ToUpperInvariant((char)headSpan[idx]) != 'H')
+        {
+            throw new InvalidDataException($"H/C/D/T file invalid or misdeclared: {relativeRawKey} does not start with an H record.");
+        }
     }
 
     /// <summary>Storage returned by ForFolder(Normalised) is already rooted at normalised/. Keep

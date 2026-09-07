@@ -113,7 +113,7 @@ public class DataSetDefinitionTests
         definition.ChangeTypeHeaderName.Should().Be("LID_AUD_TYPE");
         definition.Accumulators.Should().BeEmpty();
         definition.DateTimePattern.Should().Be("yyyy-MM-dd-HHmmss");
-        definition.Format.Should().Be(FileFormat.Hcdt);
+        definition.Format.Should().Be(FileFormat.SimplePsv);
         definition.PasswordDerivation.Should().Be(PasswordDerivationPolicy.CtsDerived);
         definition.SourceKeyPattern.Should().Be("cads/cts/{bulk,daily}/*CT_LOCATION_IDENTIFIERS*");
         definition.BaselineKeyPattern.Should().Be("cads/cts/bulk/{CT_LOCATION_IDENTIFIERS_*,*_BULK_*_CT_LOCATION_IDENTIFIERS_*}");

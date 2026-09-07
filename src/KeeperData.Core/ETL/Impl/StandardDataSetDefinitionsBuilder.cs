@@ -48,7 +48,12 @@ public static class StandardDataSetDefinitionsBuilder
             "LID_AUD_TYPE",
             [],
             DateTimePattern: "yyyy-MM-dd-HHmmss",
-            Format: FileFormat.Hcdt,
+            // Both lanes are plain comma-delimited files carrying a RECORD_TYPE column, not H/C/D/T
+            // framing: the first line is the column header and every data line reads D,<ordinal>,...
+            // The format is what the normaliser is chosen by, so declaring Hcdt would send them to a
+            // parser that requires a leading H record. It is the delimiter that differs from litprd,
+            // and NormaliseStage detects that per file.
+            Format: FileFormat.SimplePsv,
             IngestionMode: DataSetIngestionMode.Delta,
             PasswordDerivation: PasswordDerivationPolicy.CtsDerived,
             SourceKeyPattern: "cads/cts/{bulk,daily}/*CT_LOCATION_IDENTIFIERS*",

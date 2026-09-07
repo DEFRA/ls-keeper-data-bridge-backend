@@ -99,13 +99,22 @@ public class NormaliseStageTests
         const string relativeRawKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
         const string destinationKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.parquet";
 
+        const string inputHcdt = "H|SAMCPHHOLDING|20260101\n" +
+                                 "C|CPH|DISEASE_TYPE|CHANGETYPE\n" +
+                                 "D|12/345/6789|TB|I\n" +
+                                 "T|1\n";
+
         _blobStorageMock.Setup(b => b.ExistsAsync(destinationKey, It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _blobStorageMock.Setup(b => b.OpenReadAsync(relativeRawKey, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MemoryStream());
+            .ReturnsAsync(new MemoryStream(Encoding.UTF8.GetBytes(inputHcdt)));
         _blobStorageMock.Setup(b => b.OpenWriteAsync(destinationKey, It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new NonClosingMemoryStream());
+
+        var handedToNormaliser = string.Empty;
         _hcdtNormaliserMock
             .Setup(n => n.NormaliseAsync(It.IsAny<Stream>(), It.IsAny<Stream>(), It.IsAny<Action<XsvHcdtOptions>>(), It.IsAny<CancellationToken>()))
+            .Callback((Stream source, Stream _, Action<XsvHcdtOptions> _, CancellationToken _) =>
+                handedToNormaliser = new StreamReader(source).ReadToEnd())
             .ReturnsAsync(new XsvValidationReport("source", "destination", 1, 1, true, true, []));
 
         var hcdtDefinition = _dataSetDef with { Format = FileFormat.Hcdt };
@@ -118,6 +127,92 @@ public class NormaliseStageTests
             It.IsAny<Stream>(),
             It.IsAny<Action<XsvHcdtOptions>>(),
             It.IsAny<CancellationToken>()), Times.Once);
+
+        // The peeked head is replayed, so the normaliser still sees the file from its first byte.
+        handedToNormaliser.Should().Be(inputHcdt);
+    }
+
+    /// <summary>A file declared H/C/D/T that carries no H record is a misdeclared dataset or a
+    /// truncated file. Parsing it as delimited text instead would succeed and produce rows.</summary>
+    [Fact]
+    public async Task NormaliseStage_Fails_WhenAnHcdtDatasetsFileCarriesNoHRecord()
+    {
+        const string rawFileKey = "raw/sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
+        const string destinationKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.parquet";
+
+        const string headerFirst = "CPH|DISEASE_TYPE|CHANGETYPE\n" +
+                                   "12/345/6789|TB|I\n";
+
+        _blobStorageMock.Setup(b => b.ExistsAsync(destinationKey, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _blobStorageMock.Setup(b => b.OpenReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MemoryStream(Encoding.UTF8.GetBytes(headerFirst)));
+        _blobStorageMock.Setup(b => b.OpenWriteAsync(destinationKey, It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NonClosingMemoryStream());
+
+        var hcdtDefinition = _dataSetDef with { Format = FileFormat.Hcdt };
+
+        var act = () => RunStageAsync(new RawFileSet(hcdtDefinition) { Files = [rawFileKey] });
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+        _hcdtNormaliserMock.Verify(n => n.NormaliseAsync(
+            It.IsAny<Stream>(),
+            It.IsAny<Stream>(),
+            It.IsAny<Action<XsvHcdtOptions>>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>An empty raw file has no schema, so no Parquet is written for it at all: an object that
+    /// existed but held nothing would be skipped as already normalised by every later run.</summary>
+    [Fact]
+    public async Task NormaliseStage_WritesNothing_ForAnEmptyRawFile()
+    {
+        const string rawFileKey = "raw/sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
+
+        _blobStorageMock.Setup(b => b.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _blobStorageMock.Setup(b => b.OpenReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MemoryStream());
+
+        var results = await RunStageAsync(new RawFileSet(_dataSetDef) { Files = [rawFileKey] });
+
+        results.Single().Files.Should().BeEmpty();
+        _blobStorageMock.Verify(b => b.OpenWriteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>The CTS lanes are comma-delimited where litprd is pipe-delimited, and the delimiter is
+    /// detected per file rather than declared, so both read with the same configuration.</summary>
+    [Fact]
+    public async Task NormaliseStage_DetectsACommaDelimitedFile()
+    {
+        const string rawFileKey = "raw/cts_location_identifiers/CT_LOCATION_IDENTIFIERS_2026-08-22-072826.xsvn.csv";
+        const string destinationKey = "cts_location_identifiers/CT_LOCATION_IDENTIFIERS_2026-08-22-072826.xsvn.parquet";
+
+        const string inputCsv = "RECORD_TYPE,RECORD_COUNT,LID_ID,LID_IDENTIFIER\r\n" +
+                                "D,1,898949,31/124/0042\r\n" +
+                                "D,2,125602,21/173/0011\r\n";
+
+        _blobStorageMock.Setup(b => b.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _blobStorageMock.Setup(b => b.OpenReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MemoryStream(Encoding.UTF8.GetBytes(inputCsv)));
+
+        var outputStream = new NonClosingMemoryStream();
+        _blobStorageMock.Setup(b => b.OpenWriteAsync(destinationKey, It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(outputStream);
+
+        var ctsDefinition = _dataSetDef with { Name = "cts_location_identifiers" };
+
+        await RunStageAsync(new RawFileSet(ctsDefinition) { Files = [rawFileKey] });
+
+        outputStream.Position = 0;
+        await using var reader = await ParquetReader.CreateAsync(outputStream);
+        using var rowGroup = reader.OpenRowGroupReader(0);
+
+        var fields = reader.Schema.GetDataFields();
+        fields.Select(f => f.Name).Should().Equal("RECORD_TYPE", "RECORD_COUNT", "LID_ID", "LID_IDENTIFIER");
+        rowGroup.RowCount.Should().Be(2);
+
+        var identifiers = new string[rowGroup.RowCount];
+        await rowGroup.ReadAsync(fields[3], identifiers);
+        identifiers.Should().Equal("31/124/0042", "21/173/0011");
     }
 
     [Fact]

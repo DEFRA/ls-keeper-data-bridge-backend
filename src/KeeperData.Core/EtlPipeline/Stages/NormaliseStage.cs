@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using CsvHelper;
 using CsvHelper.Configuration;
 using KeeperData.Core.EtlPipeline.Payloads;
@@ -22,6 +23,13 @@ public sealed class NormaliseStage(
 {
     public override string Name => "normalise";
 
+    /// <summary>Enough of a file to hold its first record, whichever framing it turns out to carry.</summary>
+    private const int HeadPeekBytes = 8 * 1024;
+
+    private static ReadOnlySpan<byte> Utf8Bom => [0xEF, 0xBB, 0xBF];
+
+    private static ReadOnlySpan<char> HcdtDelimiters => "|,";
+
     protected override async Task<NormalisedFileSet> MapAsync(RawFileSet input, IPipelineContext context, CancellationToken cancellationToken)
     {
         var etlContext = (EtlPipelineContext)context;
@@ -35,7 +43,10 @@ public sealed class NormaliseStage(
             var destKey = await NormaliseFileAsync(
                 input.Definition, rawFileKey, rawStorage, normalisedStorage, cancellationToken);
 
-            normalisedFiles.Add(destKey);
+            if (destKey is not null)
+            {
+                normalisedFiles.Add(destKey);
+            }
         }
 
         return new NormalisedFileSet(input.Definition)
@@ -46,8 +57,8 @@ public sealed class NormaliseStage(
     }
 
     /// <summary>Normalises one raw file to Parquet, or reuses the destination if it already exists.
-    /// Returns the destination key either way.</summary>
-    private async Task<string> NormaliseFileAsync(
+    /// Returns the destination key either way, and null for a file with no content to normalise.</summary>
+    private async Task<string?> NormaliseFileAsync(
         DataSetDefinition definition,
         string rawFileKey,
         IBlobStorageService rawStorage,
@@ -69,9 +80,30 @@ public sealed class NormaliseStage(
         logger.LogInformation("Normalising {RawFileKey} to {DestKey}. Format: {Format}",
             relativeRawKey, relativeDestKey, isHcdtFormat ? "H/C/D/T" : "Simple PSV");
 
+        await using var sourceStream = await rawStorage.OpenReadAsync(relativeRawKey, cancellationToken);
+
+        // The head is read before the destination is opened: an empty file has no schema to write, and
+        // an object that exists but holds no Parquet would be skipped as done by every later run.
+        var head = new byte[HeadPeekBytes];
+        var headLength = await sourceStream.ReadAtLeastAsync(
+            head, head.Length, throwOnEndOfStream: false, cancellationToken);
+
+        if (headLength == 0)
+        {
+            logger.LogWarning("Nothing to normalise: {RawFileKey} is empty, so no Parquet is written", relativeRawKey);
+            return null;
+        }
+
+        if (isHcdtFormat && !LooksLikeHcdt(head.AsSpan(0, headLength)))
+        {
+            throw new InvalidDataException(
+                $"{relativeRawKey} is declared as {nameof(FileFormat.Hcdt)} but its first record is not an H header. " +
+                $"A delimited file carrying no H/C/D/T framing must be declared as {nameof(FileFormat.SimplePsv)}.");
+        }
+
         await EtlArtefactWrite.RunAsync(normalisedStorage, relativeDestKey, async () =>
         {
-            await using var sourceStream = await rawStorage.OpenReadAsync(relativeRawKey, cancellationToken);
+            await using var source = new HeadPeekStream(head.AsMemory(0, headLength), sourceStream);
             await using var destStream = await normalisedStorage.OpenWriteAsync(
                 relativeDestKey,
                 SnapshotFileNaming.ParquetContentType,
@@ -79,11 +111,11 @@ public sealed class NormaliseStage(
 
             if (isHcdtFormat)
             {
-                await NormaliseDeclaredHcdtAsync(sourceStream, destStream, relativeRawKey, cancellationToken);
+                await NormaliseHcdtAsync(source, destStream, cancellationToken);
             }
             else
             {
-                await ConvertSimplePsvToParquetAsync(sourceStream, destStream, cancellationToken);
+                await ConvertSimplePsvToParquetAsync(source, destStream, cancellationToken);
             }
         }, logger);
 
@@ -99,52 +131,31 @@ public sealed class NormaliseStage(
         return $"{definition.Name}/{fileName}.parquet";
     }
 
-    /// <summary>A dataset declared H/C/D/T is not always actually H/C/D/T in practice, so the source
-    /// is buffered and peeked before committing to a parser: a genuine H/C/D/T file is handed to the
-    /// NuGet normaliser, and one that turns out not to carry the leading H header falls back to
-    /// simple PSV parsing instead of failing.</summary>
-    private async Task NormaliseDeclaredHcdtAsync(
-        Stream sourceStream, Stream destStream, string relativeRawKey, CancellationToken cancellationToken)
+    /// <summary>Reads the first non-empty line of the peeked head and requires an H record: the marker
+    /// followed by a delimiter, so a header column such as HOLDING_ID does not read as framing. A head
+    /// holding nothing but blank lines is left to the normaliser, which accepts a zero-record file.</summary>
+    private static bool LooksLikeHcdt(ReadOnlySpan<byte> head)
     {
-        await using var buffered = new MemoryStream();
-        await sourceStream.CopyToAsync(buffered, cancellationToken);
-        buffered.Position = 0;
-
-        if (await LooksLikeHcdtAsync(buffered, cancellationToken))
+        if (head.StartsWith(Utf8Bom))
         {
-            await NormaliseHcdtAsync(buffered, destStream, cancellationToken);
+            head = head[Utf8Bom.Length..];
         }
-        else
+
+        // A head short of a line break still decides it: only the start of the first line is read.
+        foreach (var line in Encoding.UTF8.GetString(head).Split('\n'))
         {
-            logger.LogWarning(
-                "File did not appear to be H/C/D/T despite dataset format; falling back to PSV parsing for {Key}.",
-                relativeRawKey);
-
-            await ConvertSimplePsvToParquetAsync(buffered, destStream, cancellationToken);
-        }
-    }
-
-    /// <summary>Peeks the first non-empty line for an H header (e.g. "H|" or "H,"), leaving the
-    /// stream repositioned at the start for whichever parser is chosen next.</summary>
-    private static async Task<bool> LooksLikeHcdtAsync(MemoryStream buffered, CancellationToken cancellationToken)
-    {
-        string? firstLine = null;
-
-        using (var reader = new StreamReader(buffered, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 1024, leaveOpen: true))
-        {
-            while (true)
+            var candidate = line.Trim();
+            if (candidate.Length == 0)
             {
-                firstLine = await reader.ReadLineAsync(cancellationToken);
-                if (firstLine == null || !string.IsNullOrWhiteSpace(firstLine))
-                    break;
+                continue;
             }
+
+            return candidate.Length > 1
+                && (candidate[0] is 'H' or 'h')
+                && HcdtDelimiters.Contains(candidate[1]);
         }
 
-        buffered.Position = 0;
-
-        // Treat an entirely empty file as H/C/D/T-compatible so declared H/C/D/T datasets
-        // are passed to the HCDT normaliser (it can handle zero-record inputs).
-        return firstLine == null || firstLine.TrimStart().StartsWith("H", StringComparison.OrdinalIgnoreCase);
+        return true;
     }
 
     private async Task NormaliseHcdtAsync(Stream source, Stream dest, CancellationToken ct)
@@ -164,10 +175,10 @@ public sealed class NormaliseStage(
     {
         using var reader = new StreamReader(source);
 
-        // Match legacy CsvHelper config. The delimiter is detected rather than assumed: most feeds
-        // are pipe-delimited, but a dataset declared as H/C/D/T that turns out not to carry an "H"
-        // header (CTS's bulk and delta files) is still a true comma-delimited CSV, and parsing it
-        // with "|" leaves the whole line as a single column.
+        // Match legacy CsvHelper config. The delimiter is detected rather than assumed: the litprd
+        // feeds are pipe-delimited and the CTS lanes are comma-delimited, and parsing the latter with
+        // "|" leaves the whole line as a single column. Detection settles on the delimiter that gives a
+        // consistent field count, so a pipe file whose values contain commas still reads as pipes.
         using var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             DetectDelimiter = true,
@@ -177,12 +188,13 @@ public sealed class NormaliseStage(
             BadDataFound = null
         });
 
-        // If there are no records at all, ReadAsync will return false and ReadHeader would throw.
-        // Handle empty inputs gracefully by doing nothing.
+        // A file with no header line at all reaches here only as blank lines: there is no schema to
+        // write, and ReadHeader would throw.
         if (!await csv.ReadAsync())
         {
             return;
         }
+
         csv.ReadHeader();
         var headers = csv.HeaderRecord!;
 

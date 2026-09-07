@@ -374,7 +374,7 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
         }
     }
 
-    private static Task PutAsync(InMemoryEtlPipelineHost host, string key, string content)
+    private static Task<string> PutAsync(InMemoryEtlPipelineHost host, string key, string content)
         => host.PutEncryptedSourceFileAsync(key, content, PasswordDerivationPolicy.CtsDerived);
 
     private static async Task SeedLitprdAsync(InMemoryEtlPipelineHost host)

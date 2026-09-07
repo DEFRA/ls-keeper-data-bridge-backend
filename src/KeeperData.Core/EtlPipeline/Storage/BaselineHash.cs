@@ -28,10 +28,13 @@ public static class BaselineHash
 
         var keys = bulkKeys.OrderBy(key => key, StringComparer.Ordinal).ToList();
 
-        foreach (var key in keys.Where(key => key.Contains('\n', StringComparison.Ordinal)))
+        // string.Contains has an overload that accepts a StringComparison; pass a string, not a char.
+        // Detect any key that contains the newline separator and report the first offending key
+        var bad = keys.FirstOrDefault(k => k.Contains("\n", StringComparison.Ordinal));
+        if (bad is not null)
         {
             throw new ArgumentException(
-                $"Baseline file name '{key}' carries a newline, which the hash uses to separate names",
+                $"Baseline file name '{bad}' carries a newline, which the hash uses to separate names",
                 nameof(bulkKeys));
         }
 

@@ -113,22 +113,28 @@ public static class DataSetFileNaming
     {
         var regex = new StringBuilder("^");
 
-        for (var index = 0; index < pattern.Length; index++)
+        // Replace double-star sequences with a single sentinel character so the loop
+        // can handle single- and double-star cases without mutating the loop index.
+        const char DoubleStarSentinel = '\u0000';
+        var normalized = pattern.Replace("**", DoubleStarSentinel.ToString());
+
+        for (var index = 0; index < normalized.Length; index++)
         {
-            if (pattern[index] != '*')
+            var ch = normalized[index];
+
+            if (ch == DoubleStarSentinel)
             {
-                regex.Append(Regex.Escape(pattern[index].ToString()));
+                regex.Append(".*");
                 continue;
             }
 
-            var isDoubleStar = index + 1 < pattern.Length && pattern[index + 1] == '*';
-
-            regex.Append(isDoubleStar ? ".*" : "[^/]*");
-
-            if (isDoubleStar)
+            if (ch == '*')
             {
-                index++;
+                regex.Append("[^/]*");
+                continue;
             }
+
+            regex.Append(Regex.Escape(ch.ToString()));
         }
 
         return regex.Append('$').ToString();

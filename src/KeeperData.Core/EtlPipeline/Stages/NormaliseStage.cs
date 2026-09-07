@@ -86,7 +86,7 @@ public sealed class NormaliseStage(
 
         if (isHcdtFormat)
         {
-            EnsureHcdtHead(head, headLength, relativeDestKey: relativeDestKey, relativeRawKey);
+            EnsureHcdtHead(head, headLength, relativeRawKey);
         }
 
         await EtlArtefactWrite.RunAsync(normalisedStorage, relativeDestKey, async () =>
@@ -118,7 +118,7 @@ public sealed class NormaliseStage(
         return (head, headLength);
     }
 
-    private static void EnsureHcdtHead(byte[] head, int headLength, string relativeDestKey, string relativeRawKey)
+    private static void EnsureHcdtHead(byte[] head, int headLength, string relativeRawKey)
     {
         // Ensure the file actually starts with an H record. We peek only a small head so skip any leading
         // whitespace and check the first non-whitespace character.

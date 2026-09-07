@@ -147,7 +147,7 @@ public sealed class CtsLocationIdentifiersEndToEndTests(ITestOutputHelper output
         }
     }
 
-    private static Task PutAsync(EtlPipelineTestHost host, string key, string content)
+    private static Task<string> PutAsync(EtlPipelineTestHost host, string key, string content)
         => host.PutEncryptedSourceFileAsync(key, content, PasswordDerivationPolicy.CtsDerived);
 
     /// <summary>Reads a snapshot Parquet directly, so the assertion does not lean on the load stage.</summary>

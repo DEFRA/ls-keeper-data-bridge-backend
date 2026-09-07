@@ -155,7 +155,7 @@ public class NormaliseStageTests
 
         var act = () => RunStageAsync(new RawFileSet(hcdtDefinition) { Files = [rawFileKey] });
 
-        await act.Should().ThrowAsync<InvalidDataException>();
+        await act.Should().ThrowAsync<XsvValidationException>();
         _hcdtNormaliserMock.Verify(n => n.NormaliseAsync(
             It.IsAny<Stream>(),
             It.IsAny<Stream>(),

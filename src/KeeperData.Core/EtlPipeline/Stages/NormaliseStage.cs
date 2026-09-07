@@ -142,7 +142,9 @@ public sealed class NormaliseStage(
 
         buffered.Position = 0;
 
-        return firstLine != null && firstLine.TrimStart().StartsWith("H", StringComparison.OrdinalIgnoreCase);
+        // Treat an entirely empty file as H/C/D/T-compatible so declared H/C/D/T datasets
+        // are passed to the HCDT normaliser (it can handle zero-record inputs).
+        return firstLine == null || firstLine.TrimStart().StartsWith("H", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task NormaliseHcdtAsync(Stream source, Stream dest, CancellationToken ct)
@@ -175,7 +177,12 @@ public sealed class NormaliseStage(
             BadDataFound = null
         });
 
-        await csv.ReadAsync();
+        // If there are no records at all, ReadAsync will return false and ReadHeader would throw.
+        // Handle empty inputs gracefully by doing nothing.
+        if (!await csv.ReadAsync())
+        {
+            return;
+        }
         csv.ReadHeader();
         var headers = csv.HeaderRecord!;
 

@@ -141,7 +141,7 @@ public sealed class NormaliseStage(
             report.DeclaredRecordCount, report.ActualDataRecords);
     }
 
-    private async Task ConvertSimplePsvToParquetAsync(Stream source, Stream dest, CancellationToken ct)
+    private static async Task ConvertSimplePsvToParquetAsync(Stream source, Stream dest, CancellationToken ct)
     {
         using var reader = new StreamReader(source);
 

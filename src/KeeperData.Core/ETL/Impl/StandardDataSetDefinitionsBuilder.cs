@@ -33,6 +33,31 @@ public static class StandardDataSetDefinitionsBuilder
         var amesHaulier = list.With(new DataSetDefinition("ames_haulier", $"{litprd}LITP_AMESHAULIER_{{0}}", ["DISPLAY_LICENCE_NUMBER"], ChangeType.HeaderName, [], IngestionMode: DataSetIngestionMode.Delta)); // no PK defined in the spec, but 'DISPLAY_LICENCE_NUMBER' is the only unique field in the data - and field cannot be null.
         var samShowground = list.With(new DataSetDefinition("sam_showground", $"{litprd}LITP_SAMSHOWGROUND_{{0}}", ["CPH"], ChangeType.HeaderName, [], IngestionMode: DataSetIngestionMode.Delta));
 
+        // Discovery reads SourceKeyPattern; the prefix format is kept populated for the callers that
+        // report it. The patterns carry no extension because a file is matched both in the source lane,
+        // where it may be .csv, .csv.enc or .xsvn.csv, and in the normalised lane, where it is .parquet.
+        // The baseline discriminates on the file name rather than on the folder, which a normalised key
+        // drops. A bulk file is named for the table alone - CT_LOCATION_IDENTIFIERS_{timestamp} - while a
+        // delta carries the run that produced it ahead of it, so the pattern is anchored at the start of
+        // the name or every delta would read as a baseline too. The second alternative covers a split cut
+        // named for its run instead, which is confirmed to occur but not confirmed in shape.
+        var ctsLocationIdentifiers = list.With(new DataSetDefinition(
+            "cts_location_identifiers",
+            "cads/cts/**/CTSM_CADS_PROD_*_CT_LOCATION_IDENTIFIERS_{0}",
+            ["LID_ID"],
+            "LID_AUD_TYPE",
+            [],
+            DateTimePattern: "yyyy-MM-dd-HHmmss",
+            Format: FileFormat.Hcdt,
+            IngestionMode: DataSetIngestionMode.Delta,
+            PasswordDerivation: PasswordDerivationPolicy.CtsDerived,
+            SourceKeyPattern: "cads/cts/{bulk,daily}/*CT_LOCATION_IDENTIFIERS*",
+            BaselineKeyPattern: "cads/cts/bulk/{CT_LOCATION_IDENTIFIERS_*,*_BULK_*_CT_LOCATION_IDENTIFIERS_*}",
+            Audit: new AuditColumns("LID_AUD_ID", "LID_AUD_DATETIME"))
+        {
+            ExcludedColumns = ["LID_AUD_ID", "LID_AUD_TYPE", "LID_AUD_DATETIME", "RECORD_TYPE", "RECORD_COUNT"]
+        });
+
         return new DataSetDefinitions
         {
             SamCPHHolding = samCPHHolding,
@@ -48,7 +73,7 @@ public static class StandardDataSetDefinitionsBuilder
             CtsAgent = ctsAgent,
             AmesHaulier = amesHaulier,
             SamShowground = samShowground,
-            
+            CtsLocationIdentifiers = ctsLocationIdentifiers,
             All = [.. list]
         };
     }

@@ -231,7 +231,9 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
         target.SnapshotSourceTimestampUtc = source.SnapshotSourceTimestamp?.UtcDateTime ?? target.SnapshotSourceTimestampUtc;
         target.RowCount = source.RowCount ?? target.RowCount;
         target.RowsUpserted = source.RowsUpserted ?? target.RowsUpserted;
+        target.RowsDeleted = source.RowsDeleted ?? target.RowsDeleted;
         target.RowsIgnoredDeletes = source.RowsIgnoredDeletes ?? target.RowsIgnoredDeletes;
+        target.RowsRejected = source.RowsRejected ?? target.RowsRejected;
 
         if (source.ColumnsNullified.Count > 0) target.ColumnsNullified = [.. source.ColumnsNullified];
         if (source.ColumnsAdded.Count > 0) target.ColumnsAdded = [.. source.ColumnsAdded];

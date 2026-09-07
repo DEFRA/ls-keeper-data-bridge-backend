@@ -223,23 +223,32 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
     /// <summary>Moves the run clock, so a later run can see files stamped after the previous one.</summary>
     public void SetNow(DateTimeOffset now) => _timeProvider.SetUtcNow(now);
 
-    /// <summary>Encrypts PSV content the way the source system does and puts it at
+    /// <summary>Encrypts content the way the source system does and puts it at
     /// <paramref name="objectKey"/>, which carries the dataset's folder as a real source key does.
+    ///
+    /// <paramref name="policy"/> is how the source system turned the name into a password. It
+    /// defaults to the name itself, which is what the litprd feed does; a CTS file is encrypted with
+    /// the password derived from its name, so the fixture is built with the production derivation
+    /// rather than a copy of it.
     ///
     /// <paramref name="salt"/> defaults to the salt this host is configured with; pass a different
     /// one to produce the file a caller gets when it was encrypted for another environment.</summary>
-    public async Task<string> PutEncryptedSourceFileAsync(string objectKey, string psvContent, string? salt = null)
+    public async Task<string> PutEncryptedSourceFileAsync(
+        string objectKey,
+        string content,
+        PasswordDerivationPolicy policy = PasswordDerivationPolicy.FileNameVerbatim,
+        string? salt = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
 
         var crypto = new AesCryptoTransform();
-        var plaintext = new MemoryStream(Encoding.UTF8.GetBytes(psvContent));
+        var passwords = _services.GetRequiredService<IPasswordSaltService>();
+        var plaintext = new MemoryStream(Encoding.UTF8.GetBytes(content));
         var encrypted = new MemoryStream();
 
-        // The source system encrypts against the file name, never the path it is stored at.
-        var fileName = objectKey[(objectKey.LastIndexOf('/') + 1)..];
+        var password = passwords.Get(objectKey, policy).Password;
 
-        await crypto.EncryptStreamAsync(plaintext, encrypted, fileName, salt ?? AesSalt, plaintext.Length);
+        await crypto.EncryptStreamAsync(plaintext, encrypted, password, salt ?? AesSalt, plaintext.Length);
 
         encrypted.Position = 0;
 

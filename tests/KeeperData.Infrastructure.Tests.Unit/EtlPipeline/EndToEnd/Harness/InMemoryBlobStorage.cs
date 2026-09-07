@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
@@ -33,6 +34,15 @@ public class InMemoryBlobStorage(string container) : IBlobStorageService
                 .Where(key => prefix is null || key.StartsWith(prefix, StringComparison.Ordinal))
                 .OrderBy(key => key, StringComparer.Ordinal)
                 .Select(Info)]);
+
+    public async IAsyncEnumerable<StorageObjectInfo> EnumerateAsync(string? prefix = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var info in await ListAsync(prefix, cancellationToken))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return info;
+        }
+    }
 
     public Task<StorageObjectMetadata> GetMetadataAsync(string objectKey, CancellationToken cancellationToken = default)
     {

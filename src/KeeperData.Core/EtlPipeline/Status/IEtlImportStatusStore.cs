@@ -56,7 +56,9 @@ public sealed record EtlImportDatasetProgress(string Dataset)
     public DateTimeOffset? SnapshotSourceTimestamp { get; init; }
     public long? RowCount { get; init; }
     public long? RowsUpserted { get; init; }
+    public long? RowsDeleted { get; init; }
     public long? RowsIgnoredDeletes { get; init; }
+    public long? RowsRejected { get; init; }
     public IReadOnlyList<string> ColumnsNullified { get; init; } = [];
     public IReadOnlyList<string> ColumnsAdded { get; init; } = [];
 }

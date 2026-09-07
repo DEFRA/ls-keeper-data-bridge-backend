@@ -2,14 +2,17 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Storage;
-using KeeperData.Core.Storage.Dtos;
 
 namespace KeeperData.Core.ETL.Impl;
 
 /// <summary>
 /// Improved bulk listing catalogue service:
 /// Discovers source files by listing each dataset's whole prefix once and selecting the requested
-/// dates in memory, rather than listing storage again for every date in the range. 
+/// dates in memory, rather than listing storage again for every date in the range.
+///
+/// The listing streams, and a key is filtered against the dataset's pattern before its timestamp
+/// is read: a glob dataset shares its folder with other tables whose names carry no timestamp this
+/// dataset could parse, and only the matched keys are ever held.
 /// </summary>
 public class BulkListingExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     TimeProvider timeProvider,
@@ -57,16 +60,39 @@ public class BulkListingExternalCatalogueService(IBlobStorageServiceReadOnly sou
 
     public async Task<FileSet> GetFileSetAsync(DataSetDefinition definition, DateOnly from, DateOnly to, CancellationToken ct)
     {
-        var blobs = await sourceBlobs.ListAsync(DataSetFileNaming.DataSetKeyPrefix(definition), ct);
+        var files = new List<EtlFile>();
 
-        return new FileSet(definition, SelectFilesWithin(from, to, definition, blobs));
+        foreach (var prefix in DataSetFileNaming.ListingPrefixes(definition))
+            await CollectMatchingFilesAsync(definition, prefix, from, to, files, ct);
+
+        return new FileSet(definition, [.. files.OrderBy(file => file.Timestamp)]);
     }
 
-    private static EtlFile[] SelectFilesWithin(DateOnly from, DateOnly to, DataSetDefinition definition, IReadOnlyList<StorageObjectInfo> blobs)
-        => [.. blobs
-            .Select(blob => new EtlFile(blob, DataSetFileNaming.ExtractTimestamp(definition, blob.Key)))
-            .Where(file => FallsWithin(from, to, file))
-            .OrderBy(file => file.Timestamp)];
+    /// <summary>Streams one listing prefix and appends the files it yields that both belong to the
+    /// dataset and fall within the requested date range.</summary>
+    private async Task CollectMatchingFilesAsync(
+        DataSetDefinition definition,
+        string prefix,
+        DateOnly from,
+        DateOnly to,
+        List<EtlFile> files,
+        CancellationToken ct)
+    {
+        await foreach (var blob in sourceBlobs.EnumerateAsync(prefix, ct))
+        {
+            if (!DataSetFileNaming.Matches(definition, blob.Key))
+            {
+                continue;
+            }
+
+            var file = new EtlFile(blob, DataSetFileNaming.ExtractTimestamp(definition, blob.Key));
+
+            if (FallsWithin(from, to, file))
+            {
+                files.Add(file);
+            }
+        }
+    }
 
     private static bool FallsWithin(DateOnly from, DateOnly to, EtlFile file)
     {

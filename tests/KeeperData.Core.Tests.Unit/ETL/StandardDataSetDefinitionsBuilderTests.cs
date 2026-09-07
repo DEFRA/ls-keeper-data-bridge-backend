@@ -7,6 +7,11 @@ namespace KeeperData.Core.Tests.Unit.ETL;
 [Trait("Category", "Unit")]
 public class StandardDataSetDefinitionsBuilderTests
 {
+    /// <summary>The configured folder moves the litprd feed only. A dataset discovered by glob names its
+    /// own folders in its pattern, because they are not the same folder.</summary>
+    private static IEnumerable<DataSetDefinition> Litprd(DataSetDefinitions definitions)
+        => definitions.All.Where(definition => definition.SourceKeyPattern is null);
+
     [Fact]
     public void Build_WithoutAFolder_FoldersEveryDefinitionUnderLitprd()
     {
@@ -14,7 +19,7 @@ public class StandardDataSetDefinitionsBuilderTests
         var definitions = StandardDataSetDefinitionsBuilder.Build();
 
         // Assert
-        definitions.All.Should().OnlyContain(d => d.FilePrefixFormat.StartsWith("litprd/"));
+        Litprd(definitions).Should().OnlyContain(d => d.FilePrefixFormat.StartsWith("litprd/"));
         definitions.SamCPHHolding.FilePrefixFormat.Should().Be("litprd/LITP_SAMCPHHOLDING_{0}");
     }
 
@@ -39,7 +44,7 @@ public class StandardDataSetDefinitionsBuilderTests
         var definitions = StandardDataSetDefinitionsBuilder.Build("feeds/litprd");
 
         // Assert
-        definitions.All.Should().OnlyContain(d => d.FilePrefixFormat.StartsWith("feeds/litprd/"));
+        Litprd(definitions).Should().OnlyContain(d => d.FilePrefixFormat.StartsWith("feeds/litprd/"));
         definitions.SamShowground.FilePrefixFormat.Should().Be("feeds/litprd/LITP_SAMSHOWGROUND_{0}");
     }
 

@@ -127,23 +127,32 @@ public sealed class InMemoryEtlPipelineHost : IDisposable
         return id;
     }
 
-    /// <summary>Encrypts PSV content the way the source system does and seeds it into the source
+    /// <summary>Encrypts content the way the source system does and seeds it into the source
     /// container at <paramref name="objectKey"/>, which carries the dataset's folder as a real
     /// source key does. The source system encrypts against the file name, never the path.</summary>
+    /// <param name="policy">How the source system turned the name into a password. Defaults to the
+    /// name itself, which is what the litprd feed does; a CTS file is encrypted with the password
+    /// derived from its name, so the fixture is built with the production derivation rather than a
+    /// copy of it.</param>
     /// <param name="salt">Defaults to the salt this host is configured with. Pass another to
     /// produce the file you get when it was encrypted for a different environment.</param>
-    public async Task<string> PutEncryptedSourceFileAsync(string objectKey, string psvContent, string? salt = null)
+    public async Task<string> PutEncryptedSourceFileAsync(
+        string objectKey,
+        string content,
+        PasswordDerivationPolicy policy = PasswordDerivationPolicy.FileNameVerbatim,
+        string? salt = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
 
         var crypto = _services.GetRequiredService<IAesCryptoTransform>();
+        var passwords = _services.GetRequiredService<IPasswordSaltService>();
 
-        using var plaintext = new MemoryStream(Encoding.UTF8.GetBytes(psvContent));
+        using var plaintext = new MemoryStream(Encoding.UTF8.GetBytes(content));
         using var encrypted = new MemoryStream();
 
-        var fileName = objectKey[(objectKey.LastIndexOf('/') + 1)..];
+        var password = passwords.Get(objectKey, policy).Password;
 
-        await crypto.EncryptStreamAsync(plaintext, encrypted, fileName, salt ?? AesSalt, plaintext.Length);
+        await crypto.EncryptStreamAsync(plaintext, encrypted, password, salt ?? AesSalt, plaintext.Length);
 
         Source.Seed(objectKey, encrypted.ToArray());
 

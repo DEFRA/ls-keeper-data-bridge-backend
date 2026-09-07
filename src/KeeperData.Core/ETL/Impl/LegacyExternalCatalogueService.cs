@@ -112,6 +112,9 @@ public class LegacyExternalCatalogueService(IBlobStorageServiceReadOnly sourceBl
 
     public async Task<FileSet> GetFileSetAsync(DataSetDefinition definition, DateOnly date, CancellationToken ct)
     {
+        if (definition.SourceKeyPattern is not null)
+            return new FileSet(definition, []);
+
         var prefix = DataSetFileNaming.DatedKeyPrefix(definition, date);
         var blobs = await sourceBlobs.ListAsync(prefix, ct);
         var etlFiles = blobs.Select(blob => new EtlFile(blob, DataSetFileNaming.ExtractTimestamp(definition, blob.Key))).ToArray();

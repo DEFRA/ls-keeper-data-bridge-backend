@@ -124,7 +124,9 @@ public class EtlImportStatusController(
             SnapshotSourceTimestampUtc = d.SnapshotSourceTimestampUtc,
             RowCount = d.RowCount,
             RowsUpserted = d.RowsUpserted,
+            RowsDeleted = d.RowsDeleted,
             RowsIgnoredDeletes = d.RowsIgnoredDeletes,
+            RowsRejected = d.RowsRejected,
             ColumnsNullified = [.. d.ColumnsNullified],
             ColumnsAdded = [.. d.ColumnsAdded]
         })]

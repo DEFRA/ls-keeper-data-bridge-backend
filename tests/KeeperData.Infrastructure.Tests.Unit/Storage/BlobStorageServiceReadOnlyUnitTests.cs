@@ -411,6 +411,77 @@ public class BlobStorageServiceReadOnlyUnitTests
 
     #endregion
 
+    #region EnumerateAsync Tests
+
+    /// <summary>Enumeration pages until S3 stops handing back a continuation token, and unlike
+    /// <c>ListAsync</c> it has no page cap: 25 pages of a thousand is 25,000 objects, past the cap.</summary>
+    [Fact]
+    public async Task EnumerateAsync_PagesPastTheListingCap()
+    {
+        const int Pages = 25;
+        var page = 0;
+
+        _mockS3Client.Setup(x => x.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                page++;
+
+                return new ListObjectsV2Response
+                {
+                    S3Objects = [.. Enumerable.Range(0, 1000).Select(index => new S3Object
+                    {
+                        Key = $"page{page:00}/file{index:0000}.txt",
+                        Size = 1,
+                        ETag = "\"etag\"",
+                        LastModified = DateTime.UtcNow
+                    })],
+                    IsTruncated = page < Pages,
+                    NextContinuationToken = page < Pages ? $"token-{page}" : null
+                };
+            });
+
+        _mockS3Client.Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
+            .Returns("https://test-url.com/object");
+
+        using var service = new S3BlobStorageServiceReadOnly(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer);
+
+        var count = 0;
+        await foreach (var _ in service.EnumerateAsync())
+            count++;
+
+        count.Should().Be(Pages * 1000);
+    }
+
+    [Fact]
+    public async Task EnumerateAsync_WithAnEmptyPrefix_Terminates()
+    {
+        _mockS3Client.Setup(x => x.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListObjectsV2Response { S3Objects = [], IsTruncated = false });
+
+        _mockS3Client.Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
+            .Returns("https://test-url.com/object");
+
+        using var service = new S3BlobStorageServiceReadOnly(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer);
+
+        var items = new List<string>();
+        await foreach (var item in service.EnumerateAsync("nothing-here/"))
+            items.Add(item.Key);
+
+        items.Should().BeEmpty();
+    }
+
+    #endregion
+
     #region GetMetadataAsync Tests
 
     [Fact]

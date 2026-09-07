@@ -15,6 +15,17 @@ public class BulkListingExternalCatalogueServiceTests
     private static readonly DataSetDefinition DataSetB = new("dataset_b", "LITP_B_{0}", ["KEY"], "change_type", []);
     private static readonly DataSetDefinition DataSetC = new("dataset_c", "LITP_C_{0}", ["KEY"], "change_type", []);
 
+    /// <summary>A glob dataset spanning two lanes of a folder it shares with other tables.</summary>
+    private static readonly DataSetDefinition CtsLocationIdentifiers = new(
+        "cts_location_identifiers",
+        "cads/cts/",
+        ["LID_ID"],
+        "LID_AUD_TYPE",
+        [],
+        DateTimePattern: "yyyy-MM-dd-HHmmss",
+        SourceKeyPattern: "cads/cts/{bulk,daily}/*CT_LOCATION_IDENTIFIERS*",
+        BaselineKeyPattern: "cads/cts/bulk/*CT_LOCATION_IDENTIFIERS*");
+
     private static readonly DateOnly RangeStart = new(2024, 10, 1);
     private static readonly DateOnly RangeEnd = new(2024, 10, 31);
     private const int DaysInRange = 31;
@@ -37,7 +48,7 @@ public class BulkListingExternalCatalogueServiceTests
         await _catalogue.GetFileSetsAsync(definitions, RangeStart, RangeEnd, CancellationToken.None);
 
         _blobs.Verify(
-            b => b.ListAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            b => b.EnumerateAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Exactly(definitions.Length));
     }
 
@@ -48,7 +59,7 @@ public class BulkListingExternalCatalogueServiceTests
 
         await _catalogue.GetFileSetAsync(DataSetA, RangeStart, RangeEnd, CancellationToken.None);
 
-        _blobs.Verify(b => b.ListAsync("LITP_A_", It.IsAny<CancellationToken>()), Times.Once);
+        _blobs.Verify(b => b.EnumerateAsync("LITP_A_", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -211,6 +222,22 @@ public class BulkListingExternalCatalogueServiceTests
         fileSets.Should().OnlyContain(set => set.Files.Length == 1);
     }
 
+    /// <summary>A dated literal prefix means nothing for a glob dataset, so the legacy catalogue —
+    /// still reachable through api/import — leaves such a dataset to the bulk listing one.</summary>
+    [Fact]
+    public async Task TheLegacyCatalogueIgnoresAGlobDataSet()
+    {
+        var stored = new[] { CtsFile("daily", "CTSM_CADS_PROD_DELTA_00002_001_CT_LOCATION_IDENTIFIERS_2024-10-06-063010.csv") };
+        var legacyBlobs = new Mock<IBlobStorageServiceReadOnly>();
+        StubListing(legacyBlobs, stored);
+
+        var legacy = new LegacyExternalCatalogueService(legacyBlobs.Object, TimeProvider.System, Mock.Of<IDataSetDefinitions>());
+        var fileSet = await legacy.GetFileSetAsync(CtsLocationIdentifiers, RangeStart, RangeEnd, CancellationToken.None);
+
+        fileSet.Files.Should().BeEmpty();
+        legacyBlobs.Verify(b => b.ListAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     /// <summary>A catalogue whose clock reads <paramref name="today"/> and whose only dataset is A.</summary>
     private BulkListingExternalCatalogueService CatalogueAt(DateOnly today)
     {
@@ -263,10 +290,67 @@ public class BulkListingExternalCatalogueServiceTests
         await new LegacyExternalCatalogueService(legacyBlobs.Object, TimeProvider.System, Mock.Of<IDataSetDefinitions>())
             .GetFileSetsAsync(definitions, RangeStart, RangeEnd, CancellationToken.None);
 
-        _blobs.Verify(b => b.ListAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+        _blobs.Verify(b => b.EnumerateAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Exactly(definitions.Length));
         legacyBlobs.Verify(b => b.ListAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Exactly(DaysInRange * definitions.Length));
+    }
+
+    [Fact]
+    public async Task ForAGlobDataSet_ListsEachLaneSeparately()
+    {
+        GivenStoredFiles(CtsFile("bulk", "CTSM_CADS_PROD_BULK_00001_001_CT_LOCATION_IDENTIFIERS_2024-10-05-072824.xsvn.csv"));
+
+        await _catalogue.GetFileSetAsync(CtsLocationIdentifiers, RangeStart, RangeEnd, CancellationToken.None);
+
+        _blobs.Verify(b => b.EnumerateAsync("cads/cts/bulk/", It.IsAny<CancellationToken>()), Times.Once);
+        _blobs.Verify(b => b.EnumerateAsync("cads/cts/daily/", It.IsAny<CancellationToken>()), Times.Once);
+        _blobs.Verify(b => b.EnumerateAsync("cads/cts/", It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ForAGlobDataSet_ReturnsOnlyItsOwnFilesFromAFolderOfOtherTables()
+    {
+        GivenStoredFiles(
+            CtsFile("bulk", "CTSM_CADS_PROD_BULK_00001_001_CT_LOCATION_IDENTIFIERS_2024-10-05-072824.xsvn.csv"),
+            CtsFile("daily", "CTSM_CADS_PROD_DELTA_00002_001_CT_LOCATION_IDENTIFIERS_2024-10-06-063010.csv"),
+            CtsFile("daily", "CTSM_CADS_PROD_DELTA_00002_001_CT_ADDRESSES_2024-10-06-063010.csv"),
+            CtsFile("daily", "CT_ANIMALS_SOMETHING_UNPARSABLE.csv"));
+
+        var fileSet = await _catalogue.GetFileSetAsync(CtsLocationIdentifiers, RangeStart, RangeEnd, CancellationToken.None);
+
+        fileSet.Files.Select(file => file.StorageObject.Key).Should().Equal(
+            "cads/cts/bulk/CTSM_CADS_PROD_BULK_00001_001_CT_LOCATION_IDENTIFIERS_2024-10-05-072824.xsvn.csv",
+            "cads/cts/daily/CTSM_CADS_PROD_DELTA_00002_001_CT_LOCATION_IDENTIFIERS_2024-10-06-063010.csv");
+    }
+
+    /// <summary>The filter must run before timestamp extraction: a sibling table's key under the
+    /// same listing prefix would otherwise throw and fail the whole run.</summary>
+    [Fact]
+    public async Task ForAGlobDataSet_DoesNotThrowOnASiblingKeyItCannotParse()
+    {
+        GivenStoredFiles(
+            CtsFile("daily", "CT_ADDRESSES_NOT_A_TIMESTAMP.csv"),
+            CtsFile("daily", "CTSM_CADS_PROD_DELTA_00002_001_CT_LOCATION_IDENTIFIERS_2024-10-06-063010.csv"));
+
+        var fileSet = await _catalogue.GetFileSetAsync(CtsLocationIdentifiers, RangeStart, RangeEnd, CancellationToken.None);
+
+        fileSet.Files.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task StreamsRatherThanMaterialising_SoALargeFolderDoesNotHitTheListingCap()
+    {
+        var noise = Enumerable.Range(0, 25_000)
+            .Select(index => CtsFile("daily", $"CTSM_CADS_PROD_DELTA_{index:00000}_001_CT_ADDRESSES_2024-10-06-063010.csv"));
+        var wanted = CtsFile("daily", "CTSM_CADS_PROD_DELTA_00002_001_CT_LOCATION_IDENTIFIERS_2024-10-06-063010.csv");
+
+        GivenStoredFiles([.. noise, wanted]);
+
+        var fileSet = await _catalogue.GetFileSetAsync(CtsLocationIdentifiers, RangeStart, RangeEnd, CancellationToken.None);
+
+        fileSet.Files.Should().ContainSingle().Which.StorageObject.Key.Should().Be(wanted.Key);
+        _blobs.Verify(b => b.ListAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     /// <summary>Storage is rooted at the bucket, so a standard definition carries its own folder.
@@ -283,7 +367,7 @@ public class BulkListingExternalCatalogueServiceTests
 
         var fileSet = await _catalogue.GetFileSetAsync(samCphHolding, RangeStart, RangeEnd, CancellationToken.None);
 
-        _blobs.Verify(b => b.ListAsync("litprd/LITP_SAMCPHHOLDING_", It.IsAny<CancellationToken>()), Times.Once);
+        _blobs.Verify(b => b.EnumerateAsync("litprd/LITP_SAMCPHHOLDING_", It.IsAny<CancellationToken>()), Times.Once);
 
         fileSet.Files.Should().ContainSingle()
             .Which.StorageObject.Key.Should().Be("litprd/LITP_SAMCPHHOLDING_20241005120000.csv");
@@ -301,25 +385,43 @@ public class BulkListingExternalCatalogueServiceTests
 
     /// <summary>Stubs listing the way prefix-based storage behaves: keys starting with the requested prefix.</summary>
     private static void StubListing(Mock<IBlobStorageServiceReadOnly> blobs, StorageObjectInfo[] stored)
-        => blobs
+    {
+        blobs
             .Setup(b => b.ListAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string? prefix, CancellationToken _) =>
-                stored.Where(file => file.Key.StartsWith(prefix ?? string.Empty, StringComparison.Ordinal)).ToList());
+            .ReturnsAsync((string? prefix, CancellationToken _) => Under(stored, prefix).ToList());
+
+        blobs
+            .Setup(b => b.EnumerateAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns((string? prefix, CancellationToken _) => AsAsync(Under(stored, prefix)));
+    }
+
+    private static IEnumerable<StorageObjectInfo> Under(StorageObjectInfo[] stored, string? prefix)
+        => stored.Where(file => file.Key.StartsWith(prefix ?? string.Empty, StringComparison.Ordinal));
+
+    private static async IAsyncEnumerable<StorageObjectInfo> AsAsync(IEnumerable<StorageObjectInfo> items)
+    {
+        await Task.CompletedTask;
+
+        foreach (var item in items)
+        {
+            yield return item;
+        }
+    }
+
+    private static StorageObjectInfo CtsFile(string lane, string fileName) => Stored($"cads/cts/{lane}/{fileName}");
 
     private static StorageObjectInfo FileFor(DataSetDefinition definition, DateOnly date)
-    {
-        var key = string.Format(definition.FilePrefixFormat, date.ToString("yyyyMMdd") + "120000") + ".csv";
+        => Stored(string.Format(definition.FilePrefixFormat, date.ToString("yyyyMMdd") + "120000") + ".csv", date);
 
-        return new StorageObjectInfo
-        {
-            Container = "test-bucket",
-            Key = key,
-            Size = 1,
-            LastModified = date.ToDateTime(new TimeOnly(12, 0), DateTimeKind.Utc),
-            ETag = "etag",
-            StorageUri = new Uri($"s3://test-bucket/{key}")
-        };
-    }
+    private static StorageObjectInfo Stored(string key, DateOnly? date = null) => new()
+    {
+        Container = "test-bucket",
+        Key = key,
+        Size = 1,
+        LastModified = (date ?? new DateOnly(2024, 10, 6)).ToDateTime(new TimeOnly(12, 0), DateTimeKind.Utc),
+        ETag = "etag",
+        StorageUri = new Uri($"s3://test-bucket/{key}")
+    };
 
     private static IEnumerable<DateOnly> DatesOf(FileSet fileSet)
         => fileSet.Files.Select(file => DateOnly.FromDateTime(file.Timestamp.UtcDateTime));

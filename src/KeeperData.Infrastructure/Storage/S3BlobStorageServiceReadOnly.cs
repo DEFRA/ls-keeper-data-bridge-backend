@@ -4,6 +4,7 @@ using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace KeeperData.Infrastructure.Storage;
 
@@ -197,6 +198,26 @@ public class S3BlobStorageServiceReadOnly : IBlobStorageServiceReadOnly, IDispos
                 stopwatch.ElapsedMilliseconds);
             throw new BlobStorageListException(_bucketName, GetFullPrefix(prefix), ex);
         }
+    }
+
+    public async IAsyncEnumerable<StorageObjectInfo> EnumerateAsync(
+        string? prefix = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var continuationToken = (string?)null;
+
+        do
+        {
+            var page = await ListPageAsync(prefix, 1000, continuationToken, cancellationToken).ConfigureAwait(false);
+
+            foreach (var item in page.Items)
+            {
+                yield return item;
+            }
+
+            continuationToken = page.ContinuationToken;
+        }
+        while (!string.IsNullOrEmpty(continuationToken));
     }
 
     public async Task<StorageListPage> ListPageAsync(

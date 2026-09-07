@@ -16,16 +16,23 @@ public sealed partial class ParquetDeltaMergeEngine
     ///
     /// Note this nullifies per row, not per column: a row updated by a file that has dropped a column
     /// loses the value it previously held for it, while a row that file does not mention keeps its own.
-    /// Primary keys are not treated this way - a file that cannot be keyed still fails the merge.</summary>
+    /// Primary keys are not treated this way - a file that cannot be keyed still fails the merge.
+    ///
+    /// A deleted row is tombstoned rather than removed. The key-to-row map holds indices, so compacting
+    /// the list would shift every later row out from under its key; the slot is emptied instead and
+    /// skipped on write, which also lets a later insert for the same key reinstate it.</summary>
     private sealed class MergeState(DataSetDefinition definition)
     {
         private readonly Dictionary<string, int> _indexByKey = new(StringComparer.Ordinal);
-        private readonly List<string?[]> _rows = [];
+
+        /// <summary>Null marks a tombstone: a row deleted by a delta, whose slot is held so the indices
+        /// of the rows after it stay valid.</summary>
+        private readonly List<string?[]?> _rows = [];
 
         private readonly List<DataField> _fields = [];
         private readonly Dictionary<string, int> _columnByName = new(StringComparer.OrdinalIgnoreCase);
 
-        public long RowCount => _rows.Count;
+        public long RowCount => _rows.Count(row => row is not null);
 
         public SchemaDrift SeedFrom(ParquetTable table, string key)
         {
@@ -39,16 +46,27 @@ public sealed partial class ParquetDeltaMergeEngine
             return alignment.Drift;
         }
 
+        /// <summary>
+        /// Folds one delta's rows onto the state. Insert and update are both upserts: neither is trusted
+        /// to be exclusively one or the other, because a replay after a rebuild presents the same insert
+        /// twice. A change type that is neither, nor a delete, is rejected and counted rather than
+        /// guessed at as an upsert - the row's intent is unknown, and writing it would be a guess about
+        /// data.
+        ///
+        /// A delete is applied for a dataset whose deltas describe their own ordering, and counted but
+        /// ignored for the datasets whose feeds have always been treated that way.
+        /// </summary>
         public AppliedDelta Apply(ParquetTable table, string key)
         {
             var alignment = Align(table);
             var changeTypeIndex = table.IndexOf(definition.ChangeTypeHeaderName);
 
             var upserted = 0L;
+            var deleted = 0L;
             var ignoredDeletes = 0L;
             var rejected = 0L;
 
-            foreach (var row in table.Rows)
+            foreach (var row in InAuditOrder(table))
             {
                 var changeType = changeTypeIndex < 0 ? ChangeType.Insert : row[changeTypeIndex];
 
@@ -59,8 +77,17 @@ public sealed partial class ParquetDeltaMergeEngine
                         Upsert(Project(alignment, row), CompositeKey(table, row, key));
                         upserted++;
                         break;
-                    case ChangeType.Delete:
+
+                    case ChangeType.Delete when definition.Audit is null:
                         ignoredDeletes++;
+                        break;
+
+                    case ChangeType.Delete:
+                        if (Tombstone(CompositeKey(table, row, key)))
+                        {
+                            deleted++;
+                        }
+
                         break;
 
                     default:
@@ -69,8 +96,36 @@ public sealed partial class ParquetDeltaMergeEngine
                 }
             }
 
-            return new AppliedDelta(upserted, ignoredDeletes, rejected, alignment.Drift);
+            return new AppliedDelta(upserted, deleted, ignoredDeletes, rejected, alignment.Drift);
         }
+
+        /// <summary>
+        /// The file's rows in the order they must be applied. A dataset whose deltas carry their own
+        /// sequence is ordered by it, because the merge is last-writer-wins and one file can carry two
+        /// cuts of the same row: the sample updates one location twice inside a single file. File order
+        /// agrees there, but nothing in the feed guarantees it.
+        ///
+        /// The sequence is shared with the other tables in the same extract, so it has gaps. A gap says
+        /// nothing about a missing file and is not treated as one - only the relative order is read. A
+        /// row whose sequence is absent or unparsable cannot be placed in it, so it keeps its file order
+        /// ahead of the rows that can, which leaves a sequenced cut of the same key winning over it.
+        /// </summary>
+        private IEnumerable<string?[]> InAuditOrder(ParquetTable table)
+        {
+            if (definition.Audit is null)
+            {
+                return table.Rows;
+            }
+
+            var sequenceIndex = table.IndexOf(definition.Audit.SequenceColumn);
+
+            return sequenceIndex < 0
+                ? table.Rows
+                : table.Rows.OrderBy(row => Sequence(row[sequenceIndex]));
+        }
+
+        private static long? Sequence(string? value)
+            => long.TryParse(value, out var sequence) ? sequence : null;
 
         public async Task WriteAsync(Stream output, CancellationToken cancellationToken)
         {
@@ -78,15 +133,16 @@ public sealed partial class ParquetDeltaMergeEngine
                 throw new InvalidOperationException($"Nothing to write for dataset '{definition.Name}': no file supplied a schema");
 
             var fields = _fields.ToArray();
+            var rows = _rows.Where(row => row is not null).ToList();
 
             await using var writer = await ParquetWriter.CreateAsync(new ParquetSchema(fields), output, cancellationToken: cancellationToken);
             using var rowGroup = writer.CreateRowGroup();
 
             for (var column = 0; column < fields.Length; column++)
             {
-                var values = new string?[_rows.Count];
-                for (var row = 0; row < _rows.Count; row++)
-                    values[row] = _rows[row][column];
+                var values = new string?[rows.Count];
+                for (var row = 0; row < rows.Count; row++)
+                    values[row] = rows[row]![column];
 
                 await rowGroup.WriteAsync(fields[column], (IReadOnlyCollection<string?>)values);
             }
@@ -113,7 +169,7 @@ public sealed partial class ParquetDeltaMergeEngine
 
             foreach (var field in table.Fields)
             {
-                if (IsChangeType(field.Name) || _columnByName.ContainsKey(field.Name))
+                if (IsSuppressed(field.Name) || _columnByName.ContainsKey(field.Name))
                     continue;
 
                 _columnByName[field.Name] = _fields.Count;
@@ -153,6 +209,12 @@ public sealed partial class ParquetDeltaMergeEngine
             for (var index = 0; index < _rows.Count; index++)
             {
                 var row = _rows[index];
+
+                if (row is null)
+                {
+                    continue;
+                }
+
                 Array.Resize(ref row, _fields.Count);
                 _rows[index] = row;
             }
@@ -185,6 +247,21 @@ public sealed partial class ParquetDeltaMergeEngine
             _rows.Add(row);
         }
 
+        /// <summary>Empties the row's slot, keeping its key pointing at it so a later insert for the same
+        /// key reinstates the row rather than appending a second one. False when the key is not held: a
+        /// delete for a row the snapshot never carried has nothing to do.</summary>
+        private bool Tombstone(string compositeKey)
+        {
+            if (!_indexByKey.TryGetValue(compositeKey, out var index) || _rows[index] is null)
+            {
+                return false;
+            }
+
+            _rows[index] = null;
+
+            return true;
+        }
+
         private string CompositeKey(ParquetTable table, string?[] row, string key)
         {
             var parts = definition.PrimaryKeyHeaderNames.Select(name =>
@@ -200,14 +277,18 @@ public sealed partial class ParquetDeltaMergeEngine
             return string.Join(EtlConstants.CompositeKeyDelimiter, parts);
         }
 
-        private bool IsChangeType(string name)
-            => string.Equals(name, definition.ChangeTypeHeaderName, StringComparison.OrdinalIgnoreCase);
+        /// <summary>Columns the snapshot does not carry: the change type, which describes the delta
+        /// rather than the resulting state, and the dataset's excluded columns - the audit columns and
+        /// the per-file counters, which mean nothing once rows from many files are merged.</summary>
+        private bool IsSuppressed(string name)
+            => string.Equals(name, definition.ChangeTypeHeaderName, StringComparison.OrdinalIgnoreCase)
+                || definition.ExcludedColumns.Contains(name, StringComparer.OrdinalIgnoreCase);
 
         private sealed record Alignment(int[] Indexes, SchemaDrift Drift);
     }
 
     /// <summary>What one delta did to the merged state.</summary>
-    private sealed record AppliedDelta(long Upserted, long IgnoredDeletes, long Rejected, SchemaDrift Drift);
+    private sealed record AppliedDelta(long Upserted, long Deleted, long IgnoredDeletes, long Rejected, SchemaDrift Drift);
 
     /// <summary>How one file's columns differed from the output's: <paramref name="Missing"/> columns the
     /// output carries and the file does not, <paramref name="Added"/> columns the file introduced.</summary>

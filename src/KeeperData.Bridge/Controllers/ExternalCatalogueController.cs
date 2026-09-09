@@ -1,8 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
-using KeeperData.Core;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Storage;
@@ -55,7 +52,7 @@ public class ExternalCatalogueController(
     /// <summary>
     /// Uploads a file to internal S3 storage. The filename must conform to one of the dataset definition patterns.
     /// </summary>
-    /// <param name="objectKey">The filename (object key) for the file in S3 - should not contain path separators</param>
+    /// <param name="objectKey">The object key for the file in S3, either the full key including its source folder or a bare file name when the dataset's folder is unambiguous</param>
     /// <param name="file">The file to upload (must be CSV format)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Success response or validation error</returns>
@@ -102,17 +99,10 @@ public class ExternalCatalogueController(
                 "File"));
         }
 
-        if (objectKey.Contains('/') || objectKey.Contains('\\'))
+        var resolution = DataSetUploadKey.Resolve(dataSetDefinitions.All, objectKey);
+        if (resolution.Key is null)
         {
-            return UnprocessableEntity(CreateValidationProblem("ObjectKey should be a filename only, without path separators.", "ObjectKey"));
-        }
-
-        var fileName = objectKey;
-
-        var validationResult = ValidateFileName(fileName);
-        if (!validationResult.IsValid)
-        {
-            return UnprocessableEntity(CreateValidationProblem(validationResult.ErrorMessage ?? "Filename validation failed.", "FileName"));
+            return UnprocessableEntity(CreateValidationProblem(resolution.ErrorMessage ?? "ObjectKey validation failed.", "ObjectKey"));
         }
 
         var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
@@ -125,7 +115,7 @@ public class ExternalCatalogueController(
         }
 
         await blobStorageService.UploadAsync(
-            objectKey,
+            resolution.Key,
             fileContent,
             file.ContentType,
             cancellationToken: cancellationToken);
@@ -133,7 +123,7 @@ public class ExternalCatalogueController(
         return Ok(new
         {
             Message = "File uploaded successfully",
-            ObjectKey = objectKey,
+            ObjectKey = resolution.Key,
             Size = fileContent.Length,
             ContentType = file.ContentType
         });
@@ -143,7 +133,7 @@ public class ExternalCatalogueController(
     /// Uploads raw file content to internal S3 storage. The filename must conform to one of the dataset definition patterns.
     /// Alternative endpoint for testing with raw file content.
     /// </summary>
-    /// <param name="objectKey">The filename (object key) for the file in S3 - should not contain path separators</param>
+    /// <param name="objectKey">The object key for the file in S3, either the full key including its source folder or a bare file name when the dataset's folder is unambiguous</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Success response or validation error</returns>
     [HttpPost("upload-raw")]
@@ -166,15 +156,10 @@ public class ExternalCatalogueController(
             return UnprocessableEntity(CreateValidationProblem("File content is required and cannot be empty.", "File"));
         }
 
-        if (objectKey.Contains('/') || objectKey.Contains('\\'))
+        var resolution = DataSetUploadKey.Resolve(dataSetDefinitions.All, objectKey);
+        if (resolution.Key is null)
         {
-            return UnprocessableEntity(CreateValidationProblem("ObjectKey should be a filename only, without path separators.", "ObjectKey"));
-        }
-
-        var validationResult = ValidateFileName(objectKey);
-        if (!validationResult.IsValid)
-        {
-            return UnprocessableEntity(CreateValidationProblem(validationResult.ErrorMessage ?? "Filename validation failed.", "FileName"));
+            return UnprocessableEntity(CreateValidationProblem(resolution.ErrorMessage ?? "ObjectKey validation failed.", "ObjectKey"));
         }
 
         var blobStorageService = blobStorageServiceFactory.GetSourceInternal();
@@ -192,7 +177,7 @@ public class ExternalCatalogueController(
         }
 
         await blobStorageService.UploadAsync(
-            objectKey,
+            resolution.Key,
             fileContent,
             Request.ContentType ?? "text/csv",
             cancellationToken: cancellationToken);
@@ -200,7 +185,7 @@ public class ExternalCatalogueController(
         return Ok(new
         {
             Message = "File uploaded successfully",
-            ObjectKey = objectKey,
+            ObjectKey = resolution.Key,
             Size = fileContent.Length,
             ContentType = Request.ContentType ?? "text/csv"
         });
@@ -260,79 +245,6 @@ public class ExternalCatalogueController(
         return report.ToString();
     }
 
-    private FileValidationResult ValidateFileName(string fileName)
-    {
-        if (string.IsNullOrWhiteSpace(fileName))
-        {
-            return new FileValidationResult(false, "Filename cannot be empty.");
-        }
-
-        var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
-
-        foreach (var definition in dataSetDefinitions.All)
-        {
-            if (IsFileNameMatchingDefinition(fileNameWithoutExtension, definition))
-            {
-                return new FileValidationResult(true, null);
-            }
-        }
-
-        var validPatterns = dataSetDefinitions.All
-            .Select(d => FormatExampleFileName(d))
-            .ToList();
-
-        var errorMessage = $"Filename '{fileName}' does not conform to any dataset definition pattern. " +
-                          $"Valid patterns are: {string.Join(", ", validPatterns)}";
-
-        return new FileValidationResult(false, errorMessage);
-    }
-
-    private static bool IsFileNameMatchingDefinition(string fileNameWithoutExtension, DataSetDefinition definition)
-    {
-        try
-        {
-            var prefixPattern = definition.FilePrefixFormat.Replace("{0}", "");
-            var dateTimePattern = EtlConstants.DateTimePattern;
-
-            var expectedPattern = prefixPattern + dateTimePattern;
-
-            var regexPattern = "^" + Regex.Escape(expectedPattern)
-                .Replace("yyyyMMddHHmmss", @"\d{14}") + "$";
-
-            var regex = new Regex(regexPattern, RegexOptions.IgnoreCase);
-
-            if (!regex.IsMatch(fileNameWithoutExtension))
-            {
-                return false;
-            }
-
-            var dateTimeStart = prefixPattern.Length;
-            if (dateTimeStart + 14 > fileNameWithoutExtension.Length)
-            {
-                return false;
-            }
-
-            var dateTimeString = fileNameWithoutExtension.Substring(dateTimeStart, 14);
-
-            return DateTime.TryParseExact(
-                dateTimeString,
-                EtlConstants.DateTimePattern,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out _);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static string FormatExampleFileName(DataSetDefinition definition)
-    {
-        var prefix = definition.FilePrefixFormat.Replace("{0}", "");
-        return $"{prefix}{EtlConstants.DateTimePattern}.csv (e.g., {prefix}20241201123045.csv)";
-    }
-
     private ValidationProblemDetails CreateValidationProblem(string errorMessage, string fieldName)
     {
         var problemDetails = new ValidationProblemDetails
@@ -347,5 +259,4 @@ public class ExternalCatalogueController(
         return problemDetails;
     }
 
-    private record FileValidationResult(bool IsValid, string? ErrorMessage);
 }

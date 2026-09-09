@@ -70,6 +70,25 @@ public static class DataSetFileNaming
             || MatchesPattern(FinalSegment(definition.BaselineKeyPattern), FinalSegment(key));
     }
 
+    /// <summary>
+    /// Whether a key sits in the lane the dataset publishes its baselines to, judged by the folder
+    /// alone, so every key in that lane answers the same regardless of how it is named.
+    /// </summary>
+    public static bool InBaselineLane(DataSetDefinition definition, string key)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (definition.BaselineKeyPattern is null)
+        {
+            return false;
+        }
+
+        return Lanes(definition.BaselineKeyPattern)
+            .Select(LiteralHead)
+            .Any(head => key.StartsWith(head, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string FinalSegment(string value) => value[(value.LastIndexOf('/') + 1)..];
 
     private static bool MatchesPattern(string pattern, string key)

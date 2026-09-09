@@ -21,7 +21,21 @@ public enum PasswordDerivationPolicy
     CtsDerived = 1
 }
 
-public record DataSetDefinition(string Name, string FilePrefixFormat, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName, string[] Accumulators, string DatePattern = EtlConstants.DatePattern, string DateTimePattern = EtlConstants.DateTimePattern, FileFormat Format = FileFormat.SimplePsv, DataSetIngestionMode IngestionMode = DataSetIngestionMode.Snapshot, PasswordDerivationPolicy PasswordDerivation = PasswordDerivationPolicy.FileNameVerbatim);
+/// <summary>The extra columns a delta file carries to describe the change rather than the row.
+/// The change type itself is the definition's ChangeTypeHeaderName.</summary>
+public sealed record AuditColumns(string SequenceColumn, string TimestampColumn);
+
+/// <param name="SourceKeyPattern">Glob matching every file of the dataset. Null discovers by
+/// <paramref name="FilePrefixFormat"/> instead.</param>
+/// <param name="BaselineKeyPattern">Glob matching only the baseline lane of a dataset whose files
+/// arrive as a baseline plus deltas.</param>
+/// <param name="Audit">Present for a dataset whose deltas describe their own ordering, and so are
+/// merged in audit order rather than file order.</param>
+public record DataSetDefinition(string Name, string FilePrefixFormat, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName, string[] Accumulators, string DatePattern = EtlConstants.DatePattern, string DateTimePattern = EtlConstants.DateTimePattern, FileFormat Format = FileFormat.SimplePsv, DataSetIngestionMode IngestionMode = DataSetIngestionMode.Snapshot, PasswordDerivationPolicy PasswordDerivation = PasswordDerivationPolicy.FileNameVerbatim, string? SourceKeyPattern = null, string? BaselineKeyPattern = null, AuditColumns? Audit = null)
+{
+    /// <summary>Columns the snapshot suppresses. An empty array keeps every column.</summary>
+    public string[] ExcludedColumns { get; init; } = [];
+}
 
 public class DataSetDefinitions : IDataSetDefinitions
 {
@@ -49,6 +63,8 @@ public class DataSetDefinitions : IDataSetDefinitions
     public required DataSetDefinition AmesHaulier { get; init; }
 
     public required DataSetDefinition SamShowground { get; init; }
+
+    public DataSetDefinition? CtsLocationIdentifiers { get; init; }
 
 
     public ImmutableArray<DataSetDefinition> All { get; init; }

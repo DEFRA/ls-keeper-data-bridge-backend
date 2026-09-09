@@ -236,7 +236,7 @@ public sealed class EtlPipelineEndToEndCiTests
         // Guards the trap the local kickstart script works around: the Crypto tool names its delta
         // file "..._delta.csv", and the timestamp is read from the segment after the LAST underscore.
         await host.PutEncryptedSourceFileAsync(
-            "LITP_SAMPARTY_20251113121333_delta.csv",
+            "litprd/LITP_SAMPARTY_20251113121333_delta.csv",
             EtlFixtures.FilesFor(EtlFixtures.Party)[0].Content);
 
         var run = async () => await host.RunAsync();

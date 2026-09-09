@@ -23,7 +23,8 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
 {
     private const string Header = "CPH|FEATURE_NAME|SECONDARY_CPH|ANIMAL_SPECIES_CODE|HOLDING_NAME|CHANGE_TYPE";
     private const string KeyColumns = "MAIN|-|01";
-    private const string SourceFile = "LITP_SAMCPHHOLDING_20251113121333.csv";
+    // Source keys carry the dataset's folder, because the storage service is rooted at the bucket.
+    private const string SourceFile = "litprd/LITP_SAMCPHHOLDING_20251113121333.csv";
 
     private static readonly DateTimeOffset RunClock = new(2025, 11, 13, 18, 0, 0, TimeSpan.Zero);
 
@@ -105,7 +106,7 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
             .AppendLine($"01/001/0001|{KeyColumns}|Keep Farm|ADDR001|I")
             .ToString());
 
-        await host.PutEncryptedSourceFileAsync("LITP_SAMCPHHOLDING_20251113131333.csv", new StringBuilder()
+        await host.PutEncryptedSourceFileAsync("litprd/LITP_SAMCPHHOLDING_20251113131333.csv", new StringBuilder()
             .AppendLine($"{Header}|NEW_COLUMN")
             .AppendLine($"01/001/0002|{KeyColumns}|Other Farm|I|VALUE")
             .ToString());
@@ -131,7 +132,7 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
         await using var host = await CreateHostAsync();
 
         // A source file whose name carries no parsable timestamp fails the snapshot stage.
-        await host.PutEncryptedSourceFileAsync("LITP_SAMCPHHOLDING_NOTATIMESTAMP.csv", SourceContent());
+        await host.PutEncryptedSourceFileAsync("litprd/LITP_SAMCPHHOLDING_NOTATIMESTAMP.csv", SourceContent());
 
         await _store.CreateQueuedAsync(importId, "external", null, CancellationToken.None);
 

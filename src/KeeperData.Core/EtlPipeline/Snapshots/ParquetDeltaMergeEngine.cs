@@ -7,7 +7,11 @@ namespace KeeperData.Core.EtlPipeline.Snapshots;
 ///
 /// The state is keyed by the dataset's primary keys, so a row arriving again replaces the one already
 /// held (last writer wins) and an unseen key is appended. The change type column describes the delta,
-/// not the resulting state, so it is dropped from the output.
+/// not the resulting state, so it is dropped from the output, along with any column the definition
+/// excludes.
+///
+/// A dataset whose deltas carry their own sequence is folded in that order rather than file order, and
+/// its deletes remove the row instead of being counted and ignored.
 ///
 /// A source extract can gain or lose a column between files, so the output schema is the union of what
 /// every file supplies rather than whatever the first file happened to carry. Either kind of drift is
@@ -38,6 +42,7 @@ public sealed partial class ParquetDeltaMergeEngine(ILogger<ParquetDeltaMergeEng
         }
 
         var upserted = 0L;
+        var deleted = 0L;
         var ignoredDeletes = 0L;
         var rejected = 0L;
 
@@ -48,6 +53,7 @@ public sealed partial class ParquetDeltaMergeEngine(ILogger<ParquetDeltaMergeEng
             var applied = await ApplyDeltaAsync(state, delta, definition, cancellationToken);
 
             upserted += applied.Upserted;
+            deleted += applied.Deleted;
             ignoredDeletes += applied.IgnoredDeletes;
             rejected += applied.Rejected;
 
@@ -60,6 +66,7 @@ public sealed partial class ParquetDeltaMergeEngine(ILogger<ParquetDeltaMergeEng
         {
             DeltasApplied = deltas.Count,
             RowsUpserted = upserted,
+            RowsDeleted = deleted,
             RowsIgnoredDeletes = ignoredDeletes,
             RowsRejected = rejected,
             RowCount = state.RowCount,
@@ -85,8 +92,8 @@ public sealed partial class ParquetDeltaMergeEngine(ILogger<ParquetDeltaMergeEng
         }
 
         logger.LogInformation(
-            "Applied delta {DeltaKey} to dataset {DataSet}: {Upserted} upserted, {IgnoredDeletes} delete row(s) ignored",
-            delta.Key, definition.Name, applied.Upserted, applied.IgnoredDeletes);
+            "Applied delta {DeltaKey} to dataset {DataSet}: {Upserted} upserted, {Deleted} deleted, {IgnoredDeletes} delete row(s) ignored",
+            delta.Key, definition.Name, applied.Upserted, applied.Deleted, applied.IgnoredDeletes);
 
         return applied;
     }

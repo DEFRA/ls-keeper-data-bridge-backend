@@ -113,7 +113,9 @@ public sealed class EtlImportStatusObserver(
             SnapshotSourceTimestamp = snapshot.SourceTimestamp,
             RowCount = snapshot.RowCount,
             RowsUpserted = snapshot.RowsUpserted,
+            RowsDeleted = snapshot.RowsDeleted,
             RowsIgnoredDeletes = snapshot.RowsIgnoredDeletes,
+            RowsRejected = snapshot.RowsRejected,
             ColumnsNullified = snapshot.ColumnsNullified,
             ColumnsAdded = snapshot.ColumnsAdded
         },
@@ -133,7 +135,9 @@ public sealed class EtlImportStatusObserver(
             SnapshotSourceTimestamp = second.SnapshotSourceTimestamp ?? first.SnapshotSourceTimestamp,
             RowCount = second.RowCount ?? first.RowCount,
             RowsUpserted = second.RowsUpserted ?? first.RowsUpserted,
+            RowsDeleted = second.RowsDeleted ?? first.RowsDeleted,
             RowsIgnoredDeletes = second.RowsIgnoredDeletes ?? first.RowsIgnoredDeletes,
+            RowsRejected = second.RowsRejected ?? first.RowsRejected,
             ColumnsNullified = second.ColumnsNullified.Count > 0 ? second.ColumnsNullified : first.ColumnsNullified,
             ColumnsAdded = second.ColumnsAdded.Count > 0 ? second.ColumnsAdded : first.ColumnsAdded
         });

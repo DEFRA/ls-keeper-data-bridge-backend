@@ -31,9 +31,10 @@ public sealed class EtlPipelineEndToEndTests(ITestOutputHelper output, LocalStac
 
     private const string KeyColumns = "MAIN|-|01";
 
-    private const string FirstDelta = "LITP_SAMCPHHOLDING_20251113121333.csv";
-    private const string SecondDelta = "LITP_SAMCPHHOLDING_20251114121333.csv";
-    private const string ThirdDelta = "LITP_SAMCPHHOLDING_20251115121333.csv";
+    // Source keys carry the dataset's folder, because the storage service is rooted at the bucket.
+    private const string FirstDelta = "litprd/LITP_SAMCPHHOLDING_20251113121333.csv";
+    private const string SecondDelta = "litprd/LITP_SAMCPHHOLDING_20251114121333.csv";
+    private const string ThirdDelta = "litprd/LITP_SAMCPHHOLDING_20251115121333.csv";
 
     private static readonly DateTimeOffset RunClock = new(2025, 11, 15, 18, 0, 0, TimeSpan.Zero);
 
@@ -47,7 +48,7 @@ public sealed class EtlPipelineEndToEndTests(ITestOutputHelper output, LocalStac
 
         (await host.ListFolderAsync(EtlPipelineFolders.Raw)).Should().BeEquivalentTo(
             [FirstDelta, SecondDelta, ThirdDelta],
-            "every discovered source file is decrypted into raw/ under its own name");
+            "every discovered source file is decrypted into raw/ under the key it was found at");
 
         (await host.ReadTextAsync(EtlPipelineFolders.Raw, ThirdDelta))
             .Should().Be(ThirdDeltaContent(), "raw/ holds the plaintext of the encrypted source file");
@@ -129,7 +130,7 @@ public sealed class EtlPipelineEndToEndTests(ITestOutputHelper output, LocalStac
 
         await host.RunPipelineAsync();
 
-        const string fourthDelta = "LITP_SAMCPHHOLDING_20251116121333.csv";
+        const string fourthDelta = "litprd/LITP_SAMCPHHOLDING_20251116121333.csv";
         await host.PutEncryptedSourceFileAsync(fourthDelta, Psv(
             ("01/001/0003", "Renamed Farm", "U"),
             ("01/001/0004", "Fourth Farm", "I")));
@@ -189,7 +190,7 @@ public sealed class EtlPipelineEndToEndTests(ITestOutputHelper output, LocalStac
 
         // A file that should have arrived before the snapshot was taken, turning up late.
         await host.PutEncryptedSourceFileAsync(
-            "LITP_SAMCPHHOLDING_20251114181333.csv",
+            "litprd/LITP_SAMCPHHOLDING_20251114181333.csv",
             Psv(("01/001/0009", "Late Farm", "I")));
 
         await host.RunPipelineAsync();
@@ -213,7 +214,7 @@ public sealed class EtlPipelineEndToEndTests(ITestOutputHelper output, LocalStac
         await SeedTheThreeDeltasAsync(host);
 
         await host.PutEncryptedSourceFileAsync(
-            "LITP_SAMCPHHOLDING_NOTATIMESTAMP.csv",
+            "litprd/LITP_SAMCPHHOLDING_NOTATIMESTAMP.csv",
             Psv(("01/001/0005", "Nameless Farm", "I")));
 
         var run = async () => await host.RunPipelineAsync();

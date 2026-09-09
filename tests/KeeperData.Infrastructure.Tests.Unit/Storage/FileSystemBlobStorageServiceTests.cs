@@ -441,6 +441,62 @@ public class FileSystemBlobStorageServiceTests : IAsyncLifetime
 
     #endregion
 
+    #region EnumerateAsync
+
+    [Fact]
+    public async Task EnumerateAsync_ShouldYieldTheSameItemsAsListAsync()
+    {
+        // Arrange
+        for (var i = 0; i < 5; i++)
+            await _sut.UploadAsync($"enumerate-test/file{i}.txt", Encoding.UTF8.GetBytes($"content{i}"));
+
+        // Act
+        var listed = await _sut.ListAsync("enumerate-test/");
+        var enumerated = new List<string>();
+        await foreach (var item in _sut.EnumerateAsync("enumerate-test/"))
+            enumerated.Add(item.Key);
+
+        // Assert
+        enumerated.Should().BeEquivalentTo(listed.Select(item => item.Key));
+    }
+
+    [Fact]
+    public async Task EnumerateAsync_WithNothingUnderThePrefix_ShouldTerminate()
+    {
+        // Arrange
+        await _sut.UploadAsync("elsewhere/file.txt", "a"u8.ToArray());
+
+        // Act
+        var enumerated = new List<string>();
+        await foreach (var item in _sut.EnumerateAsync("nothing-here/"))
+            enumerated.Add(item.Key);
+
+        // Assert
+        enumerated.Should().BeEmpty();
+    }
+
+    /// <summary>Enumeration carries no page cap, so it sees past the 20,000 objects that would
+    /// have ended a capped listing — the reason discovery enumerates rather than lists.</summary>
+    [Fact]
+    public async Task EnumerateAsync_ShouldYieldMoreObjectsThanACappedListingCouldHold()
+    {
+        // Arrange
+        var root = Path.Combine(_testBasePath, TestTopLevelFolder, "many");
+        Directory.CreateDirectory(root);
+        for (var i = 0; i < 20_100; i++)
+            await File.WriteAllTextAsync(Path.Combine(root, $"file{i:00000}.txt"), "x");
+
+        // Act
+        var count = 0;
+        await foreach (var _ in _sut.EnumerateAsync("many/"))
+            count++;
+
+        // Assert
+        count.Should().Be(20_100);
+    }
+
+    #endregion
+
     #region GeneratePresignedUrl
 
     [Fact]

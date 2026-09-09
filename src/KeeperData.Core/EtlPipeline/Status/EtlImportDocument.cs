@@ -85,7 +85,11 @@ public class EtlImportDatasetDocument
 
     public long? RowCount { get; set; }
     public long? RowsUpserted { get; set; }
+    public long? RowsDeleted { get; set; }
     public long? RowsIgnoredDeletes { get; set; }
+
+    /// <summary>Rows whose change type was unrecognised, so they were not applied.</summary>
+    public long? RowsRejected { get; set; }
 
     /// <summary>Columns held by the snapshot that a file applied did not carry. Present so schema drift
     /// is visible to whoever is reading the run, rather than only in the logs.</summary>

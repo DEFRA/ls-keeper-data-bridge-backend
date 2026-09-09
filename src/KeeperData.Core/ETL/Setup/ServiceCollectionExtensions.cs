@@ -23,7 +23,8 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ResilientMongoOperations>();
 
-        services.AddSingleton<IDataSetDefinitions>(_ => StandardDataSetDefinitionsBuilder.Build());
+        var dataSetFolder = configuration["StorageConfiguration:SourceExternalDataSetFolder"];
+        services.AddSingleton<IDataSetDefinitions>(_ => StandardDataSetDefinitionsBuilder.Build(dataSetFolder));
         services.AddTransient<CsvRowCounter>();
         services.AddTransient<IExternalCatalogueServiceFactory, ExternalCatalogueServiceFactory>();
         services.AddTransient<IIngestionPipeline, IngestionPipeline>();

@@ -273,3 +273,4 @@ library.db
 
 /coverage-report-final
 /coverage-report-full
+*.patch

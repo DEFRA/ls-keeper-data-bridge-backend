@@ -127,23 +127,36 @@ public sealed class InMemoryEtlPipelineHost : IDisposable
         return id;
     }
 
-    /// <summary>Encrypts PSV content the way the source system does and puts it in the source
-    /// container. The decrypt stage derives the password from the object key, so the content is
-    /// encrypted against the key it is stored under.</summary>
+    /// <summary>Encrypts content the way the source system does and seeds it into the source
+    /// container at <paramref name="objectKey"/>, which carries the dataset's folder as a real
+    /// source key does. The source system encrypts against the file name, never the path.</summary>
+    /// <param name="policy">How the source system turned the name into a password. Defaults to the
+    /// name itself, which is what the litprd feed does; a CTS file is encrypted with the password
+    /// derived from its name, so the fixture is built with the production derivation rather than a
+    /// copy of it.</param>
     /// <param name="salt">Defaults to the salt this host is configured with. Pass another to
     /// produce the file you get when it was encrypted for a different environment.</param>
-    public async Task<string> PutEncryptedSourceFileAsync(string fileName, string psvContent, string? salt = null)
+    public async Task<string> PutEncryptedSourceFileAsync(
+        string objectKey,
+        string content,
+        PasswordDerivationPolicy policy = PasswordDerivationPolicy.FileNameVerbatim,
+        string? salt = null)
     {
-        var crypto = _services.GetRequiredService<IAesCryptoTransform>();
+        ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
 
-        using var plaintext = new MemoryStream(Encoding.UTF8.GetBytes(psvContent));
+        var crypto = _services.GetRequiredService<IAesCryptoTransform>();
+        var passwords = _services.GetRequiredService<IPasswordSaltService>();
+
+        using var plaintext = new MemoryStream(Encoding.UTF8.GetBytes(content));
         using var encrypted = new MemoryStream();
 
-        await crypto.EncryptStreamAsync(plaintext, encrypted, fileName, salt ?? AesSalt, plaintext.Length);
+        var password = passwords.Get(objectKey, policy).Password;
 
-        Source.Seed(fileName, encrypted.ToArray());
+        await crypto.EncryptStreamAsync(plaintext, encrypted, password, salt ?? AesSalt, plaintext.Length);
 
-        return fileName;
+        Source.Seed(objectKey, encrypted.ToArray());
+
+        return objectKey;
     }
 
     /// <summary>Downloads an object from an ETL folder to a local file, for readers needing a path.</summary>

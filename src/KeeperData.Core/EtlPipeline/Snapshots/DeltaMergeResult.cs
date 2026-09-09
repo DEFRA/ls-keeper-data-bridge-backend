@@ -6,6 +6,7 @@ public sealed record DeltaMergeResult
 {
     public int DeltasApplied { get; init; }
     public long RowsUpserted { get; init; }
+    public long RowsDeleted { get; init; }
     public long RowsIgnoredDeletes { get; init; }
     public long RowsRejected { get; init; }
     public long RowCount { get; init; }

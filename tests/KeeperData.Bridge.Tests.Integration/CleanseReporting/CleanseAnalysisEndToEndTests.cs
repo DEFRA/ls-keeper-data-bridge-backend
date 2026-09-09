@@ -57,6 +57,7 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
 
     private const string SourcePrefix = "source-encrypted";
     private const string DestPrefix = "dest-decrypted";
+    private const string DataSetFolder = "litprd/";
     private const string TestDatabaseName = "test-cleanse-analysis";
 
     private readonly DataSetDefinitions _dataSetDefinitions;
@@ -487,7 +488,9 @@ public class CleanseAnalysisEndToEndTests : IAsyncLifetime
 
     private async Task UploadCsvAsync(string fileName, string csvContent)
     {
-        var fileKey = $"{DestPrefix}/{fileName}";
+        // The standard definitions name the folder their files live in, so a decrypted file is
+        // discovered under it just as the encrypted one was.
+        var fileKey = $"{DestPrefix}/{DataSetFolder}{fileName}";
         _output.WriteLine($"  Uploading {fileName}");
 
         await _localStackFixture.S3Client.PutObjectAsync(new Amazon.S3.Model.PutObjectRequest

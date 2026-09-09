@@ -41,6 +41,16 @@ public sealed class InMemoryBlobStorage(string container) : IBlobStorageService
                 .OrderBy(key => key, StringComparer.Ordinal)
                 .Select(Info)]);
 
+    public async IAsyncEnumerable<StorageObjectInfo> EnumerateAsync(
+        string? prefix = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var info in await ListAsync(prefix, cancellationToken))
+        {
+            yield return info;
+        }
+    }
+
     public Task<StorageObjectMetadata> GetMetadataAsync(string objectKey, CancellationToken cancellationToken = default)
     {
         var entry = _objects[objectKey];

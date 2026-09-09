@@ -65,11 +65,11 @@ public class EtlStorageControllerTests
     [Fact]
     public async Task Targeted_all_stage_purge_scopes_each_dataset_stage_and_leaves_shared_staging_untouched()
     {
-        const string filePrefix = "LITP_SAMCPHHOLDING_";
+        const string filePrefix = "litprd/LITP_SAMCPHHOLDING_";
         const string datasetPrefix = "sam_cph_holdings/";
 
-        Page(_inbound, filePrefix, Object("LITP_SAMCPHHOLDING_20260819203115.csv"));
-        Page(_raw, filePrefix, Object("LITP_SAMCPHHOLDING_20260819203115.psv"));
+        Page(_inbound, filePrefix, Object("litprd/LITP_SAMCPHHOLDING_20260819203115.csv"));
+        Page(_raw, filePrefix, Object("litprd/LITP_SAMCPHHOLDING_20260819203115.psv"));
         Page(_normalised, datasetPrefix, Object("sam_cph_holdings/a.parquet"));
         Page(_snapshots, datasetPrefix, Object("sam_cph_holdings/b.parquet"));
 
@@ -78,8 +78,8 @@ public class EtlStorageControllerTests
         result.Should().BeOfType<OkObjectResult>()
             .Which.Value.Should().BeOfType<EtlStoragePurgeResponse>()
             .Which.DeletedKeys.Should().BeEquivalentTo([
-                "dest/LITP_SAMCPHHOLDING_20260819203115.csv",
-                "raw/LITP_SAMCPHHOLDING_20260819203115.psv",
+                "dest/litprd/LITP_SAMCPHHOLDING_20260819203115.csv",
+                "raw/litprd/LITP_SAMCPHHOLDING_20260819203115.psv",
                 "normalised/sam_cph_holdings/a.parquet",
                 "snapshots/sam_cph_holdings/b.parquet"
             ]);
@@ -157,13 +157,13 @@ public class EtlStorageControllerTests
     [Fact]
     public async Task External_inbound_purge_uses_the_writable_QA_source_folder()
     {
-        Page(_qaSource, "LITP_SAMCPHHOLDING_", Object("LITP_SAMCPHHOLDING_20260819203115.csv"));
+        Page(_qaSource, "litprd/LITP_SAMCPHHOLDING_", Object("litprd/LITP_SAMCPHHOLDING_20260819203115.csv"));
 
         var result = await Controller().PurgeStorage("sam_cph_holdings", "inbound", "external");
 
         result.Should().BeOfType<OkObjectResult>()
             .Which.Value.Should().BeOfType<EtlStoragePurgeResponse>()
-            .Which.DeletedKeys.Should().Equal("qasrc/LITP_SAMCPHHOLDING_20260819203115.csv");
+            .Which.DeletedKeys.Should().Equal("qasrc/litprd/LITP_SAMCPHHOLDING_20260819203115.csv");
         _blobFactory.Verify(f => f.GetSourceInternal(), Times.Once);
         _blobFactory.Verify(f => f.Get(), Times.Never);
     }

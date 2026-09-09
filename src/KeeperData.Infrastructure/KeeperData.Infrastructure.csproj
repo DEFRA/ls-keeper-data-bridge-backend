@@ -7,11 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.101" />
-    <PackageReference Include="AWSSDK.Core" Version="4.0.102" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.102.3" />
-    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.100.10" />
-    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.100.10" />
+    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.101.2" />
+    <PackageReference Include="AWSSDK.Core" Version="4.0.102.3" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.102.5" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.100.12" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.100.12" />
     <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.5" />
     <PackageReference Include="Elastic.CommonSchema.Serilog" Version="9.0.0" />
     <PackageReference Include="Elastic.Serilog.Enrichers.Web" Version="9.0.0" />

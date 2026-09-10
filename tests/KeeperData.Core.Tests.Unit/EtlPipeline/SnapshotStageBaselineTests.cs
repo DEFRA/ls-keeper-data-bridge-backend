@@ -43,7 +43,10 @@ public class SnapshotStageBaselineTests
             new NormalisedFileSet[] { new(Cts) });
 
     private string PutBulk(string part, string timestamp, params string[] rows)
-        => Put($"CTSM_CADS_PROD_BULK_00001_{part}_CT_LOCATION_IDENTIFIERS_{timestamp}", rows);
+        => PutBulkRun("00001", part, timestamp, rows);
+
+    private string PutBulkRun(string run, string part, string timestamp, params string[] rows)
+        => Put($"CTSM_CADS_PROD_BULK_{run}_{part}_CT_LOCATION_IDENTIFIERS_{timestamp}", rows);
 
     private string PutDelta(string run, string timestamp, params string[] rows)
         => Put($"CTSM_CADS_PROD_DELTA_{run}_001_CT_LOCATION_IDENTIFIERS_{timestamp}", rows);
@@ -172,6 +175,44 @@ public class SnapshotStageBaselineTests
             "CPH|HOLDING_NAME",
             "01/001/0001|Rebaselined Farm",
             "01/001/0002|New Farm");
+    }
+
+    /// <summary>A lane holds every bulk run the feed has ever cut, and each run is a complete extract in
+    /// its own right. Folding an earlier run in with the newest would restate the rows the newest has
+    /// since dropped, because a row deleted between the two runs is simply absent from the newer files
+    /// and absence is not a delete.</summary>
+    [Fact]
+    public async Task Baselines_on_the_newest_bulk_run_alone()
+    {
+        PutBulkRun("00001", "001", "2026-08-01-072824", "I|01/001/0001|Retired Farm", "I|01/001/0002|Old Farm");
+        var newest = PutBulkRun("00005", "001", "2026-08-22-072824", "I|01/001/0002|Kept Farm");
+
+        var output = await RunAsync();
+
+        output.Single().AppliedKeys.Should().Equal(newest);
+        ParquetFixture.ToLines(Snapshots.BytesOf(output.Single().Key)).Should().Equal(
+            "CPH|HOLDING_NAME",
+            "01/001/0002|Kept Farm");
+    }
+
+    /// <summary>The parts of a run are disjoint cuts of one extract, so all of them are the baseline -
+    /// keeping only the newest part would drop most of the dataset for a table cut into eleven.</summary>
+    [Fact]
+    public async Task Baselines_on_every_part_of_the_newest_bulk_run()
+    {
+        PutBulkRun("00001", "001", "2026-08-01-072824", "I|01/001/0009|Retired Farm");
+        var first = PutBulkRun("00005", "001", "2026-08-22-072824", "I|01/001/0001|One Farm");
+        var second = PutBulkRun("00005", "002", "2026-08-22-072830", "I|01/001/0002|Two Farm");
+        var delta = PutDelta("00006", "2026-08-23-063010", "I|01/001/0003|Three Farm");
+
+        var output = await RunAsync();
+
+        output.Single().AppliedKeys.Should().Equal(first, second, delta);
+        ParquetFixture.ToLines(Snapshots.BytesOf(output.Single().Key)).Should().Equal(
+            "CPH|HOLDING_NAME",
+            "01/001/0001|One Farm",
+            "01/001/0002|Two Farm",
+            "01/001/0003|Three Farm");
     }
 
     /// <summary>Two of the five sample delta files are header-only; without the name moving on they

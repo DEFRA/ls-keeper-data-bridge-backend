@@ -139,15 +139,24 @@ public sealed class SnapshotStage(
             pending.Count == 0 ? newestBaseline : pending[^1].Timestamp);
     }
 
-    /// <summary>The dataset's bulk files, ordered by key. They are a set rather than a sequence: parts
-    /// of one extract can share a timestamp, so they must never meet the duplicate check in
-    /// <see cref="SnapshotFileNaming.OrderedByTimestamp"/>, and the order they are applied in cannot
-    /// matter because they are disjoint cuts of the same baseline.</summary>
+    /// <summary>The dataset's bulk files from its most recent extract run, ordered by key. They are a
+    /// set rather than a sequence: parts of one run can share a timestamp, so they must never meet the
+    /// duplicate check in <see cref="SnapshotFileNaming.OrderedByTimestamp"/>, and the order they are
+    /// applied in cannot matter because they are disjoint cuts of the same baseline.
+    ///
+    /// Only the newest run is taken. An earlier run left behind in the lane is a complete extract in its
+    /// own right, so folding it in would restate rows the newer run has since dropped - a row deleted
+    /// between the two runs is simply absent from the newer files, and absence is not a delete.</summary>
     private static IReadOnlyList<TimestampedKey> Baseline(DataSetDefinition definition, IEnumerable<string> keys)
-        => [.. keys
-            .Where(key => DataSetFileNaming.MatchesBaseline(definition, key))
+    {
+        var baseline = keys.Where(key => DataSetFileNaming.MatchesBaseline(definition, key)).ToArray();
+        var newestRun = baseline.Select(DataSetFileNaming.ExtractRun).Max(StringComparer.Ordinal);
+
+        return [.. baseline
+            .Where(key => DataSetFileNaming.ExtractRun(key) == newestRun)
             .OrderBy(key => key, StringComparer.Ordinal)
             .Select(key => new TimestampedKey(key, DataSetFileNaming.ExtractTimestamp(definition, key)))];
+    }
 
     /// <summary>The files this run applies, oldest first, and the timestamp naming the result.</summary>
     private sealed record SnapshotPlan(IReadOnlyList<TimestampedKey> Applied, DateTimeOffset Timestamp);

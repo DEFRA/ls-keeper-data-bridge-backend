@@ -66,6 +66,9 @@ public class DataSetDefinitions : IDataSetDefinitions
 
     public DataSetDefinition? CtsLocationIdentifiers { get; init; }
 
+    /// <summary>The CTS tables, which share a naming convention, a file format and a password rule, so a
+    /// caller that cares about that family rather than about one table can address them together.</summary>
+    public ImmutableArray<DataSetDefinition> CtsDataSets { get; init; }
 
     public ImmutableArray<DataSetDefinition> All { get; init; }
 

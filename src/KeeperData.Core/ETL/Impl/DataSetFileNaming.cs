@@ -14,6 +14,7 @@ public static class DataSetFileNaming
     private static readonly ConcurrentDictionary<string, Regex[]> s_globs = new(StringComparer.Ordinal);
     // Limit regex execution time to avoid pathological patterns causing long-running matches.
     private static readonly TimeSpan s_regexTimeout = TimeSpan.FromMilliseconds(200);
+    private static readonly Regex s_run = new(@"_(\d{5})_\d{3}_", RegexOptions.CultureInvariant, s_regexTimeout);
 
     /// <summary>
     /// The prefixes storage must be listed under to see every file in the dataset. A glob dataset
@@ -87,6 +88,22 @@ public static class DataSetFileNaming
         return Lanes(definition.BaselineKeyPattern)
             .Select(LiteralHead)
             .Any(head => key.StartsWith(head, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The extract run a file was cut by, where its name carries one. CTS numbers every run of its
+    /// extract and splits a large table across parts within that run, naming the pair
+    /// <c>_&lt;run&gt;_&lt;part&gt;_</c> in fixed-width digits, so runs compare as text. Null for a name
+    /// that carries no such pair, which makes a dataset naming its files any other way one
+    /// undifferentiated set.
+    /// </summary>
+    public static string? ExtractRun(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        var match = s_run.Match(FinalSegment(key));
+
+        return match.Success ? match.Groups[1].Value : null;
     }
 
     private static string FinalSegment(string value) => value[(value.LastIndexOf('/') + 1)..];

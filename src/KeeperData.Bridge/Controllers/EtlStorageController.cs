@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Models;
 using KeeperData.Core.ETL.Abstract;

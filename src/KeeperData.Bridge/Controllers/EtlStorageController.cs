@@ -191,13 +191,20 @@ public sealed class EtlStorageController(
     /// is not a prefix, and the lane it starts with also holds its sibling datasets - so those lanes are
     /// listed and their keys matched by name instead.</summary>
     private static PurgeScope SourceScope(DataSetDefinition? definition)
-        => definition is null
-            ? PrefixScope(null)
-            : definition.SourceKeyPattern is null
-                ? PrefixScope(DataSetFileNaming.DataSetKeyPrefix(definition))
-                : new PurgeScope(
-                    DataSetFileNaming.ListingPrefixes(definition),
-                    key => DataSetFileNaming.Matches(definition, key));
+    {
+        if (definition is null) return PrefixScope(null);
+
+        if (definition.SourceKeyPattern is null)
+        {
+            var prefix = DataSetFileNaming.DataSetKeyPrefix(definition);
+            return PrefixScope(prefix);
+        }
+
+        var prefixes = DataSetFileNaming.ListingPrefixes(definition);
+        bool matches(string key) => DataSetFileNaming.Matches(definition, key);
+
+        return new PurgeScope(prefixes, matches);
+    }
 
     private static PurgeScope PrefixScope(string? prefix)
         => new([prefix ?? string.Empty], null);
@@ -229,15 +236,12 @@ public sealed class EtlStorageController(
     {
         var deleted = new List<string>();
 
-        await foreach (var item in storage.EnumerateAsync(prefix, cancellationToken))
+        await foreach (var key in EnumerateKeysAsync(storage, prefix, cancellationToken))
         {
-            if (!matches(item.Key))
-            {
-                continue;
-            }
+            if (!matches(key)) continue;
 
-            await storage.DeleteAsync(item.Key, cancellationToken);
-            deleted.Add(item.Key);
+            await storage.DeleteAsync(key, cancellationToken);
+            deleted.Add(key);
         }
 
         return deleted;
@@ -249,6 +253,17 @@ public sealed class EtlStorageController(
             Message = message,
             Timestamp = timeProvider.GetUtcNow().UtcDateTime
         };
+
+    private static async IAsyncEnumerable<string> EnumerateKeysAsync(
+        IBlobStorageService storage,
+        string prefix,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var item in storage.EnumerateAsync(prefix, cancellationToken))
+        {
+            yield return item.Key;
+        }
+    }
 
     private bool IsStoragePurgeDisabled()
         => environment.IsProduction() && !featureFlags.Value.EtlStoragePurgeEnabled;

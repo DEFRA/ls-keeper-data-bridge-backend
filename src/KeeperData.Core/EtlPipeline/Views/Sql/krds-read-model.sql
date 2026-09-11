@@ -227,11 +227,55 @@ SELECT
     null_dash(ROLES)
 FROM normalized_party;
 
+-- The extract may omit an attribute column entirely rather than carrying it as blanks. The merge
+-- can only nullify a column some earlier file carried: one dropped before the baseline was built -
+-- ADDRESS_PK in production - never reaches the snapshot, so the staging table lacks it and a bare
+-- reference fails to bind. UNION ALL BY NAME against an empty row supplies every attribute column
+-- the read model consumes, NULL where the extract does not carry it. CPH is deliberately not
+-- supplied: an extract with no key is not holdings data, and the run should fail on that rather
+-- than emit an empty population.
+CREATE OR REPLACE TEMP VIEW sam_cph_holdings_attributed AS
+SELECT *
+FROM sam_cph_holdings
+UNION ALL BY NAME
+SELECT
+    NULL AS FEATURE_NAME,
+    NULL AS CPH_TYPE,
+    NULL AS ADDRESS_PK,
+    NULL AS SAON_START_NUMBER,
+    NULL AS SAON_START_NUMBER_SUFFIX,
+    NULL AS SAON_END_NUMBER,
+    NULL AS SAON_END_NUMBER_SUFFIX,
+    NULL AS SAON_DESCRIPTION,
+    NULL AS PAON_START_NUMBER,
+    NULL AS PAON_START_NUMBER_SUFFIX,
+    NULL AS PAON_END_NUMBER,
+    NULL AS PAON_END_NUMBER_SUFFIX,
+    NULL AS PAON_DESCRIPTION,
+    NULL AS STREET,
+    NULL AS TOWN,
+    NULL AS LOCALITY,
+    NULL AS UK_INTERNAL_CODE,
+    NULL AS POSTCODE,
+    NULL AS COUNTRY_CODE,
+    NULL AS UDPRN,
+    NULL AS EASTING,
+    NULL AS NORTHING,
+    NULL AS OS_MAP_REFERENCE,
+    NULL AS ANIMAL_SPECIES_CODE,
+    NULL AS ANIMAL_PRODUCTION_USAGE_CODE,
+    NULL AS DISEASE_TYPE,
+    NULL AS INTERVAL,
+    NULL AS INTERVAL_UNIT_OF_TIME,
+    NULL AS FEATURE_ADDRESS_FROM_DATE,
+    NULL AS FEATURE_ADDRESS_TO_DATE
+WHERE FALSE;
+
 -- sam_cph_holdings is the canonical holding population. Relationship extracts may reference CPHs
 -- absent from this snapshot; those references are intentionally not materialised below.
 CREATE OR REPLACE TEMP VIEW normalized_holding_cph AS
 SELECT DISTINCT null_dash(CPH) AS Cph
-FROM sam_cph_holdings
+FROM sam_cph_holdings_attributed
 WHERE null_dash(CPH) IS NOT NULL;
 
 -- Every source row for a CPH is current: the extract filters out ended records, so a CPH with
@@ -252,7 +296,7 @@ SELECT
         COALESCE(h.FEATURE_ADDRESS_FROM_DATE, ''), '|',
         md5(to_json(h)::VARCHAR)
     ) AS record_order
-FROM sam_cph_holdings h;
+FROM sam_cph_holdings_attributed h;
 
 CREATE OR REPLACE TEMP VIEW holding_attributes AS
 SELECT
@@ -364,7 +408,7 @@ SELECT DISTINCT
     null_dash(DISEASE_TYPE) AS DiseaseType,
     null_dash(INTERVAL) AS Interval,
     null_dash(INTERVAL_UNIT_OF_TIME) AS IntervalUnitOfTime
-FROM sam_cph_holdings
+FROM sam_cph_holdings_attributed
 WHERE null_dash(CPH) IS NOT NULL
   AND null_dash(ANIMAL_SPECIES_CODE) IS NOT NULL;
 

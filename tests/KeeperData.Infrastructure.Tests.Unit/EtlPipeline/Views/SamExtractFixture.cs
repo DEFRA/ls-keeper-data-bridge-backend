@@ -7,23 +7,36 @@ namespace KeeperData.Infrastructure.Tests.Unit.EtlPipeline.Views;
 /// relationships pointing at holdings and herds that are not in the canonical population.</summary>
 public static class SamExtractFixture
 {
-    public static void Create(string databasePath)
+    /// <summary>Every column the read model reads from sam_cph_holdings, in the order the fixture
+    /// has always declared them. A column the extract never carried can be left out of the staging
+    /// table entirely, so tests may withhold any of them.</summary>
+    private static readonly string[] HoldingColumns =
+    [
+        "CPH", "FEATURE_NAME", "CPH_TYPE", "ADDRESS_PK",
+        "SAON_START_NUMBER", "SAON_START_NUMBER_SUFFIX", "SAON_END_NUMBER",
+        "SAON_END_NUMBER_SUFFIX", "SAON_DESCRIPTION", "PAON_START_NUMBER",
+        "PAON_START_NUMBER_SUFFIX", "PAON_END_NUMBER", "PAON_END_NUMBER_SUFFIX",
+        "PAON_DESCRIPTION", "STREET", "TOWN", "LOCALITY",
+        "UK_INTERNAL_CODE", "POSTCODE", "COUNTRY_CODE", "UDPRN",
+        "EASTING", "NORTHING", "OS_MAP_REFERENCE", "DISEASE_TYPE",
+        "INTERVAL", "INTERVAL_UNIT_OF_TIME", "ANIMAL_SPECIES_CODE",
+        "ANIMAL_PRODUCTION_USAGE_CODE", "FEATURE_ADDRESS_FROM_DATE",
+        "FEATURE_ADDRESS_TO_DATE"
+    ];
+
+    public static void Create(string databasePath) => Create(databasePath, omittedHoldingColumns: []);
+
+    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns)
     {
+        var holdingColumns = string.Join(", ",
+            HoldingColumns.Where(column => !omittedHoldingColumns.Contains(column))
+                          .Select(column => $"{column} VARCHAR"));
+
         using var connection = new DuckDBConnection($"Data Source={databasePath}");
         connection.Open();
 
-        Execute(connection, """
-            CREATE TABLE sam_cph_holdings (
-                CPH VARCHAR, FEATURE_NAME VARCHAR, CPH_TYPE VARCHAR, ADDRESS_PK VARCHAR,
-                SAON_START_NUMBER VARCHAR, SAON_START_NUMBER_SUFFIX VARCHAR, SAON_END_NUMBER VARCHAR,
-                SAON_END_NUMBER_SUFFIX VARCHAR, SAON_DESCRIPTION VARCHAR, PAON_START_NUMBER VARCHAR,
-                PAON_START_NUMBER_SUFFIX VARCHAR, PAON_END_NUMBER VARCHAR, PAON_END_NUMBER_SUFFIX VARCHAR,
-                PAON_DESCRIPTION VARCHAR, STREET VARCHAR, TOWN VARCHAR, LOCALITY VARCHAR,
-                UK_INTERNAL_CODE VARCHAR, POSTCODE VARCHAR, COUNTRY_CODE VARCHAR, UDPRN VARCHAR,
-                EASTING VARCHAR, NORTHING VARCHAR, OS_MAP_REFERENCE VARCHAR, DISEASE_TYPE VARCHAR,
-                INTERVAL VARCHAR, INTERVAL_UNIT_OF_TIME VARCHAR, ANIMAL_SPECIES_CODE VARCHAR,
-                ANIMAL_PRODUCTION_USAGE_CODE VARCHAR, FEATURE_ADDRESS_FROM_DATE VARCHAR,
-                FEATURE_ADDRESS_TO_DATE VARCHAR);
+        Execute(connection, $"""
+            CREATE TABLE sam_cph_holdings ({holdingColumns});
 
             CREATE TABLE sam_party (
                 PARTY_ID VARCHAR, PERSON_TITLE VARCHAR, PERSON_GIVEN_NAME VARCHAR, PERSON_GIVEN_NAME2 VARCHAR,

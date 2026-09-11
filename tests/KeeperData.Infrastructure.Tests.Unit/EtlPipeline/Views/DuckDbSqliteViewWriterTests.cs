@@ -72,6 +72,22 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     }
 
     [Fact]
+    public async Task Disables_insertion_order_preservation()
+    {
+        var target = Path.Combine(_workingDirectory, "settings.sqlite");
+        const string sql = """
+            CREATE TABLE target.WriterSettings (PreserveInsertionOrder BOOLEAN);
+            INSERT INTO target.WriterSettings
+            SELECT current_setting('preserve_insertion_order');
+            """;
+
+        await Sut().WriteAsync(new SqliteViewWriteRequest(
+            _sourcePath, target, sql, ["WriterSettings"]));
+
+        Scalar(target, "SELECT PreserveInsertionOrder FROM WriterSettings").Should().Be(0);
+    }
+
+    [Fact]
     public async Task Counts_the_rows_it_wrote_into_each_table()
     {
         var target = Path.Combine(_workingDirectory, "counted.sqlite");

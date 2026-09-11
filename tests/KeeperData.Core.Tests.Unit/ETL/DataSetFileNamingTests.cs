@@ -77,6 +77,21 @@ public class DataSetFileNamingTests
             .ExtractTimestamp(Cts, "cads/cts/bulk/PROD_BULK_BLAH_0001_CT_LOCATION_IDENTIFIERS_2026-08-22-072826.xsvn.csv")
             .Should().Be(new DateTimeOffset(2026, 8, 22, 7, 28, 26, TimeSpan.Zero));
 
+    [Theory]
+    [InlineData(CtsBulkKey, "00001")]
+    [InlineData(CtsDailyKey, "00002")]
+    [InlineData("cts_location_identifiers/CTSM_CADS_PREP_BULK_00005_011_CT_LOCATIONS_2026-08-22-072824.parquet", "00005")]
+    public void ExtractRun_ReadsTheRunTheFileWasCutBy(string key, string expected)
+        => DataSetFileNaming.ExtractRun(key).Should().Be(expected);
+
+    /// <summary>A dataset naming its files any other way is one undifferentiated set, which is what the
+    /// litprd feed - whose files carry no run at all - already relies on.</summary>
+    [Theory]
+    [InlineData("litprd/LITP_SAMCPHHOLDING_20260822120000.csv")]
+    [InlineData("cads/cts/bulk/CTSM_CADS_PROD_BULK_1_1_CT_COUNTIES_2026-08-22-072824.csv")]
+    public void ExtractRun_IsAbsentForAKeyNamingNoRun(string key)
+        => DataSetFileNaming.ExtractRun(key).Should().BeNull();
+
     [Fact]
     public void ExtractTimestamp_ThrowsOnAKeyCarryingNoTimestamp()
         => FluentActions

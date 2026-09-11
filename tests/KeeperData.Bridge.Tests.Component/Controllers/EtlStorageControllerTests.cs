@@ -169,6 +169,45 @@ public class EtlStorageControllerTests
     }
 
     [Fact]
+    public async Task Cts_inbound_purge_deletes_its_own_files_from_both_lanes_and_leaves_sibling_tables()
+    {
+        Lane(_qaSource, "cads/cts/bulk/",
+            "cads/cts/bulk/CTSM_CADS_PREP_BULK_00001_001_CT_LOCATIONS_2026-07-28-094638.csv",
+            "cads/cts/bulk/CTSM_CADS_PREP_BULK_00001_001_CT_LOCATION_PARTY_RELS_2026-07-28-094630.csv");
+        Lane(_qaSource, "cads/cts/daily/",
+            "cads/cts/daily/CTSM_CADS_PREP_DELTA_00002_001_CT_LOCATIONS_2026-07-30-141209.csv",
+            "cads/cts/daily/CTSM_CADS_PREP_DELTA_00002_001_CT_LOCATION_IDENTIFIERS_2026-07-30-141210.csv");
+
+        var result = await Controller().PurgeStorage("cts_locations", "inbound", "external");
+
+        result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStoragePurgeResponse>()
+            .Which.DeletedKeys.Should().Equal(
+                "qasrc/cads/cts/bulk/CTSM_CADS_PREP_BULK_00001_001_CT_LOCATIONS_2026-07-28-094638.csv",
+                "qasrc/cads/cts/daily/CTSM_CADS_PREP_DELTA_00002_001_CT_LOCATIONS_2026-07-30-141209.csv");
+
+        _qaSource.Verify(s => s.DeleteByPrefixAsync(
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _qaSource.Verify(s => s.DeleteAsync(
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task Cts_raw_purge_matches_the_keys_the_source_folders_are_kept_under()
+    {
+        Lane(_raw, "cads/cts/bulk/",
+            "cads/cts/bulk/CTSM_CADS_PREP_BULK_00001_001_CT_COUNTIES_2026-07-28-094644.psv");
+        Lane(_raw, "cads/cts/daily/");
+
+        var result = await Controller().PurgeStorage("cts_counties", "raw");
+
+        result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStoragePurgeResponse>()
+            .Which.DeletedKeys.Should().Equal(
+                "raw/cads/cts/bulk/CTSM_CADS_PREP_BULK_00001_001_CT_COUNTIES_2026-07-28-094644.psv");
+    }
+
+    [Fact]
     public async Task Production_rejects_the_request_before_accessing_storage()
     {
         _environment.SetupGet(e => e.EnvironmentName).Returns("Production");
@@ -271,6 +310,25 @@ public class EtlStorageControllerTests
                 DeletedKeys = objects.Select(item => item.Key).ToArray(),
                 TotalDeleted = objects.Length
             });
+
+    /// <summary>A dataset named by a pattern is purged by streaming its lanes and matching keys, not by
+    /// deleting under a prefix.</summary>
+    private static void Lane(
+        Mock<IBlobStorageService> storage,
+        string prefix,
+        params string[] keys)
+        => storage.Setup(s => s.EnumerateAsync(prefix, It.IsAny<CancellationToken>()))
+            .Returns(Streamed(keys));
+
+    private static async IAsyncEnumerable<StorageObjectInfo> Streamed(string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            yield return Object(key);
+        }
+
+        await Task.CompletedTask;
+    }
 
     private static StorageObjectInfo Object(string key) => new()
     {

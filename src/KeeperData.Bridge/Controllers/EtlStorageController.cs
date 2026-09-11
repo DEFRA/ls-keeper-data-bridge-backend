@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Models;
 using KeeperData.Core.ETL.Abstract;
@@ -159,18 +160,16 @@ public sealed class EtlStorageController(
                 sourceType == BlobStorageSources.External
                     ? blobStorageServiceFactory.GetSourceInternal()
                     : blobStorageServiceFactory.Get(),
-                definition is null ? null : DataSetFileNaming.DataSetKeyPrefix(definition),
+                SourceScope(definition),
                 sourceType == BlobStorageSources.External ? "qasrc" : "dest"),
-            Raw => PipelineTarget(EtlPipelineFolders.Raw, definition is null
+            Raw => PipelineTarget(EtlPipelineFolders.Raw, SourceScope(definition)),
+            Normalised => PipelineTarget(EtlPipelineFolders.Normalised, PrefixScope(definition is null
                 ? null
-                : DataSetFileNaming.DataSetKeyPrefix(definition)),
-            Normalised => PipelineTarget(EtlPipelineFolders.Normalised, definition is null
+                : SnapshotFileNaming.DataSetPrefix(definition))),
+            Snapshots => PipelineTarget(EtlPipelineFolders.Snapshots, PrefixScope(definition is null
                 ? null
-                : SnapshotFileNaming.DataSetPrefix(definition)),
-            Snapshots => PipelineTarget(EtlPipelineFolders.Snapshots, definition is null
-                ? null
-                : SnapshotFileNaming.DataSetPrefix(definition)),
-            Staging => PipelineTarget(EtlPipelineFolders.Staging, null),
+                : SnapshotFileNaming.DataSetPrefix(definition))),
+            Staging => PipelineTarget(EtlPipelineFolders.Staging, PrefixScope(null)),
             _ => throw new InvalidOperationException($"Unsupported ETL storage stage '{stage}'.")
         };
 
@@ -185,20 +184,68 @@ public sealed class EtlStorageController(
         return definition is null ? EveryStage : DatasetStages;
     }
 
-    private PurgeTarget PipelineTarget(string folder, string? prefix)
-        => new(storageProvider.ForFolder(folder), prefix, folder);
+    private PurgeTarget PipelineTarget(string folder, PurgeScope scope)
+        => new(storageProvider.ForFolder(folder), scope, folder);
+
+    /// <summary>The keys a stage holding source-named files keeps for one dataset. A dataset naming its
+    /// files by a pattern rather than a fixed prefix has no single prefix to delete under - the pattern
+    /// is not a prefix, and the lane it starts with also holds its sibling datasets - so those lanes are
+    /// listed and their keys matched by name instead.</summary>
+    private static PurgeScope SourceScope(DataSetDefinition? definition)
+    {
+        if (definition is null) return PrefixScope(null);
+
+        if (definition.SourceKeyPattern is null)
+        {
+            var prefix = DataSetFileNaming.DataSetKeyPrefix(definition);
+            return PrefixScope(prefix);
+        }
+
+        var prefixes = DataSetFileNaming.ListingPrefixes(definition);
+        bool matches(string key) => DataSetFileNaming.Matches(definition, key);
+
+        return new PurgeScope(prefixes, matches);
+    }
+
+    private static PurgeScope PrefixScope(string? prefix)
+        => new([prefix ?? string.Empty], null);
 
     private static async Task<IReadOnlyList<string>> DeleteTargetAsync(
         PurgeTarget target,
         CancellationToken cancellationToken)
     {
-        var result = await target.Storage.DeleteByPrefixAsync(
-            target.Prefix ?? string.Empty,
-            cancellationToken);
+        var deleted = new List<string>();
 
-        return result.DeletedKeys
-            .Select(key => $"{target.DisplayFolder}/{key.TrimStart('/')}")
-            .ToArray();
+        foreach (var prefix in target.Scope.Prefixes)
+        {
+            deleted.AddRange(target.Scope.Matches is null
+                ? (await target.Storage.DeleteByPrefixAsync(prefix, cancellationToken)).DeletedKeys
+                : await DeleteMatchingAsync(target.Storage, prefix, target.Scope.Matches, cancellationToken));
+        }
+
+        return [.. deleted.Select(key => $"{target.DisplayFolder}/{key.TrimStart('/')}")];
+    }
+
+    /// <summary>A lane can hold more objects than one listing page returns, so it is streamed rather than
+    /// listed: a lane whose keys mostly belong to sibling datasets would otherwise be purged as far as the
+    /// first page and no further.</summary>
+    private static async Task<IReadOnlyList<string>> DeleteMatchingAsync(
+        IBlobStorageService storage,
+        string prefix,
+        Func<string, bool> matches,
+        CancellationToken cancellationToken)
+    {
+        var deleted = new List<string>();
+
+        await foreach (var key in EnumerateKeysAsync(storage, prefix, cancellationToken))
+        {
+            if (!matches(key)) continue;
+
+            await storage.DeleteAsync(key, cancellationToken);
+            deleted.Add(key);
+        }
+
+        return deleted;
     }
 
     private ErrorResponse Error(string message)
@@ -208,11 +255,26 @@ public sealed class EtlStorageController(
             Timestamp = timeProvider.GetUtcNow().UtcDateTime
         };
 
+    private static async IAsyncEnumerable<string> EnumerateKeysAsync(
+        IBlobStorageService storage,
+        string prefix,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var item in storage.EnumerateAsync(prefix, cancellationToken))
+        {
+            yield return item.Key;
+        }
+    }
+
     private bool IsStoragePurgeDisabled()
         => environment.IsProduction() && !featureFlags.Value.EtlStoragePurgeEnabled;
 
     private static string Normalise(string? value, string defaultValue)
         => string.IsNullOrWhiteSpace(value) ? defaultValue : value.Trim().ToLowerInvariant();
 
-    private sealed record PurgeTarget(IBlobStorageService Storage, string? Prefix, string DisplayFolder);
+    private sealed record PurgeTarget(IBlobStorageService Storage, PurgeScope Scope, string DisplayFolder);
+
+    /// <summary>What to delete: the prefixes to work under, and - where the prefixes alone are broader
+    /// than the request - which of the keys found under them belong to it.</summary>
+    private sealed record PurgeScope(IReadOnlyList<string> Prefixes, Func<string, bool>? Matches);
 }

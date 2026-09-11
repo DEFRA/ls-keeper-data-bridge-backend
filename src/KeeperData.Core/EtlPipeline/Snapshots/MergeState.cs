@@ -270,7 +270,8 @@ public sealed partial class ParquetDeltaMergeEngine
 
                 return index < 0
                     ? throw new InvalidOperationException(
-                        $"'{key}' has no primary key column '{name}' for dataset '{definition.Name}'")
+                        $"'{key}' has no primary key column '{name}' for dataset '{definition.Name}'. " +
+                        $"It carries: {string.Join(", ", table.Fields.Select(field => field.Name))}")
                     : row[index] ?? string.Empty;
             });
 

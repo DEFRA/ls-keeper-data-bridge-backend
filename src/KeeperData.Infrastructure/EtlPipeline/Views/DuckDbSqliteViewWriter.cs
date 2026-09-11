@@ -87,6 +87,10 @@ public sealed class DuckDbSqliteViewWriter(
         string targetDatabasePath,
         CancellationToken cancellationToken)
     {
+        // Physical row order is not part of the read-model contract. Letting DuckDB reorder work
+        // avoids retaining order-tracking buffers that otherwise count against the memory limit.
+        await ExecuteAsync(connection, "SET preserve_insertion_order=false", cancellationToken);
+
         // Spilling belongs beside the output, on the volume the run was sized for, not wherever
         // DuckDB would otherwise choose.
         var workingDirectory = Path.GetDirectoryName(targetDatabasePath);

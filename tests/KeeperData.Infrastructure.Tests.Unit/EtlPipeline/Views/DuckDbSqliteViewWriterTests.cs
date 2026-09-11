@@ -72,6 +72,22 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     }
 
     [Fact]
+    public async Task Disables_insertion_order_preservation()
+    {
+        var target = Path.Combine(_workingDirectory, "settings.sqlite");
+        const string sql = """
+            CREATE TABLE target.WriterSettings (PreserveInsertionOrder BOOLEAN);
+            INSERT INTO target.WriterSettings
+            SELECT current_setting('preserve_insertion_order');
+            """;
+
+        await Sut().WriteAsync(new SqliteViewWriteRequest(
+            _sourcePath, target, sql, ["WriterSettings"]));
+
+        Scalar(target, "SELECT PreserveInsertionOrder FROM WriterSettings").Should().Be(0);
+    }
+
+    [Fact]
     public async Task Counts_the_rows_it_wrote_into_each_table()
     {
         var target = Path.Combine(_workingDirectory, "counted.sqlite");
@@ -371,6 +387,36 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         Strings(target, "SELECT FeatureName || '|' || Street FROM Holding WHERE Cph='04/567/8901'")
             .Should().ContainSingle()
             .Which.Should().BeOneOf("Tied Alpha|Alpha Street", "Tied Beta|Beta Street");
+    }
+
+    /// <summary>The production case: the extract dropped ADDRESS_PK before the baseline snapshot was
+    /// built, so the staging table has no such column at all - nothing was there for the merge to
+    /// nullify. An attribute the extract does not carry reads as absent, not as a binder error.</summary>
+    [Fact]
+    public async Task Treats_a_column_the_extract_never_carried_as_absent()
+    {
+        var thinSource = Path.Combine(_workingDirectory, "staging-thin.duckdb");
+        SamExtractFixture.Create(thinSource,
+            omittedHoldingColumns: ["ADDRESS_PK", "UDPRN", "EASTING", "NORTHING"]);
+
+        var target = Path.Combine(_workingDirectory, "thin.sqlite");
+
+        var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
+            thinSource, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+
+        result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
+
+        Strings(target, "SELECT Cph || '|' || ifnull(AddressPk,'<null>') || '|' || ifnull(Udprn,'<null>') " +
+                        "FROM Holding ORDER BY Cph")
+            .Should().Equal(
+                "01/234/5678|<null>|<null>",
+                "02/345/6789|<null>|<null>",
+                "03/456/7890|<null>|<null>",
+                "04/567/8901|<null>|<null>");
+
+        // The columns the extract does carry are unaffected.
+        Strings(target, "SELECT FeatureName FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Equal(["Main Farm"]);
     }
 
     [Fact]

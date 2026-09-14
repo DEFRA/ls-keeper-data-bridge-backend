@@ -25,8 +25,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<LoadDuckDbStage>();
         services.AddScoped<ExportSqliteStage>();
 
-        
-        services.AddXsvHcdtHelper();
+        services.AddXsvHcdtHelper(x =>
+        {
+            x.InputQuoting = QuoteHandling.None;
+            x.ValidateHeaderTrailerMatch = false;
+            x.ValidateTrailerCount = false;
+            x.RequireTrailer = false;
+            x.OutputFormat = OutputFormat.Parquet;
+            x.StrictFieldCount = false;
+        });
 
         return services;
     }

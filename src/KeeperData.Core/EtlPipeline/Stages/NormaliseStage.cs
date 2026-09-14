@@ -105,9 +105,7 @@ public sealed class NormaliseStage(
                 }
                 catch (XsvValidationException exception)
                 {
-                    var wrapped = await DescribeValidationFailureAsync(
-                        rawStorage, relativeRawKey, definition.Name, exception, cancellationToken);
-                    throw wrapped;
+                    throw new SourceFileValidationException(relativeRawKey, definition.Name, exception);
                 }
             }
             else
@@ -147,41 +145,6 @@ public sealed class NormaliseStage(
     {
         var fileName = Path.GetFileNameWithoutExtension(relativeRawKey);
         return $"{definition.Name}/{fileName}.parquet";
-    }
-
-    /// <summary>The package's validation exception says what is wrong but not where: it names neither
-    /// the file nor the record. Re-reading the raw file under the same rules finds the first record
-    /// the parser rejects, so the failure the import status serves names the file and the record, and
-    /// the log carries the record's masked shape - quoting and delimiters kept, content masked.</summary>
-    private async Task<SourceFileValidationException> DescribeValidationFailureAsync(
-        IBlobStorageService rawStorage,
-        string relativeRawKey,
-        string datasetName,
-        XsvValidationException exception,
-        CancellationToken cancellationToken)
-    {
-        Rfc4180RecordScanner.Finding? finding = null;
-
-        try
-        {
-            await using var rescan = await rawStorage.OpenReadAsync(relativeRawKey, cancellationToken);
-            finding = await Rfc4180RecordScanner.FindFirstInvalidAsync(rescan, cancellationToken);
-        }
-        catch (Exception rescanException)
-        {
-            logger.LogWarning(rescanException,
-                "Could not re-read {RawFileKey} to locate the record that failed validation", relativeRawKey);
-        }
-
-        if (finding is { } found)
-        {
-            logger.LogError(
-                "H/C/D/T validation failed for {RawFileKey} (dataset {Dataset}) at record {RecordNumber}: {Reason}. Record shape: {RecordShape}",
-                relativeRawKey, datasetName, found.RecordNumber, found.Reason,
-                Rfc4180RecordScanner.MaskForLog(found.RawRecord));
-        }
-
-        return new SourceFileValidationException(relativeRawKey, datasetName, finding?.RecordNumber, exception);
     }
 
     private async Task NormaliseHcdtAsync(Stream source, Stream dest, CancellationToken ct)

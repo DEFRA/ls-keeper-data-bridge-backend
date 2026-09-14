@@ -12,6 +12,10 @@ public sealed class EtlImportStatusObserver(
     IEtlImportStatusStore store,
     ILogger<EtlImportStatusObserver> logger) : IPipelineRunObserver
 {
+    /// <summary>The stage currently running, so a failure can say where it happened. Only one import
+    /// runs at a time and the observer is scoped to it.</summary>
+    private string? _currentStage;
+
     public Task RunStartingAsync(IPipelineContext context, IReadOnlyList<string> stageNames, CancellationToken cancellationToken)
         => store.MarkRunningAsync(ImportId(context), stageNames, cancellationToken);
 
@@ -19,7 +23,10 @@ public sealed class EtlImportStatusObserver(
         IPipelineContext context,
         string stageName,
         CancellationToken cancellationToken)
-        => store.MarkStageRunningAsync(ImportId(context), stageName, cancellationToken);
+    {
+        _currentStage = stageName;
+        return store.MarkStageRunningAsync(ImportId(context), stageName, cancellationToken);
+    }
 
     public Task StageCompletedAsync(
         IPipelineContext context,
@@ -51,30 +58,36 @@ public sealed class EtlImportStatusObserver(
     {
         var importId = ImportId(context);
 
-        // Full detail goes to the log; the document gets the message only, so nothing that might
-        // carry a salt, password or presigned URL is stored or served to a caller.
+        // Full detail goes to the log; the document gets the message and structured detail only, so
+        // nothing that might carry a salt, password or presigned URL is stored or served to a caller.
         logger.LogError(exception, "ETL import failed (importId={ImportId})", importId);
 
-        return store.MarkFailedAsync(importId, SafeSummary(exception), cancellationToken);
+        var (summary, detail) = DescribeFailure(exception);
+
+        return store.MarkFailedAsync(importId, summary, detail, cancellationToken);
     }
 
     /// <summary>The innermost message, which is the one that says what actually went wrong; the
-    /// wrapper only says the pipeline failed.
+    /// wrapper only says the pipeline failed. Unless a stage has already explained the failure, in
+    /// which case that explanation wins: an <see cref="IEtlDiagnosableException"/> exists precisely
+    /// because its inner exception is technically accurate and useless to read. Its message is
+    /// reported as written, without a type name in front of it, because it was written to be read.
     ///
-    /// Unless a stage has already explained the failure, in which case that explanation wins: an
-    /// <see cref="IEtlDiagnosableException"/> exists precisely because its inner exception is
-    /// technically accurate and useless to read. Its message is reported as written, without a type
-    /// name in front of it, because it was written to be read.</summary>
-    private static string SafeSummary(Exception exception)
+    /// The detail beside it is structured context for a caller drilling into the failure: whatever a
+    /// marked exception chose to carry, plus the innermost cause's type and the stage that was
+    /// running - so even an unexplained failure still says where it happened.</summary>
+    private (string Summary, EtlImportErrorDetail Detail) DescribeFailure(Exception exception)
     {
         var cause = exception;
         Exception? diagnosable = null;
+        EtlImportErrorDetail? detail = null;
 
         while (true)
         {
-            if (cause is IEtlDiagnosableException)
+            if (cause is IEtlDiagnosableException marked)
             {
                 diagnosable = cause;
+                detail ??= marked.ErrorDetail;
             }
 
             if (cause.InnerException is null)
@@ -85,9 +98,20 @@ public sealed class EtlImportStatusObserver(
             cause = cause.InnerException;
         }
 
-        return diagnosable is not null
+        var summary = diagnosable is not null
             ? diagnosable.Message
             : $"{cause.GetType().Name}: {cause.Message}";
+
+        return (summary, new EtlImportErrorDetail
+        {
+            Type = detail?.Type ?? cause.GetType().Name,
+            Stage = detail?.Stage ?? _currentStage,
+            Dataset = detail?.Dataset,
+            FileKey = detail?.FileKey,
+            RecordNumber = detail?.RecordNumber,
+            Expected = detail?.Expected,
+            Actual = detail?.Actual
+        });
     }
 
     private static EtlImportDatasetProgress? Map(object item) => item switch

@@ -164,10 +164,11 @@ public class NormaliseStageTests
     }
 
     /// <summary>A record whose quoting is not RFC 4180 - a closing quote followed by anything but the
-    /// delimiter - is what the strict parser rejects in the wild. The wrapper names the file and the
-    /// record position, because the package's exception alone gives the reader no way to find it.</summary>
+    /// delimiter - is what the strict parser rejects in the wild. The package's exception alone names
+    /// neither the file nor the dataset, so the stage wraps it in one that does, for the import
+    /// status to serve.</summary>
     [Fact]
-    public async Task NormaliseStage_NamesTheOffendingRecord_WhenHcdtQuotingIsMalformed()
+    public async Task NormaliseStage_NamesTheFileAndDataset_WhenHcdtValidationFails()
     {
         const string rawFileKey = "raw/sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
         const string relativeRawKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
@@ -192,9 +193,13 @@ public class NormaliseStageTests
             new RawFileSet(_dataSetDef with { Format = FileFormat.Hcdt }) { Files = [rawFileKey] }, stage);
 
         var exception = await act.Should().ThrowAsync<SourceFileValidationException>();
-        exception.Which.RecordNumber.Should().Be(4);
-        exception.Which.Message.Should().Contain("record 4");
+        exception.Which.Message.Should().Contain(relativeRawKey);
+        exception.Which.Message.Should().Contain("sam_cph_holdings");
         exception.Which.InnerException.Should().BeOfType<XsvValidationException>();
+
+        var detail = exception.Which.ErrorDetail;
+        detail.Dataset.Should().Be("sam_cph_holdings");
+        detail.FileKey.Should().Be(relativeRawKey);
     }
 
     /// <summary>A cut's H record is stamped when the extract starts writing it and its T record when it

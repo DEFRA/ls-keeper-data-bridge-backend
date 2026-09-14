@@ -129,10 +129,10 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
     }
 
     public Task MarkSucceededAsync(Guid importId, CancellationToken cancellationToken)
-        => CompleteAsync(importId, EtlImportStatus.Succeeded, error: null, cancellationToken);
+        => CompleteAsync(importId, EtlImportStatus.Succeeded, error: null, detail: null, cancellationToken);
 
-    public Task MarkFailedAsync(Guid importId, string error, CancellationToken cancellationToken)
-        => CompleteAsync(importId, EtlImportStatus.Failed, error, cancellationToken);
+    public Task MarkFailedAsync(Guid importId, string error, EtlImportErrorDetail? detail, CancellationToken cancellationToken)
+        => CompleteAsync(importId, EtlImportStatus.Failed, error, detail, cancellationToken);
 
     public async Task<EtlImportDocument?> GetAsync(Guid importId, CancellationToken cancellationToken)
     {
@@ -170,14 +170,15 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
         return new EtlImportPage([.. documents.Select(AsAbandonedIfLapsed)], totalCount);
     }
 
-    private async Task CompleteAsync(Guid importId, EtlImportStatus status, string? error, CancellationToken cancellationToken)
+    private async Task CompleteAsync(Guid importId, EtlImportStatus status, string? error, EtlImportErrorDetail? detail, CancellationToken cancellationToken)
     {
         var update = Builders<EtlImportDocument>.Update
             .Set(d => d.Status, status.ToString())
             .Set(d => d.CompletedAtUtc, UtcNow)
             .Set(d => d.CurrentStage, null)
             .Set(d => d.LeaseExpiresAtUtc, null)
-            .Set(d => d.Error, error);
+            .Set(d => d.Error, error)
+            .Set(d => d.ErrorDetail, detail);
 
         await _imports.UpdateOneAsync(d => d.ImportId == importId, update, cancellationToken: cancellationToken);
     }

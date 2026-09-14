@@ -99,7 +99,14 @@ public sealed class NormaliseStage(
 
             if (isHcdtFormat)
             {
-                await NormaliseHcdtAsync(source, destStream, cancellationToken);
+                try
+                {
+                    await NormaliseHcdtAsync(source, destStream, cancellationToken);
+                }
+                catch (XsvValidationException exception)
+                {
+                    throw new SourceFileValidationException(relativeRawKey, definition.Name, exception);
+                }
             }
             else
             {

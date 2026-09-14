@@ -57,7 +57,7 @@ public sealed class EtlImportCoordinator(
             new LockRenewalSettings(_options.LockName, _options.RenewalInterval, _options.RenewalExtension),
             importId,
             token => RunPipelineAsync(importId, sourceType, dataset, token),
-            onFailure: exception => statusStore.MarkFailedAsync(importId, Summarise(exception), CancellationToken.None),
+            onFailure: exception => statusStore.MarkFailedAsync(importId, Summarise(exception), Detail(exception), CancellationToken.None),
             cancellationToken);
 
         return EtlImportStartResult.Started(importId);
@@ -79,6 +79,14 @@ public sealed class EtlImportCoordinator(
     }
 
     private static string Summarise(Exception exception)
+        => $"{Innermost(exception).GetType().Name}: {Innermost(exception).Message}";
+
+    /// <summary>Failures reaching here happened outside the pipeline - lock loss, shutdown - so the
+    /// detail can only carry what type of failure it was.</summary>
+    private static EtlImportErrorDetail Detail(Exception exception)
+        => new() { Type = Innermost(exception).GetType().Name };
+
+    private static Exception Innermost(Exception exception)
     {
         var cause = exception;
 
@@ -87,6 +95,6 @@ public sealed class EtlImportCoordinator(
             cause = cause.InnerException;
         }
 
-        return $"{cause.GetType().Name}: {cause.Message}";
+        return cause;
     }
 }

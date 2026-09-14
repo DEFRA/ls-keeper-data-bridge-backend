@@ -51,6 +51,10 @@ public class EtlImportDocument
     /// <summary>Exception message only - never a stack trace, and never anything carrying a salt,
     /// password or presigned URL.</summary>
     public string? Error { get; set; }
+
+    /// <summary>Structured context about the failure - which stage, dataset, file or record it
+    /// belongs to - so a caller can see where to look rather than parse the message.</summary>
+    public EtlImportErrorDetail? ErrorDetail { get; set; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]

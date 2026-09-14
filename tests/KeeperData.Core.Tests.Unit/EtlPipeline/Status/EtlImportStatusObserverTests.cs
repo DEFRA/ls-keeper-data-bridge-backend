@@ -205,4 +205,52 @@ public class EtlImportStatusObserverTests
         error.Should().NotContain("Padding", "the padding error is what the explanation exists to replace");
         error.Should().NotContain("SourceFileDecryptionException", "the message was written to be read as it is");
     }
+
+    /// <summary>Alongside the readable summary, the detail says where the failure happened: the
+    /// stage that was running, the innermost cause's type, and whatever a diagnosable exception
+    /// carried - the dataset and file here.</summary>
+    [Fact]
+    public async Task Records_where_the_failure_happened()
+    {
+        var sut = Sut();
+        await sut.StageStartingAsync(Context(), "decrypt", CancellationToken.None);
+
+        var failure = new PipelineExecutionException(
+            "Pipeline failed after 10ms.",
+            new SourceFileDecryptionException(
+                "LITP_SAMCPHHOLDING_20260811074324.csv",
+                "sam_cph_holdings",
+                new CryptographicException("Padding is invalid and cannot be removed.")));
+
+        await sut.RunFailedAsync(Context(), failure, CancellationToken.None);
+
+        var detail = _store.Failed.Single().Detail;
+        detail.Should().NotBeNull();
+        detail!.Type.Should().Be("CryptographicException");
+        detail.Stage.Should().Be("decrypt");
+        detail.Dataset.Should().Be("sam_cph_holdings");
+        detail.FileKey.Should().Be("LITP_SAMCPHHOLDING_20260811074324.csv");
+    }
+
+    /// <summary>A failure with no diagnosable exception still reports its type and the stage that
+    /// was running, so a caller can see where an unexplained failure happened.</summary>
+    [Fact]
+    public async Task Records_the_stage_and_cause_type_when_nothing_explained_the_failure()
+    {
+        var sut = Sut();
+        await sut.StageStartingAsync(Context(), "normalise", CancellationToken.None);
+
+        var failure = new PipelineExecutionException(
+            "Pipeline failed after 10ms.",
+            new InvalidOperationException("snapshot timestamp could not be parsed"));
+
+        await sut.RunFailedAsync(Context(), failure, CancellationToken.None);
+
+        var detail = _store.Failed.Single().Detail;
+        detail.Should().NotBeNull();
+        detail!.Type.Should().Be("InvalidOperationException");
+        detail.Stage.Should().Be("normalise");
+        detail.Dataset.Should().BeNull();
+        detail.FileKey.Should().BeNull();
+    }
 }

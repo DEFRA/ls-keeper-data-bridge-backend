@@ -136,6 +136,7 @@ public class EtlImportCoordinatorTests
             s => s.MarkFailedAsync(
                 result.ImportId!.Value,
                 "InvalidOperationException: Failed to renew lock for EtlImportRun",
+                It.Is<EtlImportErrorDetail?>(d => d!.Type == "InvalidOperationException"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }

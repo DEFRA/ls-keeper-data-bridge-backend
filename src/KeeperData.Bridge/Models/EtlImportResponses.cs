@@ -49,6 +49,23 @@ public class EtlImportStatusResponse
 
     /// <summary>A summary safe to show a caller: never a stack trace or a configuration value.</summary>
     public string? Error { get; set; }
+
+    /// <summary>Structured context about the failure - which stage, dataset, file or record it
+    /// belongs to - so a caller can see where to look rather than parse the message.</summary>
+    public EtlImportErrorDetailResponse? ErrorDetail { get; set; }
+}
+
+/// <summary>Structured failure context, mirroring what the import document stores.</summary>
+[ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
+public class EtlImportErrorDetailResponse
+{
+    public string? Type { get; set; }
+    public string? Stage { get; set; }
+    public string? Dataset { get; set; }
+    public string? FileKey { get; set; }
+    public long? RecordNumber { get; set; }
+    public string? Expected { get; set; }
+    public string? Actual { get; set; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
@@ -142,4 +159,6 @@ public class EtlImportSummaryResponse
     public string? SqlitePath { get; set; }
 
     public string? Error { get; set; }
+
+    public EtlImportErrorDetailResponse? ErrorDetail { get; set; }
 }

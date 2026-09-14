@@ -17,7 +17,10 @@ public interface IEtlImportStatusStore
 
     Task MarkSucceededAsync(Guid importId, CancellationToken cancellationToken);
 
-    Task MarkFailedAsync(Guid importId, string error, CancellationToken cancellationToken);
+    /// <param name="error">The readable summary, safe to serve to a caller.</param>
+    /// <param name="detail">Structured context - which stage, dataset, file or record the failure
+    /// belongs to - for a caller drilling into why it failed.</param>
+    Task MarkFailedAsync(Guid importId, string error, EtlImportErrorDetail? detail, CancellationToken cancellationToken);
 
     /// <summary>The import, or null if the id is unknown. A run whose lease has lapsed is returned
     /// as failed.</summary>

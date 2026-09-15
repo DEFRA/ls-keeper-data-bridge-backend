@@ -3,6 +3,7 @@ using KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Domain;
 using KeeperData.Core.Reports.Cleanse.Analysis.RulesEngine.Abstract;
 using KeeperData.Core.Reports.Cleanse.Analysis.RulesEngine.Context;
+using KeeperData.Core.Reports.Cleanse.Analysis.RulesEngine.Service;
 using KeeperData.Core.Reports.Domain;
 using KeeperData.Core.Reports.Issues.Command.Abstract;
 using KeeperData.Core.Reports.Issues.Command.Requests;
@@ -34,23 +35,14 @@ public class RuleBasedCleanseAnalysisEngine : CleanseAnalysisEngineBase, ICleans
 {
     private readonly RecordIdGenerator _recordIdGenerator = new();
     private readonly IPreloadedCtsSamDataService _dataService;
-    private readonly IReadOnlyList<ICleanseRule> _ctsPrimaryRules;
-    private readonly IReadOnlyList<ICleanseRule> _samPrimaryRules;
+    private readonly ICleanseRuleService _ruleService;
 
     public RuleBasedCleanseAnalysisEngine(IPreloadedCtsSamDataService dataService, IIssueCommandService issueCommandService,
-        IThrottler throttler, ILogger<RuleBasedCleanseAnalysisEngine> logger, IEnumerable<ICleanseRule> rules)
+        IThrottler throttler, ILogger<RuleBasedCleanseAnalysisEngine> logger, ICleanseRuleService ruleService)
         : base(dataService, issueCommandService, throttler, logger)
     {
         _dataService = dataService;
-
-        var activeRules = rules
-            .Where(rule => rule.Status == RuleStatus.Active)
-            .OrderBy(rule => rule.Priority)
-            .ThenBy(rule => rule.Descriptor.UserRuleNo, StringComparer.Ordinal)
-            .ToList();
-
-        _ctsPrimaryRules = [.. activeRules.Where(rule => rule.Pass == AnalysisPass.CtsPrimary)];
-        _samPrimaryRules = [.. activeRules.Where(rule => rule.Pass == AnalysisPass.SamPrimary)];
+        _ruleService = ruleService;
     }
 
     /// <inheritdoc />
@@ -73,7 +65,7 @@ public class RuleBasedCleanseAnalysisEngine : CleanseAnalysisEngineBase, ICleans
             Sam = _dataService.GetSamCphHolding(lidFullIdentifier.Cph)
         };
 
-        var results = EvaluateRules(_ctsPrimaryRules, context);
+        var results = _ruleService.Evaluate(context);
 
         await RecordResultsAsync(lidFullIdentifier.Value, lidFullIdentifier.Cph, operationId, metrics, results, ct, scope);
     }
@@ -97,34 +89,9 @@ public class RuleBasedCleanseAnalysisEngine : CleanseAnalysisEngineBase, ICleans
             Sam = _dataService.GetSamCphHolding(cph)
         };
 
-        var results = EvaluateRules(_samPrimaryRules, context);
+        var results = _ruleService.Evaluate(context);
 
         await RecordResultsAsync(cph.Value, cph, operationId, metrics, results, ct, scope);
-    }
-
-    /// <summary>
-    /// Runs the supplied rules, in priority order, against one record context.
-    /// </summary>
-    private static List<RuleResult> EvaluateRules(IReadOnlyList<ICleanseRule> rules, CtsSamRuleContext context)
-    {
-        var results = new List<RuleResult>();
-
-        foreach (var rule in rules)
-        {
-            if (!rule.AppliesTo(context))
-            {
-                continue;
-            }
-
-            var result = rule.Evaluate(context);
-
-            if (result is not null)
-            {
-                results.Add(result);
-            }
-        }
-
-        return results;
     }
 
     /// <summary>

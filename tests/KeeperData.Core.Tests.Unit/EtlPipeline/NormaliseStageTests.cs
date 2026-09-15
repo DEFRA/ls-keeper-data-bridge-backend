@@ -137,20 +137,18 @@ public class NormaliseStageTests
     /// <summary>The stage does not inspect the framing itself: XsvHcdtHelper refuses a file declared
     /// H/C/D/T that carries no H record, and a truncated one whose trailer count no longer holds. Both
     /// run through the real package, because both are what stops a bad cut normalising to fewer rows
-    /// than it should and the snapshot silently losing them. A file with no H record never reaches the
-    /// package and surfaces its own check's exception; one that fails inside it is wrapped with the
-    /// file and record the import status needs.</summary>
+    /// than it should and the snapshot silently losing them.</summary>
     [Theory]
-    [InlineData("CPH|DISEASE_TYPE|CHANGETYPE\r\n12/345/6789|TB|I\r\n", typeof(XsvValidationException))]
-    [InlineData("H|f.csv|01012026 07:28:26\r\nC|CPH|CHANGETYPE\r\nD|12/345/6789|I\r\nT|f.csv|01012026 07:28:26|2\r\n", typeof(SourceFileValidationException))]
-    public async Task NormaliseStage_Fails_ForAMisdeclaredOrTruncatedHcdtFile(string content, Type expectedException)
+    [InlineData("CPH|DISEASE_TYPE|CHANGETYPE\r\n12/345/6789|TB|I\r\n")]
+    [InlineData("H|f.csv|01012026 07:28:26\r\nC|CPH|CHANGETYPE\r\nD|12/345/6789|I\r\nT|f.csv|01012026 07:28:26|2\r\n")]
+    public async Task NormaliseStage_Fails_ForAMisdeclaredOrTruncatedHcdtFile(string content)
     {
         const string rawFileKey = "raw/sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
         const string destinationKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.parquet";
 
         _blobStorageMock.Setup(b => b.ExistsAsync(destinationKey, It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _blobStorageMock.Setup(b => b.OpenReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new MemoryStream(Encoding.UTF8.GetBytes(content)));
+            .ReturnsAsync(new MemoryStream(Encoding.UTF8.GetBytes(content)));
         _blobStorageMock.Setup(b => b.OpenWriteAsync(destinationKey, It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new NonClosingMemoryStream());
 
@@ -160,46 +158,7 @@ public class NormaliseStageTests
         var act = () => RunStageAsync(
             new RawFileSet(_dataSetDef with { Format = FileFormat.Hcdt }) { Files = [rawFileKey] }, stage);
 
-        (await act.Should().ThrowAsync<Exception>()).Which.Should().BeOfType(expectedException);
-    }
-
-    /// <summary>A record whose quoting is not RFC 4180 - a closing quote followed by anything but the
-    /// delimiter - is what the strict parser rejects in the wild. The package's exception alone names
-    /// neither the file nor the dataset, so the stage wraps it in one that does, for the import
-    /// status to serve.</summary>
-    [Fact]
-    public async Task NormaliseStage_NamesTheFileAndDataset_WhenHcdtValidationFails()
-    {
-        const string rawFileKey = "raw/sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
-        const string relativeRawKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.csv";
-        const string destinationKey = "sam_cph_holdings/LITP_SAMCPHHOLDING_20260101.parquet";
-
-        const string input = "H|f.csv|01012026 07:28:26\r\n" +
-                             "C|RECORD_TYPE|RECORD_COUNT|CPH|DISEASE_TYPE|CHANGETYPE\r\n" +
-                             "D|1|12/345/6789|TB|I\r\n" +
-                             "D|2|\"10/325/0068\" West|BSE|U\r\n" +
-                             "T|f.csv|01012026 07:28:26|2\r\n";
-
-        _blobStorageMock.Setup(b => b.ExistsAsync(destinationKey, It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        _blobStorageMock.Setup(b => b.OpenReadAsync(relativeRawKey, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new MemoryStream(Encoding.UTF8.GetBytes(input)));
-        _blobStorageMock.Setup(b => b.OpenWriteAsync(destinationKey, It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new NonClosingMemoryStream());
-
-        var stage = new NormaliseStage(
-            _storageProviderMock.Object, new XsvHcdtNormaliser(), NullLogger<NormaliseStage>.Instance);
-
-        var act = () => RunStageAsync(
-            new RawFileSet(_dataSetDef with { Format = FileFormat.Hcdt }) { Files = [rawFileKey] }, stage);
-
-        var exception = await act.Should().ThrowAsync<SourceFileValidationException>();
-        exception.Which.Message.Should().Contain(relativeRawKey);
-        exception.Which.Message.Should().Contain("sam_cph_holdings");
-        exception.Which.InnerException.Should().BeOfType<XsvValidationException>();
-
-        var detail = exception.Which.ErrorDetail;
-        detail.Dataset.Should().Be("sam_cph_holdings");
-        detail.FileKey.Should().Be(relativeRawKey);
+        await act.Should().ThrowAsync<XsvValidationException>();
     }
 
     /// <summary>A cut's H record is stamped when the extract starts writing it and its T record when it

@@ -104,15 +104,22 @@ CREATE OR REPLACE TEMP MACRO cts_nz(value) AS nullif(trim(value), '');
 -- separating a faithful reproduction from a trimmed one.
 CREATE OR REPLACE TEMP MACRO cts_value(value) AS nullif(value, '');
 
--- Dates are text, 'DD-MON-YY'. Oracle's RR pivot reads 50-99 as 19xx; DuckDB's %y reads 00-68 as
--- 20xx, so a stored '66' becomes 2066 and the row falls outside the query date. Nine locations and
--- six keeper links are affected, and because the keeper effective-from is also the ordering key
--- below, getting this wrong picks the wrong keeper as well as dropping rows.
+-- The as-at date, bound by the caller. Named once so that the transformation and the writer cannot
+-- disagree about it silently.
+CREATE OR REPLACE TEMP MACRO cts_as_at() AS getvariable('cts_query_date');
+
+-- Dates are text, 'DD-MON-YY'.
+CREATE OR REPLACE TEMP MACRO cts_date(value) AS strptime(cts_nz(value), '%d-%b-%y');
+
+-- Oracle's RR pivot reads 50-99 as 19xx; DuckDB's %y reads 00-68 as 20xx, so a stored '66' becomes
+-- 2066 and the row falls outside the query date. Nine locations and six keeper links are affected,
+-- and because the keeper effective-from is also the ordering key below, getting this wrong picks
+-- the wrong keeper as well as dropping rows.
 CREATE OR REPLACE TEMP MACRO cts_rr(value) AS
     CASE
-        WHEN strptime(nullif(trim(value), ''), '%d-%b-%y') > TIMESTAMP '2049-12-31'
-        THEN strptime(nullif(trim(value), ''), '%d-%b-%y') - INTERVAL 100 YEAR
-        ELSE strptime(nullif(trim(value), ''), '%d-%b-%y')
+        WHEN cts_date(value) > TIMESTAMP '2049-12-31'
+        THEN cts_date(value) - INTERVAL 100 YEAR
+        ELSE cts_date(value)
     END;
 
 -- The outward code's area letters: 'AB54 8FG' -> 'AB'. Section 4.2.
@@ -203,10 +210,58 @@ SELECT * EXCLUDE (pick) FROM (
      AND p.CURRENT_STATUS = '1'
     WHERE cts_nz(r.LPR_LPT_ID) IN ('4', '5', '8')
       AND cts_nz(r.LPR_CURRENT_STATUS) = '1'
-      AND cts_rr(r.LPR_EFFECTIVE_FROM_DATE) <= getvariable('cts_query_date')
+      AND cts_rr(r.LPR_EFFECTIVE_FROM_DATE) <= cts_as_at()
       AND (cts_nz(r.LPR_EFFECTIVE_TO_DATE) IS NULL
-           OR cts_rr(r.LPR_EFFECTIVE_TO_DATE) > getvariable('cts_query_date'))
+           OR cts_rr(r.LPR_EFFECTIVE_TO_DATE) > cts_as_at())
 ) WHERE pick = 1;
+
+-- The keeper, correspondence and contact blocks are the same fourteen columns drawn the same way,
+-- so they are resolved once here and joined three times rather than written out three times.
+CREATE OR REPLACE TEMP VIEW cts_party_block AS
+SELECT
+    k.LPR_LOC_ID,
+    k.LPT_ID,
+    p.PAR_TITLE, p.PAR_INITIALS, p.PAR_SURNAME,
+    a.ADR_NAME, a.ADR_ADDRESS_2, a.ADR_ADDRESS_3, a.ADR_ADDRESS_4, a.ADR_ADDRESS_5,
+    a.ADR_POST_CODE,
+    p.PAR_TEL_NUMBER, p.PAR_MOBILE_NUMBER, p.PAR_FAX_NUMBER, p.PAR_EMAIL_ADDRESS,
+    p.PAR_WELSH_INDICATOR
+FROM cts_party_link k
+LEFT JOIN cts_party p
+  ON p.PAR_ID = k.LPR_PAR_ID
+LEFT JOIN cts_party_address a
+  ON a.ADR_PAR_ID = k.LPR_PAR_ID;
+
+-- Which country a holding is in, and its own postal address.
+--
+-- CTY_UK_AREA answers the question for a holding that has a county: 'S' Scotland, 'W' Wales, null
+-- England. 145 holdings - the SH- separate holdings - have no county at all, and the column the
+-- live report classifies those by is not in the OLTP. The postcode area of the holding's own
+-- address stands in, which is right for 143 of the 145. SY is deliberately absent from the Welsh
+-- list: it spans the border, and the data holds both Shropshire and Ceredigion holdings under it.
+-- Sections 4.5 and 8.4.
+CREATE OR REPLACE TEMP VIEW cts_location_country AS
+SELECT
+    l.LOC_ID,
+    c.CODE AS COUNTY_CODE,
+    c.NAME AS COUNTY_NAME,
+    -- County 99 is BCMS's dummy. A holding with no county row at all is admissible: the report's
+    -- 112 SH- rows have none, and an inner join loses every one of them. Sections 4.4 and 7.1.
+    (c.CODE IS NULL OR c.CODE <> '99') AS COUNTY_ADMISSIBLE,
+    CASE
+        WHEN l.CTY_ID IS NOT NULL THEN c.UK_AREA IS NULL
+        ELSE cts_pc_area(a.ADR_POST_CODE) NOT IN (
+            'AB', 'DD', 'DG', 'EH', 'FK', 'G', 'HS', 'IV', 'KA', 'KW', 'KY',
+            'ML', 'PA', 'PH', 'TD', 'ZE',
+            'CF', 'LD', 'LL', 'NP', 'SA')
+    END AS IN_ENGLAND,
+    a.ADR_NAME, a.ADR_ADDRESS_2, a.ADR_ADDRESS_3, a.ADR_ADDRESS_4, a.ADR_ADDRESS_5,
+    a.ADR_POST_CODE
+FROM cts_location l
+LEFT JOIN cts_county c
+  ON c.CTY_ID = l.CTY_ID
+LEFT JOIN cts_location_address a
+  ON a.ADR_LOC_ID = l.LOC_ID;
 
 -- A holding is open when every one of these holds. Section numbers are the specification's.
 --
@@ -219,10 +274,7 @@ SELECT * EXCLUDE (pick) FROM (
 -- 4.3 kept           a valid current KN link to a current party. No address is required - that
 --                    requirement belonged to two other processes, and imposing it drops 446
 --                    holdings the report contains.
--- 4.4 admissible     county 99 is BCMS's dummy. The county join is OUTER and a holding with no
---                    county is KEPT: the report's 112 SH- rows have no county row at all, and an
---                    inner join loses every one of them.
--- 4.5 English        CTY_UK_AREA is 'S' for Scotland, 'W' for Wales, null for England.
+-- 4.4 admissible     and 4.5 English: both resolved by cts_location_country above.
 --
 -- No premises-type filter: the report contains SG, CA, MA and EX holdings and rows with no type.
 -- Sub-locations are included. Both of BCMS's own records are excluded by identifier.
@@ -232,10 +284,11 @@ SELECT
     i.FULL_IDENTIFIER AS LocationNumber,
     i.IDENTIFIER AS Cph,
     l.PREMISES_TYPE,
-    c.CODE AS CountyCode,
-    c.NAME AS CountyName,
-    k.LPR_PAR_ID AS KeeperPartyId,
-    l.LOC_TEL_NUMBER, l.LOC_MOBILE_NUMBER, l.LOC_FAX_NUMBER, l.LOC_EMAIL_ADDRESS
+    g.COUNTY_CODE,
+    g.COUNTY_NAME,
+    l.LOC_TEL_NUMBER, l.LOC_MOBILE_NUMBER, l.LOC_FAX_NUMBER, l.LOC_EMAIL_ADDRESS,
+    g.ADR_NAME, g.ADR_ADDRESS_2, g.ADR_ADDRESS_3, g.ADR_ADDRESS_4, g.ADR_ADDRESS_5,
+    g.ADR_POST_CODE
 FROM cts_location l
 JOIN cts_identifier i
   ON i.LID_LOC_ID = l.LOC_ID
@@ -243,26 +296,15 @@ JOIN cts_identifier i
 JOIN cts_party_link k
   ON k.LPR_LOC_ID = l.LOC_ID
  AND k.LPT_ID = '4'
-LEFT JOIN cts_county c
-  ON c.CTY_ID = l.CTY_ID
-LEFT JOIN cts_location_address la
-  ON la.ADR_LOC_ID = l.LOC_ID
-WHERE (l.EFFECTIVE_TO_RAW IS NULL OR l.EFFECTIVE_TO > getvariable('cts_query_date'))
-  AND l.EFFECTIVE_FROM <= getvariable('cts_query_date')
+JOIN cts_location_country g
+  ON g.LOC_ID = l.LOC_ID
+WHERE (l.EFFECTIVE_TO_RAW IS NULL OR l.EFFECTIVE_TO > cts_as_at())
+  AND l.EFFECTIVE_FROM <= cts_as_at()
   AND l.RECEIVE_LABELS_FLAG = 'Y'
   AND l.CURRENT_STATUS = '1'
-  AND (c.CODE IS NULL OR c.CODE <> '99')
-  AND c.UK_AREA IS NULL
-  AND i.FULL_IDENTIFIER NOT IN ('AH-08/205/8000', 'SH-9999')
-  -- A holding with no county cannot be classified by CTY_UK_AREA, and the column the live report
-  -- uses instead is not in the OLTP. The postcode area of the holding's own address stands in,
-  -- which is right for 143 of the 145 affected holdings. SY is deliberately absent from the Welsh
-  -- list: it spans the border, and the data holds both Shropshire and Ceredigion holdings under it.
-  AND (l.CTY_ID IS NOT NULL
-       OR cts_pc_area(la.ADR_POST_CODE) NOT IN (
-           'AB', 'DD', 'DG', 'EH', 'FK', 'G', 'HS', 'IV', 'KA', 'KW', 'KY',
-           'ML', 'PA', 'PH', 'TD', 'ZE',
-           'CF', 'LD', 'LL', 'NP', 'SA'));
+  AND g.COUNTY_ADMISSIBLE
+  AND g.IN_ENGLAND
+  AND i.FULL_IDENTIFIER NOT IN ('AH-08/205/8000', 'SH-9999');
 
 -- Note the asymmetry in the location block: the keeper's telephone and email come from CT_PARTIES,
 -- but the location's own come from CT_LOCATIONS. Different tables, and they frequently differ.
@@ -272,74 +314,71 @@ SELECT
     o.Cph,
     o.LOC_ID,
     o.PREMISES_TYPE,
-    o.CountyCode,
-    o.CountyName,
+    o.COUNTY_CODE,
+    o.COUNTY_NAME,
 
-    cts_value(kp.PAR_TITLE),
-    cts_value(kp.PAR_INITIALS),
-    cts_value(kp.PAR_SURNAME),
-    cts_value(ka.ADR_NAME),
-    cts_value(ka.ADR_ADDRESS_2),
-    cts_value(ka.ADR_ADDRESS_3),
-    cts_value(ka.ADR_ADDRESS_4),
-    cts_value(ka.ADR_ADDRESS_5),
-    cts_value(ka.ADR_POST_CODE),
-    cts_value(kp.PAR_TEL_NUMBER),
-    cts_value(kp.PAR_MOBILE_NUMBER),
-    cts_value(kp.PAR_FAX_NUMBER),
-    cts_value(kp.PAR_EMAIL_ADDRESS),
-    cts_value(kp.PAR_WELSH_INDICATOR),
+    cts_value(keeper.PAR_TITLE),
+    cts_value(keeper.PAR_INITIALS),
+    cts_value(keeper.PAR_SURNAME),
+    cts_value(keeper.ADR_NAME),
+    cts_value(keeper.ADR_ADDRESS_2),
+    cts_value(keeper.ADR_ADDRESS_3),
+    cts_value(keeper.ADR_ADDRESS_4),
+    cts_value(keeper.ADR_ADDRESS_5),
+    cts_value(keeper.ADR_POST_CODE),
+    cts_value(keeper.PAR_TEL_NUMBER),
+    cts_value(keeper.PAR_MOBILE_NUMBER),
+    cts_value(keeper.PAR_FAX_NUMBER),
+    cts_value(keeper.PAR_EMAIL_ADDRESS),
+    cts_value(keeper.PAR_WELSH_INDICATOR),
 
-    cts_value(la.ADR_NAME),
-    cts_value(la.ADR_ADDRESS_2),
-    cts_value(la.ADR_ADDRESS_3),
-    cts_value(la.ADR_ADDRESS_4),
-    cts_value(la.ADR_ADDRESS_5),
-    cts_value(la.ADR_POST_CODE),
+    cts_value(o.ADR_NAME),
+    cts_value(o.ADR_ADDRESS_2),
+    cts_value(o.ADR_ADDRESS_3),
+    cts_value(o.ADR_ADDRESS_4),
+    cts_value(o.ADR_ADDRESS_5),
+    cts_value(o.ADR_POST_CODE),
     cts_value(o.LOC_TEL_NUMBER),
     cts_value(o.LOC_MOBILE_NUMBER),
     cts_value(o.LOC_FAX_NUMBER),
     cts_value(o.LOC_EMAIL_ADDRESS),
 
-    cts_value(cp.PAR_TITLE),
-    cts_value(cp.PAR_INITIALS),
-    cts_value(cp.PAR_SURNAME),
-    cts_value(ca.ADR_NAME),
-    cts_value(ca.ADR_ADDRESS_2),
-    cts_value(ca.ADR_ADDRESS_3),
-    cts_value(ca.ADR_ADDRESS_4),
-    cts_value(ca.ADR_ADDRESS_5),
-    cts_value(ca.ADR_POST_CODE),
-    cts_value(cp.PAR_TEL_NUMBER),
-    cts_value(cp.PAR_MOBILE_NUMBER),
-    cts_value(cp.PAR_FAX_NUMBER),
-    cts_value(cp.PAR_EMAIL_ADDRESS),
-    cts_value(cp.PAR_WELSH_INDICATOR),
+    cts_value(corres.PAR_TITLE),
+    cts_value(corres.PAR_INITIALS),
+    cts_value(corres.PAR_SURNAME),
+    cts_value(corres.ADR_NAME),
+    cts_value(corres.ADR_ADDRESS_2),
+    cts_value(corres.ADR_ADDRESS_3),
+    cts_value(corres.ADR_ADDRESS_4),
+    cts_value(corres.ADR_ADDRESS_5),
+    cts_value(corres.ADR_POST_CODE),
+    cts_value(corres.PAR_TEL_NUMBER),
+    cts_value(corres.PAR_MOBILE_NUMBER),
+    cts_value(corres.PAR_FAX_NUMBER),
+    cts_value(corres.PAR_EMAIL_ADDRESS),
+    cts_value(corres.PAR_WELSH_INDICATOR),
 
-    cts_value(np.PAR_TITLE),
-    cts_value(np.PAR_INITIALS),
-    cts_value(np.PAR_SURNAME),
-    cts_value(na.ADR_NAME),
-    cts_value(na.ADR_ADDRESS_2),
-    cts_value(na.ADR_ADDRESS_3),
-    cts_value(na.ADR_ADDRESS_4),
-    cts_value(na.ADR_ADDRESS_5),
-    cts_value(na.ADR_POST_CODE),
-    cts_value(np.PAR_TEL_NUMBER),
-    cts_value(np.PAR_MOBILE_NUMBER),
-    cts_value(np.PAR_FAX_NUMBER),
-    cts_value(np.PAR_EMAIL_ADDRESS),
-    cts_value(np.PAR_WELSH_INDICATOR)
+    cts_value(contact.PAR_TITLE),
+    cts_value(contact.PAR_INITIALS),
+    cts_value(contact.PAR_SURNAME),
+    cts_value(contact.ADR_NAME),
+    cts_value(contact.ADR_ADDRESS_2),
+    cts_value(contact.ADR_ADDRESS_3),
+    cts_value(contact.ADR_ADDRESS_4),
+    cts_value(contact.ADR_ADDRESS_5),
+    cts_value(contact.ADR_POST_CODE),
+    cts_value(contact.PAR_TEL_NUMBER),
+    cts_value(contact.PAR_MOBILE_NUMBER),
+    cts_value(contact.PAR_FAX_NUMBER),
+    cts_value(contact.PAR_EMAIL_ADDRESS),
+    cts_value(contact.PAR_WELSH_INDICATOR)
 FROM cts_open_location o
-LEFT JOIN cts_party         kp ON kp.PAR_ID     = o.KeeperPartyId
-LEFT JOIN cts_party_address ka ON ka.ADR_PAR_ID = o.KeeperPartyId
-LEFT JOIN cts_location_address la ON la.ADR_LOC_ID = o.LOC_ID
-LEFT JOIN cts_party_link    cl ON cl.LPR_LOC_ID = o.LOC_ID AND cl.LPT_ID = '5'
-LEFT JOIN cts_party         cp ON cp.PAR_ID     = cl.LPR_PAR_ID
-LEFT JOIN cts_party_address ca ON ca.ADR_PAR_ID = cl.LPR_PAR_ID
-LEFT JOIN cts_party_link    nl ON nl.LPR_LOC_ID = o.LOC_ID AND nl.LPT_ID = '8'
-LEFT JOIN cts_party         np ON np.PAR_ID     = nl.LPR_PAR_ID
-LEFT JOIN cts_party_address na ON na.ADR_PAR_ID = nl.LPR_PAR_ID;
+LEFT JOIN cts_party_block keeper
+  ON keeper.LPR_LOC_ID = o.LOC_ID AND keeper.LPT_ID = '4'
+LEFT JOIN cts_party_block corres
+  ON corres.LPR_LOC_ID = o.LOC_ID AND corres.LPT_ID = '5'
+LEFT JOIN cts_party_block contact
+  ON contact.LPR_LOC_ID = o.LOC_ID AND contact.LPT_ID = '8';
 
 CREATE INDEX ix_cts_open_location_cph ON target.main.CtsOpenLocation (Cph);
 CREATE INDEX ix_cts_open_location_keeper_post_code ON target.main.CtsOpenLocation (KeeperPostCode);

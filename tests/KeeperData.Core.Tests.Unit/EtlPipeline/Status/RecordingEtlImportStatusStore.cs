@@ -11,7 +11,7 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
     public List<(Guid ImportId, string Stage)> StagesStarted { get; } = [];
     public List<(Guid ImportId, EtlImportStageProgress Progress)> Progress { get; } = [];
     public List<Guid> Succeeded { get; } = [];
-    public List<(Guid ImportId, string Error, EtlImportErrorDetail? Detail)> Failed { get; } = [];
+    public List<(Guid ImportId, string Error)> Failed { get; } = [];
 
     public EtlImportDocument? Document { get; set; }
     public EtlImportDocument? InFlight { get; set; }
@@ -48,9 +48,9 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
         return Task.CompletedTask;
     }
 
-    public Task MarkFailedAsync(Guid importId, string error, EtlImportErrorDetail? detail, CancellationToken cancellationToken)
+    public Task MarkFailedAsync(Guid importId, string error, CancellationToken cancellationToken)
     {
-        Failed.Add((importId, error, detail));
+        Failed.Add((importId, error));
         return Task.CompletedTask;
     }
 

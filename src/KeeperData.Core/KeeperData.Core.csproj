@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="EtlPipeline\Views\Sql\krds-read-model.sql" LogicalName="KeeperData.Core.EtlPipeline.Views.Sql.krds-read-model.sql" />
+    <EmbeddedResource Include="EtlPipeline\Views\Sql\cts-open-locations.sql" LogicalName="KeeperData.Core.EtlPipeline.Views.Sql.cts-open-locations.sql" />
   </ItemGroup>
 
   <ItemGroup>

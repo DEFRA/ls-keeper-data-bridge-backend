@@ -4,7 +4,11 @@ namespace KeeperData.Infrastructure.Tests.Unit.EtlPipeline.Views;
 
 /// <summary>A small SAM extract shaped to exercise the transformation's rules: missing-value
 /// sentinels, comma-delimited relationship tokens, duplicate source rows, an invalid CPHH, and
-/// relationships pointing at holdings and herds that are not in the canonical population.</summary>
+/// relationships pointing at holdings and herds that are not in the canonical population.
+///
+/// The CTS tables are created alongside it, by <see cref="CtsExtractFixture"/>. The transformation
+/// is one script over one staging database, so a staging database missing either half does not bind
+/// - every caller needs both, and none of them needs to say so.</summary>
 public static class SamExtractFixture
 {
     /// <summary>Every column the read model reads from sam_cph_holdings, in the order the fixture
@@ -105,6 +109,8 @@ public static class SamExtractFixture
                 ('CD5678', 'NOT-A-CPHH', 'P1', 'P1', '01', 'BEEF', '2010-01-01 00:00:00', NULL),
                 ('EF9012', '77/777/7777/01', 'P1', 'P1', '01', 'BEEF', '2011-01-01 00:00:00', NULL);
             """);
+
+        CtsExtractFixture.Create(connection);
     }
 
     private static void Execute(DuckDBConnection connection, string sql)

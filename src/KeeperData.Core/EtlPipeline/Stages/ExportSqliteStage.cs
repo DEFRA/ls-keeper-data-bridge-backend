@@ -79,7 +79,8 @@ public sealed class ExportSqliteStage(
 
             var result = await viewWriter.WriteAsync(
                 new SqliteViewWriteRequest(
-                    sourcePath, targetPath, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames),
+                    sourcePath, targetPath, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames,
+                    database.SourceTimestamp),
                 cancellationToken);
 
             await EtlArtefactWrite.RunAsync(

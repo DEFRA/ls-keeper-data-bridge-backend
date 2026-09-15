@@ -2,6 +2,7 @@ using FluentAssertions;
 using KeeperData.Bridge.Worker.Coordination;
 using KeeperData.Core.EtlPipeline.Status;
 using KeeperData.Core.Locking;
+using KeeperData.Core.Pipeline;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -116,6 +117,47 @@ public class EtlImportCoordinatorTests
     {
         SetupLock(Mock.Of<IDistributedLockHandle>());
 
+        var onFailure = CaptureOnFailure();
+        var result = await _sut.StartAsync("external", null, CancellationToken.None);
+
+        await onFailure(new InvalidOperationException("Failed to renew lock for EtlImportRun"));
+
+        _statusStore.Verify(
+            s => s.MarkFailedAsync(
+                result.ImportId!.Value,
+                "InvalidOperationException: Failed to renew lock for EtlImportRun",
+                It.Is<EtlImportErrorDetail?>(d => d!.Type == "InvalidOperationException"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>A PipelineExecutionException means the executor already notified the status observer,
+    /// which recorded the failure with the richer summary and detail; writing again would clobber it.</summary>
+    [Fact]
+    public async Task StartAsync_WhenThePipelineAlreadyReportedTheFailure_LeavesTheStatusAlone()
+    {
+        SetupLock(Mock.Of<IDistributedLockHandle>());
+
+        var onFailure = CaptureOnFailure();
+        var result = await _sut.StartAsync("external", null, CancellationToken.None);
+
+        await onFailure(new PipelineExecutionException(
+            "Pipeline failed after 10ms.",
+            new InvalidOperationException("snapshot timestamp could not be parsed")));
+
+        _statusStore.Verify(
+            s => s.MarkFailedAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<EtlImportErrorDetail?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>The callback the coordinator registers with the runner, so a test can invoke it with
+    /// the kind of fault the background run would have died with.</summary>
+    private Func<Exception, Task> CaptureOnFailure()
+    {
         Func<Exception, Task>? onFailure = null;
 
         _runner
@@ -128,16 +170,6 @@ public class EtlImportCoordinatorTests
                 It.IsAny<CancellationToken>()))
             .Callback((IDistributedLockHandle _, LockRenewalSettings _, Guid _, Func<CancellationToken, Task> _, Func<Exception, Task>? failure, CancellationToken _) => onFailure = failure);
 
-        var result = await _sut.StartAsync("external", null, CancellationToken.None);
-
-        await onFailure!(new InvalidOperationException("Failed to renew lock for EtlImportRun"));
-
-        _statusStore.Verify(
-            s => s.MarkFailedAsync(
-                result.ImportId!.Value,
-                "InvalidOperationException: Failed to renew lock for EtlImportRun",
-                It.Is<EtlImportErrorDetail?>(d => d!.Type == "InvalidOperationException"),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
+        return exception => onFailure!(exception);
     }
 }

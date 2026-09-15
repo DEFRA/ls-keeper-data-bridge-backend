@@ -57,7 +57,11 @@ public sealed class EtlImportCoordinator(
             new LockRenewalSettings(_options.LockName, _options.RenewalInterval, _options.RenewalExtension),
             importId,
             token => RunPipelineAsync(importId, sourceType, dataset, token),
-            onFailure: exception => statusStore.MarkFailedAsync(importId, Summarise(exception), Detail(exception), CancellationToken.None),
+            // A PipelineExecutionException means the pipeline observer already recorded the failure
+            // with the richer summary and detail; writing again would clobber it.
+            onFailure: exception => exception is PipelineExecutionException
+                ? Task.CompletedTask
+                : statusStore.MarkFailedAsync(importId, Summarise(exception), Detail(exception), CancellationToken.None),
             cancellationToken);
 
         return EtlImportStartResult.Started(importId);

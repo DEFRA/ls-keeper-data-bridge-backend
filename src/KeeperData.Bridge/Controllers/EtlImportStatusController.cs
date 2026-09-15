@@ -86,7 +86,8 @@ public class EtlImportStatusController(
             : null,
         DuckDbPath = Qualify(EtlPipelineFolders.Staging, document.DuckDbKey),
         SqlitePath = Qualify(EtlPipelineFolders.Views, document.SqliteKey),
-        Error = document.Error
+        Error = document.Error,
+        ErrorDetail = MapDetail(document.ErrorDetail)
     };
 
     private static EtlImportStatusResponse Map(EtlImportDocument document) => new()
@@ -107,6 +108,7 @@ public class EtlImportStatusController(
             RowCount = t.RowCount
         })],
         Error = document.Error,
+        ErrorDetail = MapDetail(document.ErrorDetail),
         Stages = [.. document.Stages.Select(s => new EtlImportStageResponse
         {
             Name = s.Name,
@@ -136,4 +138,16 @@ public class EtlImportStatusController(
     /// as the staging endpoint reports.</summary>
     private static string? Qualify(string folder, string? key)
         => key is null ? null : $"{folder}/{key}";
+
+    private static EtlImportErrorDetailResponse? MapDetail(EtlImportErrorDetail? detail)
+        => detail is null ? null : new EtlImportErrorDetailResponse
+        {
+            Type = detail.Type,
+            Stage = detail.Stage,
+            Dataset = detail.Dataset,
+            FileKey = detail.FileKey,
+            RecordNumber = detail.RecordNumber,
+            Expected = detail.Expected,
+            Actual = detail.Actual
+        };
 }

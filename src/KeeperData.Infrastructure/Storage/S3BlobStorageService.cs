@@ -603,6 +603,12 @@ internal class MultipartUploadStream : Stream
                 await UploadCurrentPartAsync().ConfigureAwait(false);
             }
 
+            if (_partETags.Count == 0)
+            {
+                await StoreEmptyObjectAsync().ConfigureAwait(false);
+                return;
+            }
+
             // Complete the multipart upload
             var completeRequest = new CompleteMultipartUploadRequest
             {
@@ -624,6 +630,41 @@ internal class MultipartUploadStream : Stream
             await AbortUploadAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    /// <summary>A stream that was given nothing still has to leave an object behind, the same as a
+    /// direct upload of an empty stream, and S3 rejects a completion request carrying no parts as
+    /// malformed XML. Completion runs from disposal, which also runs on the way out of a failure, so
+    /// that rejection surfaces in place of whatever stopped the caller writing: a stage that threw on
+    /// its first record is reported as an S3 schema error instead. Abandon the multipart upload and
+    /// put the empty object directly.</summary>
+    private async Task StoreEmptyObjectAsync()
+    {
+        _logger.LogWarning(
+            "Nothing was written to {Key}, so it is stored as an empty object rather than completing a multipart upload with no parts",
+            _key);
+
+        await AbortUploadAsync().ConfigureAwait(false);
+
+        var request = new PutObjectRequest
+        {
+            BucketName = _bucketName,
+            Key = _key,
+            ContentType = _contentType,
+            InputStream = new MemoryStream()
+        };
+
+        if (_metadata != null)
+        {
+            foreach (var kvp in _metadata)
+            {
+                request.Metadata.Add(kvp.Key, kvp.Value);
+            }
+        }
+
+        await _s3Client.PutObjectAsync(request, _cancellationToken).ConfigureAwait(false);
+
+        _finalized = true;
     }
 
     private async Task AbortUploadAsync()

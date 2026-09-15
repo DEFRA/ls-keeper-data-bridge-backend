@@ -11,7 +11,7 @@ public class DuckDbConfiguration
     /// the entry point it looks for from it.</summary>
     public string SqliteExtensionPath { get; set; } = "/opt/duckdb-extensions/sqlite_scanner.duckdb_extension";
 
-    /// <summary>Caps DuckDB's working set, e.g. "1GB". Left unset, DuckDB sizes itself against the
-    /// host rather than the container, which on a memory-limited task is the wrong number.</summary>
+    /// <summary>Optionally overrides DuckDB's managed-memory limit, e.g. "1GB". Left unset,
+    /// DuckDB uses 80% of the smaller of host memory and the Linux cgroup limit.</summary>
     public string? MemoryLimit { get; set; }
 }

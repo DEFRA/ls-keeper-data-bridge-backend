@@ -2,6 +2,7 @@ using DuckDB.NET.Data;
 using KeeperData.Core.EtlPipeline.Views;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 
 namespace KeeperData.Infrastructure.EtlPipeline.Views;
 
@@ -17,6 +18,11 @@ public sealed class DuckDbSqliteViewWriter(
     IOptions<DuckDbConfiguration> configuration,
     ILogger<DuckDbSqliteViewWriter> logger) : ISqliteViewWriter
 {
+    /// <summary>The variable the transformation reads its as-at date from. Set before the script
+    /// runs rather than written into it, so that the script stays a constant and its fingerprint
+    /// identifies the transformation rather than the run.</summary>
+    private const string QueryDateVariable = "cts_query_date";
+
     private readonly DuckDbConfiguration _configuration = configuration.Value;
 
     public async Task<SqliteViewWriteResult> WriteAsync(
@@ -39,6 +45,8 @@ public sealed class DuckDbSqliteViewWriter(
         await ExecuteAsync(connection, $"ATTACH {Literal(request.SourceDatabasePath)} AS source (READ_ONLY)", cancellationToken);
         await ExecuteAsync(connection, $"ATTACH {Literal(request.TargetDatabasePath)} AS target (TYPE sqlite)", cancellationToken);
         await ExecuteAsync(connection, "USE source", cancellationToken);
+
+        await SetQueryDateAsync(connection, request.QueryDate, cancellationToken);
 
         await ExecuteAsync(connection, request.Sql, cancellationToken);
 
@@ -87,6 +95,10 @@ public sealed class DuckDbSqliteViewWriter(
         string targetDatabasePath,
         CancellationToken cancellationToken)
     {
+        // Physical row order is not part of the read-model contract. Letting DuckDB reorder work
+        // avoids retaining order-tracking buffers that otherwise count against the memory limit.
+        await ExecuteAsync(connection, "SET preserve_insertion_order=false", cancellationToken);
+
         // Spilling belongs beside the output, on the volume the run was sized for, not wherever
         // DuckDB would otherwise choose.
         var workingDirectory = Path.GetDirectoryName(targetDatabasePath);
@@ -103,6 +115,19 @@ public sealed class DuckDbSqliteViewWriter(
         {
             await ExecuteAsync(connection, $"SET memory_limit={Literal(_configuration.MemoryLimit)}", cancellationToken);
         }
+    }
+
+    private static async Task SetQueryDateAsync(
+        DuckDBConnection connection,
+        DateTimeOffset queryDate,
+        CancellationToken cancellationToken)
+    {
+        // The date part alone: the snapshots carry a time of day, but every rule the transformation
+        // applies it to is date-granular, and keeping the time would make an afternoon run of the
+        // same snapshots a different query than a morning one.
+        var value = queryDate.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        await ExecuteAsync(connection, $"SET VARIABLE {QueryDateVariable} = DATE {Literal(value)}", cancellationToken);
     }
 
     private static async Task ExecuteAsync(DuckDBConnection connection, string sql, CancellationToken cancellationToken)

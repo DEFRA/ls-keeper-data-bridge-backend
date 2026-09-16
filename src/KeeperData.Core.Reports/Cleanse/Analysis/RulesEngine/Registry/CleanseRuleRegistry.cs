@@ -17,17 +17,33 @@ public sealed class CleanseRuleRegistry
     private readonly IReadOnlyList<ICleanseRule> _samPrimaryRules;
 
     /// <summary>
-    /// Initialises the registry, ordering rules by priority.
+    /// Initialises the registry with the rules it is to hold, ordering them by priority.
     /// </summary>
-    /// <param name="rules">The rules to register. Defaults to <see cref="CreateDefaultRules"/>.</param>
-    public CleanseRuleRegistry(IEnumerable<ICleanseRule>? rules = null)
+    /// <remarks>
+    /// The rules are a required argument rather than an optional one that falls back to
+    /// <see cref="CreateDefaultRules"/>. Microsoft's dependency injection container ignores
+    /// C# default parameter values, and resolves an unregistered
+    /// <c>IEnumerable&lt;ICleanseRule&gt;</c> to an empty sequence rather than to null. A
+    /// defaulted parameter would therefore leave the registry silently empty, and the
+    /// analysis would run to completion finding no issues at all. Registration states the
+    /// rule set explicitly instead.
+    /// </remarks>
+    /// <param name="rules">The rules to register. Must not be empty.</param>
+    public CleanseRuleRegistry(IEnumerable<ICleanseRule> rules)
     {
+        ArgumentNullException.ThrowIfNull(rules);
+
         _all =
         [
-            .. (rules ?? CreateDefaultRules())
+            .. rules
                 .OrderBy(rule => rule.Priority)
                 .ThenBy(rule => rule.Descriptor.UserRuleNo, StringComparer.Ordinal)
         ];
+
+        if (_all.Count == 0)
+        {
+            throw new ArgumentException("The cleanse rule registry cannot be constructed without rules.", nameof(rules));
+        }
 
         var activeRules = _all.Where(rule => rule.Status == RuleStatus.Active).ToList();
 

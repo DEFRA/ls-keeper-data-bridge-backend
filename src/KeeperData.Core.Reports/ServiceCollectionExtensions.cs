@@ -81,7 +81,7 @@ public static class ServiceCollectionExtensions
         // Register engine
         if (CleanseEngineToggle.UseRuleBasedEngine)
         {
-            services.AddSingleton<CleanseRuleRegistry>();
+            services.AddSingleton(_ => new CleanseRuleRegistry(CleanseRuleRegistry.CreateDefaultRules()));
             services.AddScoped<ICleanseRuleService, CleanseRuleService>();
             services.AddScoped<ICleanseAnalysisEngine, RuleBasedCleanseAnalysisEngine>();
         }

@@ -7,7 +7,28 @@ namespace KeeperData.Core.Tests.Unit.CleanseReporting.Cleanse.Analysis.RulesEngi
 
 public class CleanseRuleRegistryTests
 {
-    private readonly CleanseRuleRegistry _sut = new();
+    private readonly CleanseRuleRegistry _sut = new(CleanseRuleRegistry.CreateDefaultRules());
+
+    [Fact]
+    public void CreateDefaultRules_ShouldNotBeEmpty()
+    {
+        CleanseRuleRegistry.CreateDefaultRules().Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Constructor_WhenGivenNoRules_ShouldThrowRatherThanBuildAnEmptyRegistry()
+    {
+        var act = () => new CleanseRuleRegistry([]);
+
+        act.Should().Throw<ArgumentException>().WithMessage("*cannot be constructed without rules*");
+    }
+
+    [Fact]
+    public void For_ShouldFindActiveRulesOnBothPasses()
+    {
+        _sut.For(AnalysisPass.CtsPrimary).Should().NotBeEmpty();
+        _sut.For(AnalysisPass.SamPrimary).Should().NotBeEmpty();
+    }
 
     [Fact]
     public void All_ShouldContainEveryKnownRule()

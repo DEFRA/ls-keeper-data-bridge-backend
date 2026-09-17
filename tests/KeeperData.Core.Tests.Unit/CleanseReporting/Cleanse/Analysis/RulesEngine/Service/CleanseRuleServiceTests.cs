@@ -67,7 +67,7 @@ public class CleanseRuleServiceTests
     [Fact]
     public void Evaluate_WithTheRealRuleSet_ShouldReturnIssuesInPriorityOrder()
     {
-        var sut = new CleanseRuleService(new CleanseRuleRegistry(), NullLogger<CleanseRuleService>.Instance);
+        var sut = new CleanseRuleService(new CleanseRuleRegistry(CleanseRuleRegistry.CreateDefaultRules()), NullLogger<CleanseRuleService>.Instance);
 
         var context = CtsSamRuleContextBuilder.Build(
             samAnimalSpeciesCode: "SHP",

@@ -31,7 +31,7 @@ public class RuleBasedCleanseAnalysisEngineTests
 
     public RuleBasedCleanseAnalysisEngineTests()
     {
-        var ruleService = new CleanseRuleService(new CleanseRuleRegistry(), NullLogger<CleanseRuleService>.Instance);
+        var ruleService = new CleanseRuleService(new CleanseRuleRegistry(CleanseRuleRegistry.CreateDefaultRules()), NullLogger<CleanseRuleService>.Instance);
 
         _sut = new RuleBasedCleanseAnalysisEngine(_dataServiceMock.Object, _issueServiceMock.Object,
             new FakeThrottler(), NullLogger<RuleBasedCleanseAnalysisEngine>.Instance, ruleService);

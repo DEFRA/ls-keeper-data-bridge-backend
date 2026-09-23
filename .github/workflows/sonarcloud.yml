@@ -1,5 +1,12 @@
 name: Run SonarCloud coverage scan
 
+# The transformation SQL under src/KeeperData.Core/EtlPipeline/Views/Sql is excluded from
+# analysis. SonarCloud has no DuckDB dialect and analyses those files as PL/SQL, so its findings
+# are drawn from rules about a different language: it flagged the projection's joins as excessive
+# when that shape is inherent to the report being reproduced. The rule the SQL implements is
+# specified and tested elsewhere - see the file header and CtsOpenLocationTests - rather than
+# guarded by static analysis that cannot parse it.
+
 on:
   workflow_call:
     secrets:
@@ -73,7 +80,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed to get PR information, if any
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          ./.sonar/scanner/dotnet-sonarscanner begin /k:"DEFRA_ls-keeper-data-bridge-backend" /o:"defra" /d:sonar.token="$SONAR_TOKEN" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml
+          ./.sonar/scanner/dotnet-sonarscanner begin /k:"DEFRA_ls-keeper-data-bridge-backend" /o:"defra" /d:sonar.token="$SONAR_TOKEN" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml /d:sonar.exclusions="src/KeeperData.Core/EtlPipeline/Views/Sql/**"
           dotnet build KeeperData.Bridge.sln --no-incremental
           version="$(tr -d '[:space:]' < ./src/KeeperData.Infrastructure/bin/Debug/net10.0/duckdb-version.txt)"
           chmod +x ./scripts/fetch-duckdb-sqlite-extension.sh

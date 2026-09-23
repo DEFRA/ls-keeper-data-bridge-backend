@@ -126,8 +126,40 @@ public static class SamExtractFixture
                 ('EF9012', '77/777/7777/01', 'P1', 'P1', '01', 'BEEF', '2011-01-01 00:00:00', NULL);
             """);
 
+        // The address numbers go in by UPDATE rather than the INSERT above: a test may withhold the
+        // columns entirely (the extract-never-carried-them case), and an UPDATE of a missing column
+        // would not compile. Only columns present are set, per row.
+        var addressNumbers = new (string Feature, string? Udprn, string? Easting, string? Northing)[]
+        {
+            ("Superseded Farm", "80000001", "300001", "400001"),
+            ("Main Farm", "80000002", "300002", "400002"),
+            ("Known Farm", "80000003", "300003", "400003"),
+            ("Notknown", null, null, null),
+            ("Spaced Farm", "80000005", "300005", "400005"),
+            ("Tied Alpha", "80000006", "300006", "400006"),
+            ("Tied Beta", "80000007", "300007", "400007"),
+            ("Sentinel Only", null, null, null)
+        };
+
+        foreach (var (feature, udprn, easting, northing) in addressNumbers)
+        {
+            var assignments = new List<string>();
+
+            if (!omittedHoldingColumns.Contains("UDPRN")) assignments.Add($"UDPRN = {Literal(udprn)}");
+            if (!omittedHoldingColumns.Contains("EASTING")) assignments.Add($"EASTING = {Literal(easting)}");
+            if (!omittedHoldingColumns.Contains("NORTHING")) assignments.Add($"NORTHING = {Literal(northing)}");
+
+            if (assignments.Count > 0)
+            {
+                Execute(connection,
+                    $"UPDATE sam_cph_holdings SET {string.Join(", ", assignments)} WHERE FEATURE_NAME = '{feature}'");
+            }
+        }
+
         CtsExtractFixture.Create(connection);
     }
+
+    private static string Literal(string? value) => value is null ? "NULL" : $"'{value}'";
 
     private static void Execute(DuckDBConnection connection, string sql)
     {

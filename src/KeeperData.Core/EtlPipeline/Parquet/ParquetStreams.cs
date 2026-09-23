@@ -1,7 +1,24 @@
-namespace KeeperData.Core.EtlPipeline.Snapshots;
+namespace KeeperData.Core.EtlPipeline.Parquet;
 
-public sealed partial class ParquetDeltaMergeEngine
+/// <summary>Parquet is read back to front, so a forward-only stream (an object download) is
+/// buffered before it can be opened.</summary>
+public static class ParquetStreams
 {
+    public static async Task<Stream> AsSeekableAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+            return new NonDisposingStream(stream);
+        }
+
+        var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+        buffer.Position = 0;
+
+        return buffer;
+    }
+
     /// <summary>Lets the reader own a stream it must not close, because the caller disposes it.</summary>
     private sealed class NonDisposingStream(Stream inner) : Stream
     {

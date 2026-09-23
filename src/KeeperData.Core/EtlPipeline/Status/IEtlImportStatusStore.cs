@@ -55,6 +55,7 @@ public sealed record EtlImportDatasetProgress(string Dataset)
     public IReadOnlyList<(string Key, long Size)> SourceFiles { get; init; } = [];
     public IReadOnlyList<string> RawKeys { get; init; } = [];
     public IReadOnlyList<string> NormalisedKeys { get; init; } = [];
+    public IReadOnlyList<string> OptimisedKeys { get; init; } = [];
     public string? SnapshotKey { get; init; }
     public DateTimeOffset? SnapshotSourceTimestamp { get; init; }
     public long? RowCount { get; init; }

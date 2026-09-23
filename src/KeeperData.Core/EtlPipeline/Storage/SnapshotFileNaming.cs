@@ -1,9 +1,15 @@
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.EtlPipeline.Payloads;
 
 namespace KeeperData.Core.EtlPipeline.Storage;
 
 /// <summary>A dataset file paired with the source timestamp read from its name.</summary>
 public sealed record TimestampedKey(string Key, DateTimeOffset Timestamp);
+
+/// <summary>An optimised file paired with the source timestamp read from its key's name - the
+/// timestamp still comes from the key, so an optimised artefact orders exactly as the normalised
+/// file it was written from.</summary>
+public sealed record TimestampedFile(OptimisedFile File, DateTimeOffset Timestamp);
 
 /// <summary>
 /// Naming convention for the files a dataset owns inside the <see cref="EtlPipelineFolders.Normalised"/>
@@ -158,6 +164,30 @@ public static class SnapshotFileNaming
                 $"Dataset '{definition.Name}' has {duplicate.Count()} files with source timestamp " +
                 $"{duplicate.Key.UtcDateTime.ToString(definition.DateTimePattern)} " +
                 $"({string.Join(", ", duplicate.Select(item => item.Key))}); there is no rule for which to apply first");
+    }
+
+    /// <summary>As <see cref="OrderedByTimestamp(DataSetDefinition, IEnumerable{string})"/>, keeping
+    /// the optimised file (and so the folder it resolves in) alongside its timestamp.</summary>
+    public static IReadOnlyList<TimestampedFile> OrderedByTimestamp(DataSetDefinition definition, IEnumerable<OptimisedFile> files)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(files);
+
+        var ordered = files
+            .Select(file => new TimestampedFile(file, DataSetFileNaming.ExtractTimestamp(definition, file.Key)))
+            .OrderBy(item => item.Timestamp)
+            .ToList();
+
+        var duplicate = ordered
+            .GroupBy(item => item.Timestamp)
+            .FirstOrDefault(group => group.Count() > 1);
+
+        return duplicate is null
+            ? ordered
+            : throw new InvalidOperationException(
+                $"Dataset '{definition.Name}' has {duplicate.Count()} files with source timestamp " +
+                $"{duplicate.Key.UtcDateTime.ToString(definition.DateTimePattern)} " +
+                $"({string.Join(", ", duplicate.Select(item => item.File.Key))}); there is no rule for which to apply first");
     }
 
     /// <summary>Non-throwing form of <see cref="DataSetFileNaming.ExtractTimestamp"/>.</summary>

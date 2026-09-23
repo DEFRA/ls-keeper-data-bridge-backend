@@ -1,4 +1,5 @@
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.EtlPipeline.Parquet;
 using Parquet;
 using Parquet.Schema;
 
@@ -135,18 +136,39 @@ public sealed partial class ParquetDeltaMergeEngine
             var fields = _fields.ToArray();
             var rows = _rows.Where(row => row is not null).ToList();
 
+            // A column non-nullable where it arrived can still hold nulls in the merged output - a
+            // file that dropped it leaves nulls behind - so it is widened before the schema is built.
+            for (var column = 0; column < fields.Length; column++)
+            {
+                if (!fields[column].IsNullable && rows.Exists(row => row![column] is null))
+                {
+                    fields[column] = AsNullable(fields[column]);
+                }
+            }
+
             await using var writer = await ParquetWriter.CreateAsync(new ParquetSchema(fields), output, cancellationToken: cancellationToken);
             using var rowGroup = writer.CreateRowGroup();
 
             for (var column = 0; column < fields.Length; column++)
             {
-                var values = new string?[rows.Count];
-                for (var row = 0; row < rows.Count; row++)
-                    values[row] = rows[row]![column];
+                var field = fields[column];
+                var values = Array.CreateInstance(ParquetColumns.ElementType(field), rows.Count);
 
-                await rowGroup.WriteAsync(fields[column], (IReadOnlyCollection<string?>)values);
+                for (var row = 0; row < rows.Count; row++)
+                {
+                    // Canonical text back to the field's type: the inverse of the read, so it cannot
+                    // fail for a value the read produced.
+                    values.SetValue(ParquetValueText.Parse(ParquetColumns.ElementType(field), rows[row]![column]), row);
+                }
+
+                await ParquetColumns.WriteAsync(rowGroup, field, values, cancellationToken);
             }
         }
+
+        private static DataField AsNullable(DataField field)
+            => field is DecimalDataField decimalField
+                ? new DecimalDataField(field.Name, decimalField.Precision, decimalField.Scale, isNullable: true)
+                : new DataField(field.Name, Nullable.GetUnderlyingType(field.ClrType) ?? field.ClrType, isNullable: true);
 
         /// <summary>Reconciles the file's columns with the output's, widening the output for any column
         /// it introduces, and returns where each output column is found in the file - or -1 when the
@@ -156,9 +178,9 @@ public sealed partial class ParquetDeltaMergeEngine
             var establishing = _fields.Count == 0;
 
             var added = MergeNewColumns(table);
-            var (indexes, missing) = BuildIndexMap(table);
+            var (indexes, missing, retyped) = BuildIndexMap(table);
 
-            return new Alignment(indexes, new SchemaDrift(missing, establishing ? [] : added));
+            return new Alignment(indexes, new SchemaDrift(missing, establishing ? [] : added, retyped));
         }
 
         /// <summary>Adds any column the file introduces to the output schema, widening the rows already
@@ -183,11 +205,18 @@ public sealed partial class ParquetDeltaMergeEngine
         }
 
         /// <summary>For each output column, where it is found in the file - or -1 when the file does not
-        /// carry it - alongside the names of any output columns the file is missing.</summary>
-        private (int[] Indexes, List<string> Missing) BuildIndexMap(ParquetTable table)
+        /// carry it - alongside the names of any output columns the file is missing, and the columns the
+        /// file retyped.
+        ///
+        /// A column two files disagree on the type of widens to string rather than failing the merge:
+        /// the values are already held as canonical text, so a string column keeps every cut of the data
+        /// legible. A column established as a string is already the widest form, so a typed file arriving
+        /// later needs no widening - its values format into the same text.</summary>
+        private (int[] Indexes, List<string> Missing, List<RetypedColumn> Retyped) BuildIndexMap(ParquetTable table)
         {
             var indexes = new int[_fields.Count];
             var missing = new List<string>();
+            var retyped = new List<RetypedColumn>();
 
             for (var column = 0; column < _fields.Count; column++)
             {
@@ -197,10 +226,48 @@ public sealed partial class ParquetDeltaMergeEngine
                 if (indexes[column] < 0)
                 {
                     missing.Add(name);
+                    continue;
+                }
+
+                var held = _fields[column];
+                var incoming = table.Fields[indexes[column]];
+
+                if (!IsText(held) && !SameType(held, incoming))
+                {
+                    retyped.Add(new RetypedColumn(name, TypeName(held), TypeName(incoming)));
+                    _fields[column] = new DataField<string?>(name);
                 }
             }
 
-            return (indexes, missing);
+            return (indexes, missing, retyped);
+        }
+
+        private static bool SameType(DataField a, DataField b)
+        {
+            var typeA = Nullable.GetUnderlyingType(a.ClrType) ?? a.ClrType;
+            var typeB = Nullable.GetUnderlyingType(b.ClrType) ?? b.ClrType;
+
+            return typeA == typeB
+                && (a is not DecimalDataField decimalA
+                    || b is DecimalDataField decimalB && decimalA.Precision == decimalB.Precision && decimalA.Scale == decimalB.Scale);
+        }
+
+        /// <summary>Parquet.Net declares a string field's CLR type as ReadOnlyMemory&lt;char&gt; and a
+        /// byte array's as ReadOnlyMemory&lt;byte&gt;; both are already the widest form a column can take.</summary>
+        private static bool IsText(DataField field)
+        {
+            var type = Nullable.GetUnderlyingType(field.ClrType) ?? field.ClrType;
+
+            return type == typeof(string) || type == typeof(ReadOnlyMemory<char>) || type == typeof(ReadOnlyMemory<byte>);
+        }
+
+        private static string TypeName(DataField field)
+        {
+            var type = Nullable.GetUnderlyingType(field.ClrType) ?? field.ClrType;
+
+            return type == typeof(ReadOnlyMemory<char>) ? "string"
+                : type == typeof(ReadOnlyMemory<byte>) ? "byte[]"
+                : type.Name;
         }
 
         /// <summary>Grows the rows already held so they carry a null for each newly added column.</summary>
@@ -292,6 +359,11 @@ public sealed partial class ParquetDeltaMergeEngine
     private sealed record AppliedDelta(long Upserted, long Deleted, long IgnoredDeletes, long Rejected, SchemaDrift Drift);
 
     /// <summary>How one file's columns differed from the output's: <paramref name="Missing"/> columns the
-    /// output carries and the file does not, <paramref name="Added"/> columns the file introduced.</summary>
-    private sealed record SchemaDrift(IReadOnlyList<string> Missing, IReadOnlyList<string> Added);
+    /// output carries and the file does not, <paramref name="Added"/> columns the file introduced, and
+    /// <paramref name="Retyped"/> columns whose incoming type did not match the output's and so were
+    /// widened to string.</summary>
+    private sealed record SchemaDrift(IReadOnlyList<string> Missing, IReadOnlyList<string> Added, IReadOnlyList<RetypedColumn> Retyped);
+
+    /// <summary>A column a later file carries as a different type than the output established.</summary>
+    private sealed record RetypedColumn(string Name, string HeldType, string IncomingType);
 }

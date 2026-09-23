@@ -172,6 +172,33 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     }
 
     [Fact]
+    public async Task Stores_the_numeric_address_fields_as_integers()
+    {
+        var target = await RunAsync();
+
+        // The most recent record supplies the numbers, and they land as SQLite integers even
+        // though the staging column is VARCHAR - the target type is declared, not inherited.
+        Strings(target, "SELECT Udprn || '|' || Easting || '|' || Northing || '|' || typeof(Udprn) " +
+                        "FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Equal(["80000002|300002|400002|integer"]);
+
+        // The later '02/345/6789' record carries no numbers, so the earlier real ones win.
+        Strings(target, "SELECT Udprn FROM Holding WHERE Cph='02/345/6789'")
+            .Should().Equal(["80000003"]);
+    }
+
+    [Fact]
+    public async Task The_address_numbers_follow_the_same_record_the_name_came_from()
+    {
+        var target = await RunAsync();
+
+        // The ordering date ties for 04/567/8901; whichever record wins, its numbers come with it.
+        Strings(target, "SELECT FeatureName || '|' || Udprn FROM Holding WHERE Cph='04/567/8901'")
+            .Should().ContainSingle()
+            .Which.Should().BeOneOf("Tied Alpha|80000006", "Tied Beta|80000007");
+    }
+
+    [Fact]
     public async Task Falls_back_to_an_earlier_record_when_the_latest_name_is_a_placeholder()
     {
         var target = await RunAsync();
@@ -375,6 +402,62 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         {
             Rows(second, table).Should().Equal(Rows(first, table),
                 "{0} content must not vary between runs of one snapshot", table);
+        }
+    }
+
+    /// <summary>The optimise stage types staging columns natively; the read model reads them
+    /// through _txt VARCHAR views and declares its own output types, so a typed source must
+    /// produce byte-identical content to the all-string source it came from.</summary>
+    [Fact]
+    public async Task Produces_the_same_read_model_from_typed_staging_columns()
+    {
+        var typedSource = Path.Combine(_workingDirectory, "staging-typed.duckdb");
+        SamExtractFixture.Create(typedSource,
+            omittedHoldingColumns: [],
+            holdingColumnTypes: new Dictionary<string, string>
+            {
+                ["SAON_START_NUMBER"] = "BIGINT",
+                ["UDPRN"] = "BIGINT",
+                ["EASTING"] = "DOUBLE",
+                ["NORTHING"] = "DOUBLE",
+                ["FEATURE_ADDRESS_FROM_DATE"] = "TIMESTAMP",
+                ["FEATURE_ADDRESS_TO_DATE"] = "TIMESTAMP"
+            },
+            herdColumnTypes: new Dictionary<string, string>
+            {
+                ["ANIMAL_GROUP_ID_MCH_FRM_DAT"] = "TIMESTAMP",
+                ["ANIMAL_GROUP_ID_MCH_TO_DAT"] = "TIMESTAMP"
+            });
+
+        var target = Path.Combine(_workingDirectory, "typed.sqlite");
+
+        var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
+            typedSource, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+
+        result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
+
+        var baseline = await RunAsync("baseline.sqlite");
+
+        foreach (var table in SqliteViewDefinition.TableNames.Where(name => name != "Holding"))
+        {
+            Rows(target, table).Should().Equal(Rows(baseline, table),
+                "a typed staging column must read the same through the _txt view as the string it holds");
+        }
+
+        // Every holding but the tied-date one must be identical. The tie is settled on a row
+        // fingerprint, and a DOUBLE column renders '300006.0' where the VARCHAR holds '300006', so
+        // the fingerprint differs and either tied record may win - both are valid, provided the
+        // whole row follows the winner.
+        Rows(target, "Holding").Where(row => !row.Contains("04/567/8901"))
+            .Should().Equal(Rows(baseline, "Holding").Where(row => !row.Contains("04/567/8901")),
+                "only the documented-arbitrary tie-break may differ between staging types");
+
+        foreach (var database in new[] { target, baseline })
+        {
+            Strings(database, "SELECT FeatureName || '|' || Street || '|' || Udprn " +
+                              "FROM Holding WHERE Cph='04/567/8901'")
+                .Should().ContainSingle()
+                .Which.Should().BeOneOf("Tied Alpha|Alpha Street|80000006", "Tied Beta|Beta Street|80000007");
         }
     }
 

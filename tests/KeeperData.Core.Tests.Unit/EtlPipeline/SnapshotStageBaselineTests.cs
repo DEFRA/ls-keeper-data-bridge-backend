@@ -40,7 +40,7 @@ public class SnapshotStageBaselineTests
                 _storage,
                 new ParquetDeltaMergeEngine(NullLogger<ParquetDeltaMergeEngine>.Instance),
                 NullLogger<SnapshotStage>.Instance),
-            new NormalisedFileSet[] { new(Cts) });
+            new OptimisedFileSet[] { new(Cts) });
 
     private string PutBulk(string part, string timestamp, params string[] rows)
         => PutBulkRun("00001", part, timestamp, rows);

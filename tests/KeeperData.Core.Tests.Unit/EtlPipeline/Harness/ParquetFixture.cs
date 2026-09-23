@@ -1,3 +1,4 @@
+using KeeperData.Core.EtlPipeline.Parquet;
 using Parquet;
 using Parquet.Schema;
 
@@ -50,8 +51,47 @@ public static class ParquetFixture
         }
     }
 
+    /// <summary>A parquet file with typed columns - the shape optimise output and snapshots now
+    /// carry. Values must be arrays of the field's CLR type, e.g.
+    /// <c>(new DataField&lt;long?&gt;("N"), new long?[] { 1, null })</c>.</summary>
+    public static byte[] FromTyped(params (DataField Field, Array Values)[] columns)
+    {
+        var buffer = new MemoryStream();
+        WriteTypedAsync(columns, buffer).GetAwaiter().GetResult();
+
+        return buffer.ToArray();
+    }
+
+    private static async Task WriteTypedAsync((DataField Field, Array Values)[] columns, MemoryStream buffer)
+    {
+        await using var writer = await ParquetWriter.CreateAsync(
+            new ParquetSchema([.. columns.Select(column => column.Field)]), buffer);
+        using var rowGroup = writer.CreateRowGroup();
+
+        foreach (var (field, values) in columns)
+        {
+            await ParquetColumns.WriteAsync(rowGroup, field, values, CancellationToken.None);
+        }
+    }
+
+    /// <summary>The schema a file carries, as (name, CLR type) pairs, for asserting what the
+    /// optimise stage resolved a column to.</summary>
+    public static IReadOnlyList<(string Name, Type ClrType)> SchemaOf(byte[] content)
+    {
+        return SchemaAsync(content).GetAwaiter().GetResult();
+
+        static async Task<IReadOnlyList<(string, Type)>> SchemaAsync(byte[] bytes)
+        {
+            await using var reader = await ParquetReader.CreateAsync(new MemoryStream(bytes));
+
+            return [.. reader.Schema.GetDataFields()
+                .Select(field => (field.Name, Nullable.GetUnderlyingType(field.ClrType) ?? field.ClrType))];
+        }
+    }
+
     /// <summary>The file read back as pipe-separated lines, header first, so an assertion can be
-    /// written the same way as the fixture.</summary>
+    /// written the same way as the fixture. Typed columns are rendered in their canonical text
+    /// form, so a string column and an Int64 column both read as what they contain.</summary>
     public static IReadOnlyList<string> ToLines(byte[] content)
     {
         return ReadLinesAsync(content).GetAwaiter().GetResult();
@@ -73,9 +113,7 @@ public static class ParquetFixture
 
             for (var col = 0; col < fields.Length; col++)
             {
-                var buf = new string?[rowCount];
-                await rowGroup.ReadAsync(fields[col], buf.AsMemory());
-                columns[col] = buf;
+                columns[col] = await ParquetColumns.ReadAsStringsAsync(rowGroup, fields[col], CancellationToken.None);
             }
 
             for (var row = 0; row < rowCount; row++)

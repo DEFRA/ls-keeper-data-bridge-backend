@@ -5,6 +5,7 @@ using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Staging;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Status;
+using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.EtlPipeline.Views;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage.Dtos;
@@ -79,6 +80,25 @@ public class EtlImportStatusObserverTests
 
         _store.Progress[0].Progress.Datasets.Single().RawKeys.Should().Equal("sam_cph_holdings/a.csv");
         _store.Progress[1].Progress.Datasets.Single().NormalisedKeys.Should().Equal("sam_cph_holdings/a.parquet");
+    }
+
+    [Fact]
+    public async Task Records_the_optimised_keys_with_the_folder_each_file_resolved_to()
+    {
+        var definition = StageRunner.Definition("sam_cph_holdings");
+
+        await StageCompleted("optimise", new OptimisedFileSet(definition)
+        {
+            Files =
+            [
+                new OptimisedFile(EtlPipelineFolders.Optimised, "sam_cph_holdings/a.parquet"),
+                new OptimisedFile(EtlPipelineFolders.Normalised, "sam_cph_holdings/b.parquet")
+            ]
+        });
+
+        _store.Progress.Single().Progress.Datasets.Single().OptimisedKeys.Should().Equal(
+            ["optimised/sam_cph_holdings/a.parquet", "normalised/sam_cph_holdings/b.parquet"],
+            "a rewritten file is qualified with optimised/, a pass-through file with normalised/");
     }
 
     [Fact]

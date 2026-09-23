@@ -124,6 +124,13 @@ public sealed partial class ParquetDeltaMergeEngine(ILogger<ParquetDeltaMergeEng
                 "{FileKey} introduces column(s) {AddedColumns} to dataset {DataSet}; they are null for the rows already held",
                 key, string.Join(", ", drift.Added), definition.Name);
         }
+
+        foreach (var retyped in drift.Retyped)
+        {
+            logger.LogWarning(
+                "{FileKey} carries column {Column} as {IncomingType} but dataset {DataSet} holds it as {HeldType}; the column is widened to string",
+                key, retyped.Name, retyped.IncomingType, definition.Name, retyped.HeldType);
+        }
     }
 
     private static async Task<ParquetTable> ReadTableAsync(DeltaMergeSource source, CancellationToken cancellationToken)

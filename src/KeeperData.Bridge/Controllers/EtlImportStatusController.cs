@@ -122,6 +122,7 @@ public class EtlImportStatusController(
             SourceFiles = [.. d.SourceFiles.Select(f => new EtlImportSourceFileResponse { Key = f.Key, Size = f.Size })],
             RawPaths = [.. d.RawKeys.Select(k => Qualify(EtlPipelineFolders.Raw, k)!)],
             NormalisedPaths = [.. d.NormalisedKeys.Select(k => Qualify(EtlPipelineFolders.Normalised, k)!)],
+            OptimisedPaths = [.. d.OptimisedKeys],
             SnapshotPath = Qualify(EtlPipelineFolders.Snapshots, d.SnapshotKey),
             SnapshotSourceTimestampUtc = d.SnapshotSourceTimestampUtc,
             RowCount = d.RowCount,

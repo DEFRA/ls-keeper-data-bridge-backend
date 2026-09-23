@@ -26,11 +26,24 @@ public static class SamExtractFixture
 
     public static void Create(string databasePath) => Create(databasePath, omittedHoldingColumns: []);
 
-    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns)
+    /// <param name="holdingColumnTypes">Native DuckDB types for named sam_cph_holdings columns -
+    /// the shape a staging table takes once the optimise stage has typed a column. Values are still
+    /// inserted as literals; DuckDB casts them on the way in.</param>
+    /// <param name="herdColumnTypes">The same for sam_herd.</param>
+    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns,
+        IReadOnlyDictionary<string, string>? holdingColumnTypes = null,
+        IReadOnlyDictionary<string, string>? herdColumnTypes = null)
     {
         var holdingColumns = string.Join(", ",
             HoldingColumns.Where(column => !omittedHoldingColumns.Contains(column))
-                          .Select(column => $"{column} VARCHAR"));
+                          .Select(column => $"{column} {TypeOf(holdingColumnTypes, column)}"));
+
+        var herdColumns = string.Join(", ",
+            new[] { "HERDMARK", "CPHH", "KEEPER_PARTY_IDS", "OWNER_PARTY_IDS",
+                    "ANIMAL_SPECIES_CODE", "ANIMAL_PURPOSE_CODE", "DISEASE_TYPE",
+                    "INTERVALS", "INTERVAL_UNIT_OF_TIME", "MOVEMENT_RSTRCTN_RSN_CODE",
+                    "ANIMAL_GROUP_ID_MCH_FRM_DAT", "ANIMAL_GROUP_ID_MCH_TO_DAT" }
+                .Select(column => $"{column} {TypeOf(herdColumnTypes, column)}"));
 
         using var connection = new DuckDBConnection($"Data Source={databasePath}");
         connection.Open();
@@ -47,11 +60,7 @@ public static class SamExtractFixture
                 PARTY_ID VARCHAR, PERSON_GIVEN_NAME VARCHAR, PERSON_GIVEN_NAME2 VARCHAR, PERSON_INITIALS VARCHAR,
                 PERSON_FAMILY_NAME VARCHAR, ORGANISATION_NAME VARCHAR, CPHS VARCHAR);
 
-            CREATE TABLE sam_herd (
-                HERDMARK VARCHAR, CPHH VARCHAR, KEEPER_PARTY_IDS VARCHAR, OWNER_PARTY_IDS VARCHAR,
-                ANIMAL_SPECIES_CODE VARCHAR, ANIMAL_PURPOSE_CODE VARCHAR, DISEASE_TYPE VARCHAR,
-                INTERVALS VARCHAR, INTERVAL_UNIT_OF_TIME VARCHAR, MOVEMENT_RSTRCTN_RSN_CODE VARCHAR,
-                ANIMAL_GROUP_ID_MCH_FRM_DAT VARCHAR, ANIMAL_GROUP_ID_MCH_TO_DAT VARCHAR);
+            CREATE TABLE sam_herd ({herdColumns});
             """);
 
         Execute(connection, """
@@ -66,14 +75,16 @@ public static class SamExtractFixture
                 -- Different missing-value sentinels represent the same profile and must collapse.
                 ('01/234/5678', 'Main Farm', 'PERMANENT', 'New Street', 'Exeter', 'EX1 1AA',
                  'ENGLAND', '01', NULL, '-', NULL, ' M ', '2025-06-01 00:00:00'),
-                -- The later record names no location, so the earlier real name must survive.
+                -- The later record names no location, so the earlier real name must survive - as
+                -- must its address numbers, since the later row carries none.
                 ('02/345/6789', 'Known Farm', 'TEMPORARY', NULL, 'Truro', '',
                  'SCOTLAND', NULL, NULL, NULL, NULL, NULL, '2024-01-01 00:00:00'),
                 ('02/345/6789', 'Notknown', 'TEMPORARY', NULL, 'Truro', '',
                  'SCOTLAND', NULL, NULL, NULL, NULL, NULL, '2025-06-01 00:00:00'),
                 ('  03/456/7890  ', 'Spaced Farm', 'EMERGENCY', NULL, 'Bodmin', 'PL31 1AA',
                  'NORTHERN IRELAND', '02', 'BEEF', NULL, NULL, NULL, '2025-01-01 00:00:00'),
-                -- Two records sharing a date, so the date alone cannot decide between them.
+                -- Two records sharing a date, so the date alone cannot decide between them. The
+                -- address numbers must follow whichever record wins.
                 ('04/567/8901', 'Tied Alpha', 'PERMANENT', 'Alpha Street', 'Newport', 'NP1 1AA',
                  'WALES', NULL, NULL, NULL, NULL, NULL, '2025-03-01 00:00:00'),
                 ('04/567/8901', 'Tied Beta', 'PERMANENT', 'Beta Street', 'Newport', 'NP1 1AA',
@@ -105,7 +116,42 @@ public static class SamExtractFixture
                 ('CD5678', 'NOT-A-CPHH', 'P1', 'P1', '01', 'BEEF', '2010-01-01 00:00:00', NULL),
                 ('EF9012', '77/777/7777/01', 'P1', 'P1', '01', 'BEEF', '2011-01-01 00:00:00', NULL);
             """);
+
+        // The address numbers go in by UPDATE rather than the INSERT above: a test may withhold the
+        // columns entirely (the extract-never-carried-them case), and an UPDATE of a missing column
+        // would not compile. Only columns present are set, per row.
+        var addressNumbers = new (string Feature, string? Udprn, string? Easting, string? Northing)[]
+        {
+            ("Superseded Farm", "80000001", "300001", "400001"),
+            ("Main Farm", "80000002", "300002", "400002"),
+            ("Known Farm", "80000003", "300003", "400003"),
+            ("Notknown", null, null, null),
+            ("Spaced Farm", "80000005", "300005", "400005"),
+            ("Tied Alpha", "80000006", "300006", "400006"),
+            ("Tied Beta", "80000007", "300007", "400007"),
+            ("Sentinel Only", null, null, null)
+        };
+
+        foreach (var (feature, udprn, easting, northing) in addressNumbers)
+        {
+            var assignments = new List<string>();
+
+            if (!omittedHoldingColumns.Contains("UDPRN")) assignments.Add($"UDPRN = {Literal(udprn)}");
+            if (!omittedHoldingColumns.Contains("EASTING")) assignments.Add($"EASTING = {Literal(easting)}");
+            if (!omittedHoldingColumns.Contains("NORTHING")) assignments.Add($"NORTHING = {Literal(northing)}");
+
+            if (assignments.Count > 0)
+            {
+                Execute(connection,
+                    $"UPDATE sam_cph_holdings SET {string.Join(", ", assignments)} WHERE FEATURE_NAME = '{feature}'");
+            }
+        }
     }
+
+    private static string Literal(string? value) => value is null ? "NULL" : $"'{value}'";
+
+    private static string TypeOf(IReadOnlyDictionary<string, string>? types, string column)
+        => types is not null && types.TryGetValue(column, out var type) ? type : "VARCHAR";
 
     private static void Execute(DuckDBConnection connection, string sql)
     {

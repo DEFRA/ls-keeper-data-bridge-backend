@@ -441,7 +441,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, "typed.sqlite");
 
         var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
-            typedSource, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+            typedSource, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
 
         result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
 

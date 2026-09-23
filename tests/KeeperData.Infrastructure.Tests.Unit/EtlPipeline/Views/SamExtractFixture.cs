@@ -28,13 +28,29 @@ public static class SamExtractFixture
         "FEATURE_ADDRESS_TO_DATE"
     ];
 
-    public static void Create(string databasePath) => Create(databasePath, omittedHoldingColumns: []);
+    public static void Create(string databasePath) => Create(databasePath, omittedHoldingColumns: Array.Empty<string>(), holdingColumnTypes: null, herdColumnTypes: null);
 
-    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns)
+    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns, IReadOnlyDictionary<string,string>? holdingColumnTypes = null, IReadOnlyDictionary<string,string>? herdColumnTypes = null)
     {
         var holdingColumns = string.Join(", ",
             HoldingColumns.Where(column => !omittedHoldingColumns.Contains(column))
-                          .Select(column => $"{column} VARCHAR"));
+                          .Select(column =>
+                          {
+                              var type = holdingColumnTypes != null && holdingColumnTypes.TryGetValue(column, out var t) ? t : "VARCHAR";
+                              return $"{column} {type}";
+                          }));
+
+        var herdColumnDefs = string.Join(", ", new[]
+        {
+            "HERDMARK VARCHAR",
+            "CPHH VARCHAR",
+            "KEEPER_PARTY_IDS VARCHAR",
+            "OWNER_PARTY_IDS VARCHAR",
+            "ANIMAL_SPECIES_CODE VARCHAR",
+            "ANIMAL_PURPOSE_CODE VARCHAR",
+            $"ANIMAL_GROUP_ID_MCH_FRM_DAT {(herdColumnTypes != null && herdColumnTypes.TryGetValue("ANIMAL_GROUP_ID_MCH_FRM_DAT", out var h1) ? h1 : "VARCHAR")}",
+            $"ANIMAL_GROUP_ID_MCH_TO_DAT {(herdColumnTypes != null && herdColumnTypes.TryGetValue("ANIMAL_GROUP_ID_MCH_TO_DAT", out var h2) ? h2 : "VARCHAR")}" 
+        });
 
         using var connection = new DuckDBConnection($"Data Source={databasePath}");
         connection.Open();

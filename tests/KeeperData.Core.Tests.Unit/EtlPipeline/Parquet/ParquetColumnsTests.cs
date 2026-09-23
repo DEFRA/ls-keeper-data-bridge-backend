@@ -85,4 +85,54 @@ public class ParquetColumnsTests
 
         et.Should().Be(field.ClrNullableIfHasNullsType);
     }
+
+    [Fact]
+    public void ReadHandlers_delegates_return_TaskArray()
+    {
+        var field = typeof(KeeperData.Core.EtlPipeline.Parquet.ParquetColumns);
+        var fi = field.GetField("ReadHandlers", BindingFlags.NonPublic | BindingFlags.Static);
+        fi.Should().NotBeNull();
+
+        var dict = fi!.GetValue(null) as System.Collections.IDictionary;
+        dict.Should().NotBeNull();
+
+        foreach (System.Collections.DictionaryEntry e in dict!)
+        {
+            var del = e.Value as Delegate;
+            del.Should().NotBeNull();
+            del!.Method.ReturnType.Should().Be(typeof(Task<Array>));
+        }
+    }
+
+    [Fact]
+    public void WriteHandlers_delegates_return_Task()
+    {
+        var field = typeof(KeeperData.Core.EtlPipeline.Parquet.ParquetColumns);
+        var fi = field.GetField("WriteHandlers", BindingFlags.NonPublic | BindingFlags.Static);
+        fi.Should().NotBeNull();
+
+        var dict = fi!.GetValue(null) as System.Collections.IDictionary;
+        dict.Should().NotBeNull();
+
+        foreach (System.Collections.DictionaryEntry e in dict!)
+        {
+            var del = e.Value as Delegate;
+            del.Should().NotBeNull();
+            del!.Method.ReturnType.Should().Be(typeof(Task));
+        }
+    }
+
+    [Fact]
+    public void Unsupported_returns_a_diagnostic_invalidoperationexception()
+    {
+        var t = typeof(KeeperData.Core.EtlPipeline.Parquet.ParquetColumns);
+        var mi = t.GetMethod("Unsupported", BindingFlags.NonPublic | BindingFlags.Static);
+        mi.Should().NotBeNull();
+
+        var field = new DataField("x", typeof(object));
+        var ex = mi!.Invoke(null, new object[] { field }) as InvalidOperationException;
+        ex.Should().NotBeNull();
+        ex!.Message.Should().Contain("unsupported CLR type");
+    }
 }
+

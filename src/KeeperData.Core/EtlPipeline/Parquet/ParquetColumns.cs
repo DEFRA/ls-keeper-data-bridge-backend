@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Parquet;
 using Parquet.Schema;
 
@@ -10,6 +15,56 @@ namespace KeeperData.Core.EtlPipeline.Parquet;
 /// helper. A column of a type outside the supported set fails loudly rather than being read wrong.</summary>
 public static class ParquetColumns
 {
+    private static readonly IReadOnlyDictionary<Type, Func<ParquetRowGroupReader, DataField, int, CancellationToken, Task<Array>>> ReadHandlers;
+    private static readonly IReadOnlyDictionary<Type, Func<ParquetRowGroupWriter, DataField, Array, CancellationToken, Task>> WriteHandlers;
+
+    static ParquetColumns()
+    {
+        ReadHandlers = new Dictionary<Type, Func<ParquetRowGroupReader, DataField, int, CancellationToken, Task<Array>>>
+        {
+            [typeof(string)] = (r,f,rows,ct) => ReadStringsAsync(r,f,rows,ct),
+            [typeof(ReadOnlyMemory<char>)] = (r,f,rows,ct) => ReadStringsAsync(r,f,rows,ct),
+            [typeof(byte[])] = (r,f,rows,ct) => ReadBytesAsync(r,f,rows,ct),
+            [typeof(ReadOnlyMemory<byte>)] = (r,f,rows,ct) => ReadBytesAsync(r,f,rows,ct),
+
+            [typeof(bool)] = (r,f,rows,ct) => ReadTypedAsync<bool>(r,f,rows,ct),
+            [typeof(long)] = (r,f,rows,ct) => ReadTypedAsync<long>(r,f,rows,ct),
+            [typeof(int)] = (r,f,rows,ct) => ReadTypedAsync<int>(r,f,rows,ct),
+            [typeof(short)] = (r,f,rows,ct) => ReadTypedAsync<short>(r,f,rows,ct),
+            [typeof(byte)] = (r,f,rows,ct) => ReadTypedAsync<byte>(r,f,rows,ct),
+            [typeof(double)] = (r,f,rows,ct) => ReadTypedAsync<double>(r,f,rows,ct),
+            [typeof(float)] = (r,f,rows,ct) => ReadTypedAsync<float>(r,f,rows,ct),
+            [typeof(decimal)] = (r,f,rows,ct) => ReadTypedAsync<decimal>(r,f,rows,ct),
+            [typeof(DateTime)] = (r,f,rows,ct) => ReadTypedAsync<DateTime>(r,f,rows,ct),
+            [typeof(DateTimeOffset)] = (r,f,rows,ct) => ReadTypedAsync<DateTimeOffset>(r,f,rows,ct),
+            [typeof(DateOnly)] = (r,f,rows,ct) => ReadTypedAsync<DateOnly>(r,f,rows,ct),
+            [typeof(TimeSpan)] = (r,f,rows,ct) => ReadTypedAsync<TimeSpan>(r,f,rows,ct),
+            [typeof(Guid)] = (r,f,rows,ct) => ReadTypedAsync<Guid>(r,f,rows,ct),
+        };
+
+        WriteHandlers = new Dictionary<Type, Func<ParquetRowGroupWriter, DataField, Array, CancellationToken, Task>>
+        {
+            [typeof(string)] = (w,f,v,ct) => w.WriteAsync(f, (IReadOnlyCollection<string?>)(string?[])v),
+            [typeof(ReadOnlyMemory<char>)] = (w,f,v,ct) => w.WriteAsync(f, (IReadOnlyCollection<string?>)(string?[])v),
+            [typeof(byte[])] = (w,f,v,ct) => w.WriteAsync(f, (IReadOnlyCollection<byte[]>)(byte[][])v),
+            [typeof(ReadOnlyMemory<byte>)] = (w,f,v,ct) => w.WriteAsync(f, (IReadOnlyCollection<byte[]>)(byte[][])v),
+
+            [typeof(bool)] = (w,f,v,ct) => WriteTypedAsync<bool>(w,f,v,ct),
+            [typeof(long)] = (w,f,v,ct) => WriteTypedAsync<long>(w,f,v,ct),
+            [typeof(int)] = (w,f,v,ct) => WriteTypedAsync<int>(w,f,v,ct),
+            [typeof(short)] = (w,f,v,ct) => WriteTypedAsync<short>(w,f,v,ct),
+            [typeof(byte)] = (w,f,v,ct) => WriteTypedAsync<byte>(w,f,v,ct),
+            [typeof(double)] = (w,f,v,ct) => WriteTypedAsync<double>(w,f,v,ct),
+            [typeof(float)] = (w,f,v,ct) => WriteTypedAsync<float>(w,f,v,ct),
+            [typeof(decimal)] = (w,f,v,ct) => WriteTypedAsync<decimal>(w,f,v,ct),
+            [typeof(DateTime)] = (w,f,v,ct) => WriteTypedAsync<DateTime>(w,f,v,ct),
+            [typeof(DateTimeOffset)] = (w,f,v,ct) => WriteTypedAsync<DateTimeOffset>(w,f,v,ct),
+            [typeof(DateOnly)] = (w,f,v,ct) => WriteTypedAsync<DateOnly>(w,f,v,ct),
+            [typeof(TimeSpan)] = (w,f,v,ct) => WriteTypedAsync<TimeSpan>(w,f,v,ct),
+            [typeof(Guid)] = (w,f,v,ct) => WriteTypedAsync<Guid>(w,f,v,ct),
+        };
+    }
+
     /// <summary>Reads one column's values into an array of the field's CLR element type.</summary>
     public static Task<Array> ReadAsync(ParquetRowGroupReader reader, DataField field, CancellationToken cancellationToken)
     {
@@ -18,22 +73,8 @@ public static class ParquetColumns
         var rows = (int)reader.RowCount;
         var clr = Nullable.GetUnderlyingType(field.ClrType) ?? field.ClrType;
 
-        // Parquet.Net declares strings as ReadOnlyMemory<char> and byte arrays as ReadOnlyMemory<byte>.
-        if (clr == typeof(string) || clr == typeof(ReadOnlyMemory<char>)) return ReadStringsAsync(reader, field, rows, cancellationToken);
-        if (clr == typeof(byte[]) || clr == typeof(ReadOnlyMemory<byte>)) return ReadBytesAsync(reader, field, rows, cancellationToken);
-        if (clr == typeof(bool)) return ReadTypedAsync<bool>(reader, field, rows, cancellationToken);
-        if (clr == typeof(long)) return ReadTypedAsync<long>(reader, field, rows, cancellationToken);
-        if (clr == typeof(int)) return ReadTypedAsync<int>(reader, field, rows, cancellationToken);
-        if (clr == typeof(short)) return ReadTypedAsync<short>(reader, field, rows, cancellationToken);
-        if (clr == typeof(byte)) return ReadTypedAsync<byte>(reader, field, rows, cancellationToken);
-        if (clr == typeof(double)) return ReadTypedAsync<double>(reader, field, rows, cancellationToken);
-        if (clr == typeof(float)) return ReadTypedAsync<float>(reader, field, rows, cancellationToken);
-        if (clr == typeof(decimal)) return ReadTypedAsync<decimal>(reader, field, rows, cancellationToken);
-        if (clr == typeof(DateTime)) return ReadTypedAsync<DateTime>(reader, field, rows, cancellationToken);
-        if (clr == typeof(DateTimeOffset)) return ReadTypedAsync<DateTimeOffset>(reader, field, rows, cancellationToken);
-        if (clr == typeof(DateOnly)) return ReadTypedAsync<DateOnly>(reader, field, rows, cancellationToken);
-        if (clr == typeof(TimeSpan)) return ReadTypedAsync<TimeSpan>(reader, field, rows, cancellationToken);
-        if (clr == typeof(Guid)) return ReadTypedAsync<Guid>(reader, field, rows, cancellationToken);
+        if (ReadHandlers.TryGetValue(clr, out var handler))
+            return handler(reader, field, rows, cancellationToken);
 
         throw Unsupported(field);
     }
@@ -74,22 +115,8 @@ public static class ParquetColumns
 
         var clr = Nullable.GetUnderlyingType(field.ClrType) ?? field.ClrType;
 
-        // Parquet.Net declares strings as ReadOnlyMemory<char> and byte arrays as ReadOnlyMemory<byte>.
-        if (clr == typeof(string) || clr == typeof(ReadOnlyMemory<char>)) return writer.WriteAsync(field, (IReadOnlyCollection<string?>)(string?[])values);
-        if (clr == typeof(byte[]) || clr == typeof(ReadOnlyMemory<byte>)) return writer.WriteAsync(field, (IReadOnlyCollection<byte[]>)(byte[][])values);
-        if (clr == typeof(bool)) return WriteTypedAsync<bool>(writer, field, values, cancellationToken);
-        if (clr == typeof(long)) return WriteTypedAsync<long>(writer, field, values, cancellationToken);
-        if (clr == typeof(int)) return WriteTypedAsync<int>(writer, field, values, cancellationToken);
-        if (clr == typeof(short)) return WriteTypedAsync<short>(writer, field, values, cancellationToken);
-        if (clr == typeof(byte)) return WriteTypedAsync<byte>(writer, field, values, cancellationToken);
-        if (clr == typeof(double)) return WriteTypedAsync<double>(writer, field, values, cancellationToken);
-        if (clr == typeof(float)) return WriteTypedAsync<float>(writer, field, values, cancellationToken);
-        if (clr == typeof(decimal)) return WriteTypedAsync<decimal>(writer, field, values, cancellationToken);
-        if (clr == typeof(DateTime)) return WriteTypedAsync<DateTime>(writer, field, values, cancellationToken);
-        if (clr == typeof(DateTimeOffset)) return WriteTypedAsync<DateTimeOffset>(writer, field, values, cancellationToken);
-        if (clr == typeof(DateOnly)) return WriteTypedAsync<DateOnly>(writer, field, values, cancellationToken);
-        if (clr == typeof(TimeSpan)) return WriteTypedAsync<TimeSpan>(writer, field, values, cancellationToken);
-        if (clr == typeof(Guid)) return WriteTypedAsync<Guid>(writer, field, values, cancellationToken);
+        if (WriteHandlers.TryGetValue(clr, out var handler))
+            return handler(writer, field, values, cancellationToken);
 
         throw Unsupported(field);
     }

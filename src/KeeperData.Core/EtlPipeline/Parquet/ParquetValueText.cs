@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace KeeperData.Core.EtlPipeline.Parquet;
@@ -27,6 +29,26 @@ public static class ParquetValueText
         _ => value.ToString()
     };
 
+    private static readonly IReadOnlyDictionary<Type, Func<string, object?>> Parsers =
+        new Dictionary<Type, Func<string, object?>>(TypeComparer.Instance)
+        {
+            [typeof(string)] = s => s,
+            [typeof(long)] = s => long.Parse(s, CultureInfo.InvariantCulture),
+            [typeof(int)] = s => int.Parse(s, CultureInfo.InvariantCulture),
+            [typeof(short)] = s => short.Parse(s, CultureInfo.InvariantCulture),
+            [typeof(byte)] = s => byte.Parse(s, CultureInfo.InvariantCulture),
+            [typeof(double)] = s => double.Parse(s, NumberStyles.Float, CultureInfo.InvariantCulture),
+            [typeof(float)] = s => float.Parse(s, NumberStyles.Float, CultureInfo.InvariantCulture),
+            [typeof(decimal)] = s => decimal.Parse(s, CultureInfo.InvariantCulture),
+            [typeof(bool)] = s => bool.Parse(s),
+            [typeof(DateTime)] = s => DateTime.ParseExact(s, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+            [typeof(DateTimeOffset)] = s => DateTimeOffset.ParseExact(s, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+            [typeof(DateOnly)] = s => DateOnly.ParseExact(s, "O", CultureInfo.InvariantCulture),
+            [typeof(TimeSpan)] = s => TimeSpan.ParseExact(s, "c", CultureInfo.InvariantCulture),
+            [typeof(Guid)] = s => Guid.Parse(s),
+            [typeof(byte[])] = s => Convert.FromBase64String(s),
+        };
+
     /// <summary>The inverse of <see cref="Format"/>: parse a canonical string back to the CLR type
     /// the field declares. <paramref name="clrType"/> may be a Nullable&lt;T&gt;.</summary>
     public static object? Parse(Type clrType, string? text)
@@ -38,22 +60,19 @@ public static class ParquetValueText
 
         var target = Nullable.GetUnderlyingType(clrType) ?? clrType;
 
-        if (target == typeof(string)) return text;
-        if (target == typeof(long)) return long.Parse(text, CultureInfo.InvariantCulture);
-        if (target == typeof(int)) return int.Parse(text, CultureInfo.InvariantCulture);
-        if (target == typeof(short)) return short.Parse(text, CultureInfo.InvariantCulture);
-        if (target == typeof(byte)) return byte.Parse(text, CultureInfo.InvariantCulture);
-        if (target == typeof(double)) return double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture);
-        if (target == typeof(float)) return float.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture);
-        if (target == typeof(decimal)) return decimal.Parse(text, CultureInfo.InvariantCulture);
-        if (target == typeof(bool)) return bool.Parse(text);
-        if (target == typeof(DateTime)) return DateTime.ParseExact(text, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
-        if (target == typeof(DateTimeOffset)) return DateTimeOffset.ParseExact(text, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
-        if (target == typeof(DateOnly)) return DateOnly.ParseExact(text, "O", CultureInfo.InvariantCulture);
-        if (target == typeof(TimeSpan)) return TimeSpan.ParseExact(text, "c", CultureInfo.InvariantCulture);
-        if (target == typeof(Guid)) return Guid.Parse(text);
-        if (target == typeof(byte[])) return Convert.FromBase64String(text);
+        if (Parsers.TryGetValue(target, out var parser))
+        {
+            return parser(text);
+        }
 
         throw new InvalidOperationException($"No canonical text form for parquet column type '{target}'.");
+    }
+
+    // Dictionary<Type,...> uses reference equality by default but System.Type behaves like value for our keys.
+    private sealed class TypeComparer : IEqualityComparer<Type>
+    {
+        public static readonly TypeComparer Instance = new();
+        public bool Equals(Type? x, Type? y) => x == y;
+        public int GetHashCode(Type obj) => obj.GetHashCode();
     }
 }

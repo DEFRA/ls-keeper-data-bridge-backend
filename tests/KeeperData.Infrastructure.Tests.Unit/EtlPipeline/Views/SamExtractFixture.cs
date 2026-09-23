@@ -48,8 +48,9 @@ public static class SamExtractFixture
                 TELEPHONE_NUMBER VARCHAR, MOBILE_NUMBER VARCHAR, INTERNET_EMAIL_ADDRESS VARCHAR, ROLES VARCHAR);
 
             CREATE TABLE sam_cph_holder (
-                PARTY_ID VARCHAR, PERSON_GIVEN_NAME VARCHAR, PERSON_GIVEN_NAME2 VARCHAR, PERSON_INITIALS VARCHAR,
-                PERSON_FAMILY_NAME VARCHAR, ORGANISATION_NAME VARCHAR, CPHS VARCHAR);
+                PARTY_ID VARCHAR, PERSON_TITLE VARCHAR, PERSON_GIVEN_NAME VARCHAR, PERSON_GIVEN_NAME2 VARCHAR,
+                PERSON_INITIALS VARCHAR, PERSON_FAMILY_NAME VARCHAR, ORGANISATION_NAME VARCHAR,
+                TELEPHONE_NUMBER VARCHAR, MOBILE_NUMBER VARCHAR, INTERNET_EMAIL_ADDRESS VARCHAR, CPHS VARCHAR);
 
             CREATE TABLE sam_herd (
                 HERDMARK VARCHAR, CPHH VARCHAR, KEEPER_PARTY_IDS VARCHAR, OWNER_PARTY_IDS VARCHAR,
@@ -96,11 +97,17 @@ public static class SamExtractFixture
                 -- P6 exists nowhere else, so nothing can fill in what its sentinels stand for.
                 ('P6', '-', '', ',', NULL, '-', '   ', '-');
 
-            INSERT INTO sam_cph_holder (PARTY_ID, PERSON_GIVEN_NAME, PERSON_FAMILY_NAME, CPHS)
+            INSERT INTO sam_cph_holder (PARTY_ID, PERSON_TITLE, PERSON_GIVEN_NAME, PERSON_FAMILY_NAME,
+                TELEPHONE_NUMBER, MOBILE_NUMBER, INTERNET_EMAIL_ADDRESS, CPHS)
             VALUES
-                ('P2', 'Brenda', 'Baker', '01/234/5678, 02/345/6789'),
-                ('P3', 'Carol', 'Cooper', '99/999/9999'),
-                ('P4', 'Derek', 'Dunn', NULL);
+                -- Every one of P2's contact columns is a sentinel in sam_party, so the holder's real
+                -- values must come through. The email is mixed case to prove it is still folded.
+                ('P2', 'Mrs', 'Brenda', 'Baker', '01392 000002', '07700 900002',
+                 'Brenda.Baker@Example.TEST', '01/234/5678, 02/345/6789'),
+                -- P3 has a real title in sam_party, which a different one here must not displace.
+                ('P3', 'Dr', 'Carol', 'Cooper', NULL, NULL, NULL, '99/999/9999'),
+                -- P4 is in no other extract, so the holder is the only thing that can name it at all.
+                ('P4', 'Mr', 'Derek', 'Dunn', NULL, '07700 900004', 'derek.dunn@example.test', NULL);
 
             INSERT INTO sam_herd (HERDMARK, CPHH, KEEPER_PARTY_IDS, OWNER_PARTY_IDS, ANIMAL_SPECIES_CODE,
                 ANIMAL_PURPOSE_CODE, ANIMAL_GROUP_ID_MCH_FRM_DAT, ANIMAL_GROUP_ID_MCH_TO_DAT)

@@ -149,6 +149,44 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
             .Should().Equal(["Brenda|Baker"]);
     }
 
+    /// <summary>Contact details follow the same rule as names: sam_cph_holder carries a title,
+    /// telephone, mobile and email of its own, and a sentinel in sam_party must not mask any of
+    /// them.</summary>
+    [Fact]
+    public async Task Falls_back_to_the_holder_for_contact_details_sam_party_only_sentinels()
+    {
+        var target = await RunAsync();
+
+        // Every one of P2's four contact columns is '-', ',', '' or absent in sam_party.
+        Strings(target, "SELECT PersonTitle || '|' || Telephone || '|' || Mobile || '|' || Email " +
+                        "FROM Party WHERE SourcePartyId='P2'")
+            .Should().Equal(["Mrs|01392 000002|07700 900002|brenda.baker@example.test"],
+                "a sentinel means absent, and the holder-sourced email is folded like any other");
+    }
+
+    /// <summary>The production majority: most parties are named by sam_cph_holder and by nothing
+    /// else, so taking contact details from sam_party alone would discard them.</summary>
+    [Fact]
+    public async Task Takes_contact_details_from_the_holder_when_sam_party_never_names_the_party()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT PersonTitle || '|' || ifnull(Telephone,'<null>') || '|' || Mobile || '|' || Email " +
+                        "FROM Party WHERE SourcePartyId='P4'")
+            .Should().Equal(["Mr|<null>|07700 900004|derek.dunn@example.test"]);
+    }
+
+    [Fact]
+    public async Task Keeps_sam_party_as_the_authority_when_both_extracts_carry_a_real_value()
+    {
+        var target = await RunAsync();
+
+        // P3 is 'Ms' in sam_party and 'Dr' in sam_cph_holder. The fallback fills gaps; it does not
+        // reorder precedence.
+        Strings(target, "SELECT PersonTitle FROM Party WHERE SourcePartyId='P3'")
+            .Should().Equal(["Ms"]);
+    }
+
     [Fact]
     public async Task Creates_holdings_only_from_the_canonical_extract()
     {

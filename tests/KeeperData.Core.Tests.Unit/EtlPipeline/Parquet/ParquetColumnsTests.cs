@@ -129,7 +129,35 @@ public class ParquetColumnsTests
         var mi = t.GetMethod("Unsupported", BindingFlags.NonPublic | BindingFlags.Static);
         mi.Should().NotBeNull();
 
-        var field = new DataField("x", typeof(object));
+        // DataField constructor rejects unsupported CLR types (throws NotSupportedException),
+        // so create an uninitialized instance and populate the required members via reflection.
+        var dfType = typeof(DataField);
+        #pragma warning disable SYSLIB0050
+                var field = (DataField)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(dfType);
+        #pragma warning restore SYSLIB0050
+
+        // Set Name (property or backing field)
+        var nameProp = dfType.GetProperty("Name");
+        if (nameProp != null && nameProp.SetMethod != null)
+            nameProp.SetValue(field, "x");
+        else
+        {
+            var nameField = dfType.GetField("<Name>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic) ?? dfType.GetField("name", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (nameField != null) nameField.SetValue(field, "x");
+        }
+
+        // Set ClrType (property or backing field) to an unsupported type so Unsupported() can be exercised
+        var clrProp = dfType.GetProperty("ClrType");
+        if (clrProp != null && clrProp.SetMethod != null)
+            clrProp.SetValue(field, typeof(object));
+        else
+        {
+            var clrField = dfType.GetField("<ClrType>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)
+                        ?? dfType.GetField("clrType", BindingFlags.Instance | BindingFlags.NonPublic)
+                        ?? dfType.GetField("type", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (clrField != null) clrField.SetValue(field, typeof(object));
+        }
+
         var ex = mi!.Invoke(null, new object[] { field }) as InvalidOperationException;
         ex.Should().NotBeNull();
         ex!.Message.Should().Contain("unsupported CLR type");

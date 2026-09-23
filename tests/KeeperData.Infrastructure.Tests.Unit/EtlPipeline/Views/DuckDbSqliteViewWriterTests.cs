@@ -17,6 +17,12 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
     private readonly string _sourcePath;
 
+    /// <summary>The as-at date every run in this class is evaluated for. The CTS fixture's dates sit
+    /// either side of it, so a transformation that ignored it would fail visibly rather than by
+    /// drifting on whatever day the suite happens to run.</summary>
+    private static readonly DateTimeOffset QueryDate =
+        new(2026, 9, 15, 7, 0, 3, TimeSpan.Zero);
+
     public DuckDbSqliteViewWriterTests()
     {
         _sourcePath = Path.Combine(_workingDirectory, "staging.duckdb");
@@ -43,7 +49,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
         await Sut().WriteAsync(
             new SqliteViewWriteRequest(
-                _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+                _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
 
         return target;
     }
@@ -66,7 +72,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, "memory-limited.sqlite");
 
         var result = await Sut("512MB").WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
 
         result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
     }
@@ -82,7 +88,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
             """;
 
         await Sut().WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, sql, ["WriterSettings"]));
+            _sourcePath, target, sql, ["WriterSettings"], QueryDate));
 
         Scalar(target, "SELECT PreserveInsertionOrder FROM WriterSettings").Should().Be(0);
     }
@@ -93,7 +99,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, "counted.sqlite");
 
         var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
 
         result.Tables.Should().BeEquivalentTo(new[]
         {
@@ -101,7 +107,8 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
             new SqliteViewTable("Holding", 4),
             new SqliteViewTable("Herd", 1),
             new SqliteViewTable("HoldingAnimalProfile", 2),
-            new SqliteViewTable("PartyRole", 5)
+            new SqliteViewTable("PartyRole", 5),
+            new SqliteViewTable("CtsOpenLocation", 9)
         });
     }
 
@@ -384,8 +391,10 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
         foreach (var table in SqliteViewDefinition.TableNames)
         {
-            Strings(first, $"SELECT Id FROM {table} ORDER BY Id")
-                .Should().Equal(Strings(second, $"SELECT Id FROM {table} ORDER BY Id"),
+            var key = KeyColumn(table);
+
+            Strings(first, $"SELECT {key} FROM {table} ORDER BY {key}")
+                .Should().Equal(Strings(second, $"SELECT {key} FROM {table} ORDER BY {key}"),
                     "{0} ids must be stable across runs", table);
         }
     }
@@ -485,7 +494,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, "thin.sqlite");
 
         var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
-            thinSource, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+            thinSource, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
 
         result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
 
@@ -519,6 +528,9 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
         Strings(target, "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'ix_%' ORDER BY name")
             .Should().Equal(
+                "ix_cts_open_location_cph",
+                "ix_cts_open_location_keeper_email",
+                "ix_cts_open_location_keeper_post_code",
                 "ix_herd_holding",
                 "ix_holding_cph",
                 "ix_party_email",
@@ -541,7 +553,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = await RunAsync();
 
         var act = async () => await Sut().WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already exists*");
     }
@@ -553,7 +565,8 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
             _sourcePath,
             Path.Combine(_workingDirectory, "blank-table.sqlite"),
             SqliteViewDefinition.Sql,
-            [""]));
+            [""],
+            QueryDate));
 
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("Table name is required*");
     }
@@ -572,7 +585,8 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
             _sourcePath,
             Path.Combine(_workingDirectory, "never-written.sqlite"),
             SqliteViewDefinition.Sql,
-            SqliteViewDefinition.TableNames));
+            SqliteViewDefinition.TableNames,
+            QueryDate));
 
         (await act.Should().ThrowAsync<SqliteViewExtensionException>())
             .Which.Message.Should().NotContain("not-bundled", "the configured path is logged, not served");
@@ -580,6 +594,12 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
     private static bool IsVersion5Shaped(string id)
         => Guid.TryParse(id, out _) && id[14] == '5' && id[19] == '8';
+
+    /// <summary>What uniquely names a row, for the tests that walk every table. The SAM tables carry
+    /// a derived Id because other tables reference them; CtsOpenLocation has no dependants and uses
+    /// its natural key instead.</summary>
+    private static string KeyColumn(string table)
+        => table == "CtsOpenLocation" ? "LocationNumber" : "Id";
 
     private static long Scalar(string databasePath, string sql)
     {
@@ -611,7 +631,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     {
         using var connection = Open(databasePath);
         using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT * FROM {table} ORDER BY Id";
+        command.CommandText = $"SELECT * FROM {table} ORDER BY {KeyColumn(table)}";
 
         var rows = new List<string>();
         using var reader = command.ExecuteReader();

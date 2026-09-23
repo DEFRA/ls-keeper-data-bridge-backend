@@ -12,12 +12,17 @@ public sealed record SqliteViewTable(string Name, long RowCount);
 /// <param name="Sql">The transformation body. The writer owns attaching and detaching, so this must
 /// not carry its own ATTACH, CHECKPOINT or DETACH.</param>
 /// <param name="TableNames">Tables to count once the transformation has run, for reporting.</param>
+/// <param name="QueryDate">The date the transformation evaluates its as-at rules against. The
+/// snapshots' source timestamp rather than today: the export is reused on the strength of that
+/// timestamp and the script version, so a transformation that read the clock would answer
+/// differently on a later day while still being treated as the same output.</param>
 [ExcludeFromCodeCoverage(Justification = "Transformation request record - no logic to test.")]
 public sealed record SqliteViewWriteRequest(
     string SourceDatabasePath,
     string TargetDatabasePath,
     string Sql,
-    IReadOnlyList<string> TableNames);
+    IReadOnlyList<string> TableNames,
+    DateTimeOffset QueryDate);
 
 [ExcludeFromCodeCoverage(Justification = "Transformation result record - no logic to test.")]
 public sealed record SqliteViewWriteResult(IReadOnlyList<SqliteViewTable> Tables);

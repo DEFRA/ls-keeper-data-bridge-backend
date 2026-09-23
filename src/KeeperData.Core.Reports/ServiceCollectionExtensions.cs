@@ -1,6 +1,10 @@
+using KeeperData.Core.Reports.Cleanse.Analysis;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Analysis.Command.Impl;
+using KeeperData.Core.Reports.Cleanse.Analysis.RulesEngine.Impl;
+using KeeperData.Core.Reports.Cleanse.Analysis.RulesEngine.Registry;
+using KeeperData.Core.Reports.Cleanse.Analysis.RulesEngine.Service;
 using KeeperData.Core.Reports.Cleanse.Export.Command;
 using KeeperData.Core.Reports.Cleanse.Export.Command.Abstract;
 using KeeperData.Core.Reports.Cleanse.Export.Index;
@@ -75,7 +79,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPreloadedCtsSamDataService, PreloadedCtsSamDataService>();
 
         // Register engine
-        services.AddScoped<ICleanseAnalysisEngine, CleanseAnalysisEngine>();
+        if (CleanseEngineToggle.UseRuleBasedEngine)
+        {
+            services.AddSingleton(_ => new CleanseRuleRegistry(CleanseRuleRegistry.CreateDefaultRules()));
+            services.AddScoped<ICleanseRuleService, CleanseRuleService>();
+            services.AddScoped<ICleanseAnalysisEngine, RuleBasedCleanseAnalysisEngine>();
+        }
+        else
+        {
+            services.AddScoped<ICleanseAnalysisEngine, CleanseAnalysisEngine>();
+        }
 
         // Register core services
         services.AddScoped<ICleanseAnalysisCommandService, CleanseAnalysisCommandService>();

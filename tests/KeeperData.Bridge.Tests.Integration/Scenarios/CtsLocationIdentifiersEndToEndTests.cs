@@ -180,8 +180,8 @@ public sealed class CtsLocationIdentifiersEndToEndTests(ITestOutputHelper output
 
                 for (var column = 0; column < selected.Length; column++)
                 {
-                    columns[column] = new string?[rowGroup.RowCount];
-                    await rowGroup.ReadAsync(selected[column], columns[column].AsMemory());
+                    // Read each column into its canonical string representation regardless of underlying CLR type.
+                    columns[column] = await KeeperData.Core.EtlPipeline.Parquet.ParquetColumns.ReadAsStringsAsync(rowGroup, selected[column], CancellationToken.None);
                 }
 
                 for (var row = 0; row < rowGroup.RowCount; row++)

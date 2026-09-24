@@ -218,7 +218,15 @@ public sealed class CtsLocationIdentifiersEndToEndTests(ITestOutputHelper output
             var rows = new List<(string, string, string, string)>();
             while (await reader.ReadAsync())
             {
-                rows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)));
+                var id = reader.GetString(0);
+                var identifier = reader.GetString(1);
+                var modified = reader.GetString(2);
+
+                // LID_VERSION may be stored as an integer in DuckDB; read as object and convert to string
+                var versionObj = reader.GetValue(3);
+                var version = versionObj == null || versionObj is DBNull ? string.Empty : versionObj.ToString()!;
+
+                rows.Add((id, identifier, modified, version));
             }
 
             return rows;

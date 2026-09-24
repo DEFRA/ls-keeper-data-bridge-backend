@@ -393,10 +393,11 @@ public class ParquetDeltaMergeEngineTests
     }
 
     [Fact]
-    public async Task A_string_established_column_stays_a_string_when_a_typed_file_arrives_later()
+    public async Task A_string_column_upgrades_to_the_type_a_later_file_carries()
     {
-        // Symmetric to widening: the output was established as text, and a typed delta's values
-        // format into the same canonical strings - no widening needed.
+        // The reverse of widening: a column established as text adopts the incoming type when every
+        // held value converts - a snapshot that predates typed input migrates rather than pinning
+        // the column to string forever.
         var texty = ParquetFixture.From("CHANGE_TYPE|CPH|EASTING", "I|01/001/0001|123456");
 
         var typed = ParquetFixture.FromTyped(
@@ -412,11 +413,78 @@ public class ParquetDeltaMergeEngineTests
 
         ParquetFixture.SchemaOf(bytes).Should().Equal(
             ("CPH", typeof(ReadOnlyMemory<char>)),
-            ("EASTING", typeof(ReadOnlyMemory<char>)));
+            ("EASTING", typeof(long)));
 
         ParquetFixture.ToLines(bytes).Should().Equal(
             "CPH|EASTING",
             "01/001/0001|123456",
             "01/001/0002|654321");
+    }
+
+    [Fact]
+    public async Task A_string_column_stays_a_string_when_a_held_value_would_not_survive_conversion()
+    {
+        // "007" parses as a number but loses its zeros - the column stays text rather than silently
+        // rewriting the held values, and the refusal is logged.
+        var logger = new CapturingLogger<ParquetDeltaMergeEngine>();
+        var engine = new ParquetDeltaMergeEngine(logger);
+
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|CODE", "I|01/001/0001|007");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0002" }),
+            (new DataField<long?>("CODE"), new long?[] { 12 }));
+
+        using var output = new MemoryStream();
+
+        await engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("CODE", typeof(ReadOnlyMemory<char>)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|CODE",
+            "01/001/0001|007",
+            "01/001/0002|12");
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("CODE") && w.Contains("stays string"));
+    }
+
+    [Fact]
+    public async Task An_upgraded_column_widens_back_to_string_when_a_later_file_disagrees()
+    {
+        // The upgrade is reversible: a string file arriving after the upgrade widens the column
+        // back, and every cut of the data survives because it was held as text all along.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|CODE", "I|01/001/0001|123");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0002" }),
+            (new DataField<long?>("CODE"), new long?[] { 456 }));
+
+        var backToText = ParquetFixture.From("CHANGE_TYPE|CPH|CODE", "I|01/001/0003|abc");
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(
+            SamCph, null,
+            [Source("first", texty), Source("second", typed), Source("third", backToText)],
+            output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("CODE", typeof(ReadOnlyMemory<char>)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|CODE",
+            "01/001/0001|123",
+            "01/001/0002|456",
+            "01/001/0003|abc");
     }
 }

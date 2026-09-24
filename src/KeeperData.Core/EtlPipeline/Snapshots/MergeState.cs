@@ -178,9 +178,9 @@ public sealed partial class ParquetDeltaMergeEngine
             var establishing = _fields.Count == 0;
 
             var added = MergeNewColumns(table);
-            var (indexes, missing, retyped) = BuildIndexMap(table);
+            var (indexes, missing, retyped, declined) = BuildIndexMap(table);
 
-            return new Alignment(indexes, new SchemaDrift(missing, establishing ? [] : added, retyped));
+            return new Alignment(indexes, new SchemaDrift(missing, establishing ? [] : added, retyped, declined));
         }
 
         /// <summary>Adds any column the file introduces to the output schema, widening the rows already
@@ -205,18 +205,20 @@ public sealed partial class ParquetDeltaMergeEngine
         }
 
         /// <summary>For each output column, where it is found in the file - or -1 when the file does not
-        /// carry it - alongside the names of any output columns the file is missing, and the columns the
-        /// file retyped.
+        /// carry it - alongside the names of any output columns the file is missing, the columns whose
+        /// type changed, and the columns whose upgrade was declined.
         ///
         /// A column two files disagree on the type of widens to string rather than failing the merge:
         /// the values are already held as canonical text, so a string column keeps every cut of the data
-        /// legible. A column established as a string is already the widest form, so a typed file arriving
-        /// later needs no widening - its values format into the same text.</summary>
-        private (int[] Indexes, List<string> Missing, List<RetypedColumn> Retyped) BuildIndexMap(ParquetTable table)
+        /// legible. A column established as text goes the other way when a typed file arrives: if every
+        /// held value survives conversion the column adopts the incoming type, so a snapshot that
+        /// predates typed input migrates instead of pinning the column to string forever.</summary>
+        private (int[] Indexes, List<string> Missing, List<RetypedColumn> Retyped, List<RetypedColumn> Declined) BuildIndexMap(ParquetTable table)
         {
             var indexes = new int[_fields.Count];
             var missing = new List<string>();
             var retyped = new List<RetypedColumn>();
+            var declined = new List<RetypedColumn>();
 
             for (var column = 0; column < _fields.Count; column++)
             {
@@ -232,14 +234,60 @@ public sealed partial class ParquetDeltaMergeEngine
                 var held = _fields[column];
                 var incoming = table.Fields[indexes[column]];
 
-                if (!IsText(held) && !SameType(held, incoming))
+                if (SameType(held, incoming))
+                {
+                    continue;
+                }
+
+                if (IsText(held))
+                {
+                    if (IsText(incoming))
+                    {
+                        continue;
+                    }
+
+                    if (CanRetype(column, incoming))
+                    {
+                        retyped.Add(new RetypedColumn(name, TypeName(held), TypeName(incoming)));
+                        _fields[column] = incoming;
+                    }
+                    else
+                    {
+                        declined.Add(new RetypedColumn(name, TypeName(held), TypeName(incoming)));
+                    }
+                }
+                else
                 {
                     retyped.Add(new RetypedColumn(name, TypeName(held), TypeName(incoming)));
                     _fields[column] = new DataField<string?>(name);
                 }
             }
 
-            return (indexes, missing, retyped);
+            return (indexes, missing, retyped, declined);
+        }
+
+        /// <summary>A text column a file carries typed upgrades only when every value already held is in
+        /// the type's canonical form. "007" parses as a number but loses its zeros, and "true" parses as
+        /// a boolean but reads back "True" - both keep the column text rather than rewriting the values,
+        /// the same standard the optimise detector applies.</summary>
+        private bool CanRetype(int column, DataField incoming)
+        {
+            var type = ParquetColumns.ElementType(incoming);
+
+            foreach (var row in _rows)
+            {
+                var value = row?[column];
+
+                if (value is null || (ParquetValueText.TryParse(type, value, out var parsed)
+                    && string.Equals(ParquetValueText.Format(parsed), value, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            return true;
         }
 
         private static bool SameType(DataField a, DataField b)
@@ -359,10 +407,11 @@ public sealed partial class ParquetDeltaMergeEngine
     private sealed record AppliedDelta(long Upserted, long Deleted, long IgnoredDeletes, long Rejected, SchemaDrift Drift);
 
     /// <summary>How one file's columns differed from the output's: <paramref name="Missing"/> columns the
-    /// output carries and the file does not, <paramref name="Added"/> columns the file introduced, and
-    /// <paramref name="Retyped"/> columns whose incoming type did not match the output's and so were
-    /// widened to string.</summary>
-    private sealed record SchemaDrift(IReadOnlyList<string> Missing, IReadOnlyList<string> Added, IReadOnlyList<RetypedColumn> Retyped);
+    /// output carries and the file does not, <paramref name="Added"/> columns the file introduced,
+    /// <paramref name="Retyped"/> columns whose type changed - widened to string, or adopted the file's
+    /// type - and <paramref name="Declined"/> columns that stayed text because a held value would not
+    /// survive the conversion.</summary>
+    private sealed record SchemaDrift(IReadOnlyList<string> Missing, IReadOnlyList<string> Added, IReadOnlyList<RetypedColumn> Retyped, IReadOnlyList<RetypedColumn> Declined);
 
     /// <summary>A column a later file carries as a different type than the output established.</summary>
     private sealed record RetypedColumn(string Name, string HeldType, string IncomingType);

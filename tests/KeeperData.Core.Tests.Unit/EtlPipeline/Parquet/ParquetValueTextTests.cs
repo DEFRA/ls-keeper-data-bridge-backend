@@ -168,4 +168,24 @@ public class ParquetValueTextTests
 
         parse.Should().Throw<InvalidOperationException>().WithMessage("*Version*");
     }
+
+    [Fact]
+    public void TryParse_reports_unconvertible_text_without_throwing()
+    {
+        ParquetValueText.TryParse(typeof(long), "123", out var parsed).Should().BeTrue();
+        parsed.Should().Be(123L);
+
+        ParquetValueText.TryParse(typeof(long), "abc", out _).Should().BeFalse();
+        ParquetValueText.TryParse(typeof(long), "99999999999999999999", out _).Should().BeFalse("overflow is still unconvertible");
+        ParquetValueText.TryParse(typeof(long), null, out var nullParsed).Should().BeTrue();
+        nullParsed.Should().BeNull();
+    }
+
+    [Fact]
+    public void TryParse_still_throws_for_a_type_with_no_parser()
+    {
+        var parse = () => ParquetValueText.TryParse(typeof(Version), "1.0", out _);
+
+        parse.Should().Throw<InvalidOperationException>();
+    }
 }

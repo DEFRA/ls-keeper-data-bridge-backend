@@ -68,6 +68,23 @@ public static class ParquetValueText
         throw new InvalidOperationException($"No canonical text form for parquet column type '{target}'.");
     }
 
+    /// <summary>Parse without throwing - false when the text is not a value of the type. Used to
+    /// test whether held canonical strings can adopt a column's new type before the schema commits
+    /// to it. A type with no parser still throws: that is a programming error, not bad data.</summary>
+    public static bool TryParse(Type clrType, string? text, out object? parsed)
+    {
+        try
+        {
+            parsed = Parse(clrType, text);
+            return true;
+        }
+        catch (Exception ex) when (ex is FormatException or OverflowException)
+        {
+            parsed = null;
+            return false;
+        }
+    }
+
     // Dictionary<Type,...> uses reference equality by default but System.Type behaves like value for our keys.
     private sealed class TypeComparer : IEqualityComparer<Type>
     {

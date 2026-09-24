@@ -260,6 +260,43 @@ public class ParquetDeltaMergeEngineTests
     }
 
     [Fact]
+    public async Task Deletes_apply_when_the_dataset_defines_an_audit_order()
+    {
+        // With audit configured a delete tombstones the row: the slot is held so a later insert can
+        // reinstate it, and a delete for a key never seen - or already tombstoned - is a no-op.
+        var audited = SamCph with { Audit = new AuditColumns("SEQ", "CHANGED_AT") };
+
+        using var output = new MemoryStream();
+
+        var result = await _engine.MergeAsync(
+            audited,
+            null,
+            [
+                Source("seed", DeltaHeader, "I|01/001/0001|Keep Farm", "I|01/001/0002|Doomed Farm"),
+                Source("delete", DeltaHeader, "D|01/001/0002|Doomed Farm", "D|01/001/0002|Doomed Farm", "D|01/001/0099|Ghost Farm"),
+                Source("adds", "CHANGE_TYPE|CPH|HOLDING_NAME|NEW_COLUMN", "I|01/001/0003|New Farm|X")
+            ],
+            output);
+
+        result.RowsDeleted.Should().Be(1);
+
+        ParquetFixture.ToLines(output.ToArray()).Should().Equal(
+            "CPH|HOLDING_NAME|NEW_COLUMN",
+            "01/001/0001|Keep Farm|",
+            "01/001/0003|New Farm|X");
+    }
+
+    [Fact]
+    public async Task Fails_to_write_when_no_file_supplied_a_schema()
+    {
+        using var output = new MemoryStream();
+
+        var merge = async () => await _engine.MergeAsync(SamCph, null, [], output);
+
+        await merge.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Nothing to write*");
+    }
+
+    [Fact]
     public async Task Rewrites_the_snapshot_unchanged_when_there_are_no_deltas()
     {
         var (lines, result) = await MergeAsync(Source("snapshot", SnapshotHeader, "01/001/0001|Old Farm"));
@@ -322,6 +359,37 @@ public class ParquetDeltaMergeEngineTests
             "CPH|EASTING",
             "01/001/0001|123456",
             "01/001/0002|654321");
+    }
+
+    [Fact]
+    public async Task A_non_nullable_column_widens_to_nullable_when_a_later_file_drops_it()
+    {
+        // The column arrived non-nullable, but the merge can still leave nulls in it - a file that
+        // drops it leaves nulls behind - so the output field is widened before the schema is built.
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I", "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0001", "01/001/0002" }),
+            (new DataField<long>("EASTING"), new long[] { 123456, 654321 }),
+            (new DecimalDataField("AREA", 10, 2, isNullable: false), new decimal[] { 1.5m, 2.5m }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(
+            SamCph, null,
+            [Source("first", typed), Source("second", "CHANGE_TYPE|CPH", "U|01/001/0001")],
+            output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("EASTING", typeof(long)),
+            ("AREA", typeof(decimal)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|EASTING|AREA",
+            "01/001/0001||",
+            "01/001/0002|654321|2.50");
     }
 
     [Fact]

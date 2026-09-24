@@ -91,6 +91,71 @@ public class ParquetValueTextTests
     }
 
     [Fact]
+    public void DateTimeOffset_round_trips_in_the_O_form()
+    {
+        var value = new DateTimeOffset(2025, 11, 13, 12, 13, 33, TimeSpan.Zero);
+
+        ParquetValueText.Format(value).Should().Be("2025-11-13T12:13:33.0000000+00:00");
+        ParquetValueText.Parse(typeof(DateTimeOffset), "2025-11-13T12:13:33.0000000+00:00").Should().Be(value);
+    }
+
+    [Fact]
+    public void TimeSpan_round_trips_in_the_constant_form()
+    {
+        var value = TimeSpan.FromMinutes(90);
+
+        ParquetValueText.Format(value).Should().Be("01:30:00");
+        ParquetValueText.Parse(typeof(TimeSpan), "01:30:00").Should().Be(value);
+    }
+
+    [Fact]
+    public void Guid_round_trips_in_the_D_form()
+    {
+        var value = Guid.NewGuid();
+
+        ParquetValueText.Format(value).Should().Be(value.ToString("D"));
+        ParquetValueText.Parse(typeof(Guid), ParquetValueText.Format(value)).Should().Be(value);
+    }
+
+    [Fact]
+    public void Byte_arrays_round_trip_as_base64()
+    {
+        var value = new byte[] { 1, 2, 3, 255 };
+
+        ParquetValueText.Format(value).Should().Be("AQID/w==");
+        ParquetValueText.Parse(typeof(byte[]), "AQID/w==").Should().BeEquivalentTo(value);
+    }
+
+    [Theory]
+    [InlineData(1.5f)]
+    public void Float_round_trips(float value)
+    {
+        ParquetValueText.Parse(typeof(float), ParquetValueText.Format(value)).Should().Be(value);
+    }
+
+    [Theory]
+    [InlineData((short)5, "5")]
+    [InlineData((byte)7, "7")]
+    public void Smaller_integers_round_trips(object value, string text)
+    {
+        ParquetValueText.Format(value).Should().Be(text);
+        ParquetValueText.Parse(value.GetType(), text).Should().Be(value);
+    }
+
+    [Fact]
+    public void Other_iconvertible_types_use_their_invariant_form()
+    {
+        ParquetValueText.Format(5u).Should().Be("5");
+        ParquetValueText.Format('x').Should().Be("x");
+    }
+
+    [Fact]
+    public void A_non_iconvertible_value_uses_ToString()
+    {
+        ParquetValueText.Format(new Version(1, 2, 3)).Should().Be("1.2.3");
+    }
+
+    [Fact]
     public void A_nullable_target_type_is_unwrapped()
     {
         ParquetValueText.Parse(typeof(long?), "5").Should().Be(5L);

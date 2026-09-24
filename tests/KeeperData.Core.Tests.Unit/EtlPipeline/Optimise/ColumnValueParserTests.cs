@@ -26,6 +26,14 @@ public class ColumnValueParserTests
     }
 
     [Fact]
+    public void An_unknown_target_type_fails_loudly()
+    {
+        var parse = () => ColumnValueParser.Parse("1", (ColumnDataType)99, Precision, Scale);
+
+        parse.Should().Throw<InvalidOperationException>().WithMessage("*99*");
+    }
+
+    [Fact]
     public void String_passes_the_value_through_verbatim()
     {
         ColumnValueParser.Parse("007", ColumnDataType.String, Precision, Scale).Should().Be("007");

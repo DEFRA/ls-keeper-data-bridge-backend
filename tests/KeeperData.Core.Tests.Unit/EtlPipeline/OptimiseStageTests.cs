@@ -73,6 +73,28 @@ public class OptimiseStageTests
     }
 
     [Fact]
+    public async Task Converts_columns_to_every_detected_type_not_just_integers()
+    {
+        var definition = new DataSetDefinition(
+            "sam_cph_holdings", "sam_cph_holdings_{0}", ["CPH"], ChangeType.HeaderName, []);
+
+        PutNormalised(Key, "CHANGE_TYPE|CPH|SCORE|FLAG|BORN|STAMP",
+            "I|01/001/0001|1.5|true|2025-11-13|2025-11-13T10:30:15");
+
+        await RunAsync(definition, Key);
+
+        ParquetFixture.SchemaOf(Optimised.BytesOf(Key)).Should().Equal(
+            ("CHANGE_TYPE", typeof(ReadOnlyMemory<char>)),
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("SCORE", typeof(double)),
+            ("FLAG", typeof(bool)),
+            // DATE reads back as DateTime through Parquet.Net, so SchemaOf cannot tell Date from
+            // Timestamp - both land on the same stored logical type's CLR mapping.
+            ("BORN", typeof(DateTime)),
+            ("STAMP", typeof(DateTime)));
+    }
+
+    [Fact]
     public async Task Keeps_a_leading_zero_identifier_a_string_even_though_it_looks_numeric()
     {
         var definition = new DataSetDefinition(
@@ -157,6 +179,26 @@ public class OptimiseStageTests
         ParquetFixture.ToLines(Optimised.BytesOf(Key)).Should().Equal(
             "CHANGE_TYPE|CPH|HOLDING_NAME",
             "I|01/001/0001|Old Farm");
+    }
+
+    [Fact]
+    public async Task The_audit_sequence_column_is_merge_required_too()
+    {
+        var definition = new DataSetDefinition(
+            "sam_cph_holdings", "sam_cph_holdings_{0}", ["CPH"], ChangeType.HeaderName, [],
+            Audit: new AuditColumns("SEQ", "CHANGED_AT"))
+        {
+            AutoDetectColumnTypes = false,
+            IncludedColumns = ["HOLDING_NAME"]
+        };
+
+        PutNormalised(Key, "CHANGE_TYPE|CPH|SEQ|HOLDING_NAME|EASTING", "I|01/001/0001|42|Old Farm|123456");
+
+        await RunAsync(definition, Key);
+
+        ParquetFixture.ToLines(Optimised.BytesOf(Key)).Should().Equal(
+            "CHANGE_TYPE|CPH|SEQ|HOLDING_NAME",
+            "I|01/001/0001|42|Old Farm");
     }
 
     [Fact]

@@ -67,6 +67,25 @@ result.CanWrite.Should().BeFalse(); // wrapper forbids writing
         await using (result) { }
     }
 
+    /// <summary>The wrapper must not let the reader mutate a stream the caller owns.</summary>
+    [Fact]
+    public async Task The_wrapped_stream_forbids_mutation_but_delegates_flush_and_position()
+    {
+        await using var ms = new MemoryStream(new byte[16]);
+        var result = await KeeperData.Core.EtlPipeline.Parquet.ParquetStreams.AsSeekableAsync(ms, CancellationToken.None);
+
+        var setLength = () => result.SetLength(0);
+        setLength.Should().Throw<NotSupportedException>();
+
+        var write = () => result.Write(new byte[1], 0, 1);
+        write.Should().Throw<NotSupportedException>();
+
+        result.Flush();
+        result.Seek(4, SeekOrigin.Begin).Should().Be(4);
+        result.Position.Should().Be(4);
+        result.Length.Should().Be(16);
+    }
+
     private sealed class DelegatingNonSeekableStream : Stream
     {
         private readonly Stream _inner;

@@ -59,9 +59,9 @@ CREATE TABLE target.Holding (
     UkInternalCode TEXT,
     Postcode TEXT,
     CountryCode TEXT,
-    Udprn TEXT,
-    Easting TEXT,
-    Northing TEXT,
+    Udprn INTEGER,
+    Easting INTEGER,
+    Northing INTEGER,
     OsMapReference TEXT
 );
 
@@ -100,6 +100,26 @@ CREATE TABLE target.PartyRole (
     Role TEXT NOT NULL CHECK (Role IN ('owner', 'holder', 'keeper')),
     UNIQUE (PartyId, HoldingId, HerdId, Role)
 );
+
+-- The optimise stage writes typed parquet, so a staging column may arrive as BIGINT, TIMESTAMP or
+-- BOOLEAN rather than VARCHAR - and which type a column lands on is data-dependent. Every staging
+-- table is therefore read through a _txt view that casts all of its columns to VARCHAR, so the
+-- semantics below - string_split, regexp_matches, sentinel handling, the record_order fingerprint -
+-- see the same text whatever type the parquet carried, and one logical snapshot produces one read
+-- model. COLUMNS(*) keeps the views drift-proof: a column added to or dropped from a staging table
+-- passes through without a change here.
+--
+-- Typed output is declared on the target schema instead of inherited from staging: a column the
+-- read model wants as a number (Udprn, Easting, Northing) is INTEGER on the target and crossed via
+-- TRY_CAST at the value boundary, so the output type is fixed even where the staging column is
+-- still VARCHAR.
+--
+-- A dataset joining this read model in future adds its own <table>_txt view here and reads it in
+-- place of the staging table.
+CREATE OR REPLACE TEMP VIEW sam_party_txt AS SELECT COLUMNS(*)::VARCHAR FROM sam_party;
+CREATE OR REPLACE TEMP VIEW sam_cph_holder_txt AS SELECT COLUMNS(*)::VARCHAR FROM sam_cph_holder;
+CREATE OR REPLACE TEMP VIEW sam_herd_txt AS SELECT COLUMNS(*)::VARCHAR FROM sam_herd;
+CREATE OR REPLACE TEMP VIEW sam_cph_holdings_txt AS SELECT COLUMNS(*)::VARCHAR FROM sam_cph_holdings;
 
 -- The source extracts do not carry a database primary key, so IDs are derived
 -- from stable source keys. This is SHA-1 name-derived and UUID-shaped, with
@@ -176,12 +196,12 @@ CREATE OR REPLACE TEMP MACRO valid_cphh(value) AS (
 
 CREATE OR REPLACE TEMP VIEW normalized_role_party_ids AS
 SELECT DISTINCT trim(token) AS PARTY_ID
-FROM sam_herd,
+FROM sam_herd_txt,
      UNNEST(string_split(COALESCE(KEEPER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> ''
 UNION
 SELECT DISTINCT trim(token) AS PARTY_ID
-FROM sam_herd,
+FROM sam_herd_txt,
      UNNEST(string_split(COALESCE(OWNER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> '';
 
@@ -202,14 +222,14 @@ SELECT
     COALESCE(null_dash(p.INTERNET_EMAIL_ADDRESS), null_dash(h.INTERNET_EMAIL_ADDRESS)) AS INTERNET_EMAIL_ADDRESS,
     p.ROLES
 FROM (
-    SELECT PARTY_ID FROM sam_party
+    SELECT PARTY_ID FROM sam_party_txt
     UNION
-    SELECT PARTY_ID FROM sam_cph_holder
+    SELECT PARTY_ID FROM sam_cph_holder_txt
     UNION
     SELECT PARTY_ID FROM normalized_role_party_ids
 ) ids
-LEFT JOIN sam_party p USING (PARTY_ID)
-LEFT JOIN sam_cph_holder h USING (PARTY_ID);
+LEFT JOIN sam_party_txt p USING (PARTY_ID)
+LEFT JOIN sam_cph_holder_txt h USING (PARTY_ID);
 
 INSERT INTO target.Party
 SELECT
@@ -236,7 +256,7 @@ FROM normalized_party;
 -- than emit an empty population.
 CREATE OR REPLACE TEMP VIEW sam_cph_holdings_attributed AS
 SELECT *
-FROM sam_cph_holdings
+FROM sam_cph_holdings_txt
 UNION ALL BY NAME
 SELECT
     NULL AS FEATURE_NAME,
@@ -322,9 +342,13 @@ SELECT
     arg_max(title_case(UK_INTERNAL_CODE), record_order) AS UkInternalCode,
     arg_max(null_dash(POSTCODE), record_order) AS Postcode,
     arg_max(null_dash(COUNTRY_CODE), record_order) AS CountryCode,
-    arg_max(null_dash(UDPRN), record_order) AS Udprn,
-    arg_max(null_dash(EASTING), record_order) AS Easting,
-    arg_max(null_dash(NORTHING), record_order) AS Northing,
+    -- The address numbers are INTEGER on the target. The cast goes via DOUBLE because a DOUBLE
+    -- staging column renders '300002.0', which BIGINT's parser rejects; a value that is not numeric
+    -- at all still lands NULL, so the most recent row that actually carries a number wins, as with
+    -- the sentinels.
+    arg_max(TRY_CAST(TRY_CAST(null_dash(UDPRN) AS DOUBLE) AS BIGINT), record_order) AS Udprn,
+    arg_max(TRY_CAST(TRY_CAST(null_dash(EASTING) AS DOUBLE) AS BIGINT), record_order) AS Easting,
+    arg_max(TRY_CAST(TRY_CAST(null_dash(NORTHING) AS DOUBLE) AS BIGINT), record_order) AS Northing,
     arg_max(null_dash(OS_MAP_REFERENCE), record_order) AS OsMapReference
 FROM holding_source
 WHERE null_dash(CPH) IS NOT NULL
@@ -378,7 +402,7 @@ SELECT
     min(null_dash(MOVEMENT_RSTRCTN_RSN_CODE)) AS MovementRestrictionReasonCode,
     min(epoch_seconds(ANIMAL_GROUP_ID_MCH_FRM_DAT)) AS AnimalGroupFromDate,
     max(epoch_seconds(ANIMAL_GROUP_ID_MCH_TO_DAT)) AS AnimalGroupToDate
-FROM sam_herd
+FROM sam_herd_txt
 WHERE CPHH IS NOT NULL
     AND valid_cphh(CPHH)
 GROUP BY HERDMARK, CPHH;
@@ -434,7 +458,7 @@ SELECT DISTINCT
     trim(token) AS Cph,
     NULL AS HerdId,
     'holder' AS Role
-FROM sam_cph_holder,
+FROM sam_cph_holder_txt,
      UNNEST(string_split(CPHS, ',')) AS split(token)
 WHERE CPHS IS NOT NULL AND trim(token) <> ''
 UNION
@@ -443,7 +467,7 @@ SELECT DISTINCT
     left(CPHH, 11) AS Cph,
     source_guid('herd', HERDMARK || '|' || CPHH) AS HerdId,
     'keeper' AS Role
-FROM sam_herd,
+FROM sam_herd_txt,
      UNNEST(string_split(COALESCE(KEEPER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> ''
     AND valid_cphh(CPHH)
@@ -453,7 +477,7 @@ SELECT DISTINCT
     left(CPHH, 11) AS Cph,
     source_guid('herd', HERDMARK || '|' || CPHH) AS HerdId,
     'owner' AS Role
-FROM sam_herd,
+FROM sam_herd_txt,
      UNNEST(string_split(COALESCE(OWNER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> ''
     AND valid_cphh(CPHH);

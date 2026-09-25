@@ -28,12 +28,16 @@ public class EtlPipelineFactoryTests
         storageProviderMock.Setup(x => x.ForFolder(It.IsAny<string>())).Returns(dummyBlobStorage.Object);
 
         var normaliseLoggerMock = new Mock<ILogger<NormaliseStage>>();
+        var optimiseLoggerMock = new Mock<ILogger<OptimiseStage>>();
         var snapshotLoggerMock = new Mock<ILogger<SnapshotStage>>();
         var decryptStage = AutoMocked.Instance<DecryptStage>();
         var normaliseStage = new NormaliseStage(
             storageProviderMock.Object,
             hcdtNormaliserMock.Object,
             normaliseLoggerMock.Object);
+        var optimiseStage = new OptimiseStage(
+            storageProviderMock.Object,
+            optimiseLoggerMock.Object);
         var snapshotStage = new SnapshotStage(
             storageProviderMock.Object,
             new Mock<IDeltaMergeEngine>().Object,
@@ -45,6 +49,7 @@ public class EtlPipelineFactoryTests
             catalogueFactoryMock.Object,
             decryptStage,
             normaliseStage,
+            optimiseStage,
             snapshotStage,
             loadDuckDbStage,
             exportSqliteStage);
@@ -63,6 +68,7 @@ public class EtlPipelineFactoryTests
             "discover",
             "decrypt",
             "normalise",
+            "optimise",
             "snapshot",
             "load-duckdb",
             "export-sqlite"

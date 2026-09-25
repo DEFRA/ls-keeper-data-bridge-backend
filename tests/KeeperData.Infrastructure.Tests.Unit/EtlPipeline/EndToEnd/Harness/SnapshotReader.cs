@@ -1,3 +1,4 @@
+using KeeperData.Core.EtlPipeline.Parquet;
 using KeeperData.Core.EtlPipeline.Storage;
 using Parquet;
 
@@ -48,8 +49,9 @@ public static class SnapshotReader
 
                 for (var column = 0; column < selected.Length; column++)
                 {
-                    columns[column] = new string?[rowGroup.RowCount];
-                    await rowGroup.ReadAsync(selected[column], columns[column].AsMemory());
+                    // Snapshots can carry typed columns now that optimise rewrites them; the
+                    // assertions compare text, so read every column in its canonical string form.
+                    columns[column] = await ParquetColumns.ReadAsStringsAsync(rowGroup, selected[column], CancellationToken.None);
                 }
 
                 for (var row = 0; row < rowGroup.RowCount; row++)

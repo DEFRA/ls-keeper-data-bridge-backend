@@ -259,8 +259,10 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
             await connection.OpenAsync();
 
             using var command = connection.CreateCommand();
+            // LID_VERSION lands as BIGINT now that optimise types it - cast it back for the
+            // string comparison, the way OptimiseEndToEndCiTests reads its typed column.
             command.CommandText =
-                "SELECT LID_ID, LID_FULL_IDENTIFIER, LID_CURRENT_MODIFIED_DATE, LID_VERSION " +
+                "SELECT LID_ID, LID_FULL_IDENTIFIER, LID_CURRENT_MODIFIED_DATE, LID_VERSION::VARCHAR " +
                 "FROM cts_location_identifiers ORDER BY LID_ID";
 
             using var reader = await command.ExecuteReaderAsync();

@@ -227,6 +227,7 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
 
         if (source.RawKeys.Count > 0) target.RawKeys = [.. source.RawKeys];
         if (source.NormalisedKeys.Count > 0) target.NormalisedKeys = [.. source.NormalisedKeys];
+        if (source.OptimisedKeys.Count > 0) target.OptimisedKeys = [.. source.OptimisedKeys];
 
         target.SnapshotKey = source.SnapshotKey ?? target.SnapshotKey;
         target.SnapshotSourceTimestampUtc = source.SnapshotSourceTimestamp?.UtcDateTime ?? target.SnapshotSourceTimestampUtc;

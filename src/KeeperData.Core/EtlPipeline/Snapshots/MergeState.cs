@@ -1,4 +1,5 @@
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.EtlPipeline.Optimise;
 using KeeperData.Core.EtlPipeline.Parquet;
 using Parquet;
 using Parquet.Schema;
@@ -266,27 +267,86 @@ public sealed partial class ParquetDeltaMergeEngine
             return (indexes, missing, retyped, declined);
         }
 
-        /// <summary>A text column a file carries typed upgrades only when every value already held is in
-        /// the type's canonical form. "007" parses as a number but loses its zeros, and "true" parses as
-        /// a boolean but reads back "True" - both keep the column text rather than rewriting the values,
-        /// the same standard the optimise detector applies.</summary>
+        /// <summary>A text column a file carries typed upgrades only when every value already held can
+        /// take the type's canonical form. "007" parses as a number but loses its zeros, so it keeps
+        /// the column text rather than rewriting the values, the same standard the optimise detector
+        /// applies.
+        ///
+        /// Values whose meaning survives the rewrite get a second chance: a date in a feed's own
+        /// datetime shape, or "true"/"FALSE" for a boolean, parses to the type even though it is not
+        /// canonical text, so it is rewritten to canonical form as the type adopts rather than
+        /// declining the column - the write path parses strictly, so the value has to be canonical
+        /// before the field commits. A value matching no shape still declines.</summary>
         private bool CanRetype(int column, DataField incoming)
         {
             var type = ParquetColumns.ElementType(incoming);
+            List<(int Row, string Canonical)>? rewrites = null;
 
-            foreach (var row in _rows)
+            for (var index = 0; index < _rows.Count; index++)
             {
-                var value = row?[column];
+                var value = _rows[index]?[column];
 
-                if (value is null || (ParquetValueText.TryParse(type, value, out var parsed)
-                    && string.Equals(ParquetValueText.Format(parsed), value, StringComparison.Ordinal)))
+                if (value is null || IsCanonical(type, value))
                 {
                     continue;
                 }
 
+                if (!TryNormalize(type, value, out var canonical))
+                {
+                    return false;
+                }
+
+                (rewrites ??= []).Add((index, canonical!));
+            }
+
+            if (rewrites is not null)
+            {
+                foreach (var (row, canonical) in rewrites)
+                {
+                    _rows[row]![column] = canonical;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>The strict test every type must pass: the held value parses and its canonical
+        /// form is the held text exactly, so adopting the type rewrites nothing.</summary>
+        private static bool IsCanonical(Type type, string value)
+            => ParquetValueText.TryParse(type, value, out var parsed)
+                && string.Equals(ParquetValueText.Format(parsed), value, StringComparison.Ordinal);
+
+        /// <summary>The source shapes a held value can take and still carry one agreed meaning, so
+        /// it can be rewritten to canonical text: the forms the optimise detector accepts for date
+        /// and time values, and true/false in any casing for booleans - the only two values the
+        /// type has. Every other type declines: a value outside the canonical form has no agreed
+        /// meaning to write.</summary>
+        private static bool TryNormalize(Type type, string value, out string? canonical)
+        {
+            canonical = null;
+
+            var target = Nullable.GetUnderlyingType(type) ?? type;
+            object? parsed = null;
+
+            if (target == typeof(DateTime) && ColumnTypeDetector.TryParseTimestamp(value, out var timestamp))
+            {
+                parsed = timestamp;
+            }
+            else if (target == typeof(DateOnly) && ColumnTypeDetector.TryParseDate(value, out var date))
+            {
+                parsed = date;
+            }
+            else if (target == typeof(bool) && bool.TryParse(value, out var flag))
+            {
+                parsed = flag;
+            }
+
+            if (parsed is null)
+            {
                 return false;
             }
 
+            canonical = ParquetValueText.Format(parsed);
             return true;
         }
 

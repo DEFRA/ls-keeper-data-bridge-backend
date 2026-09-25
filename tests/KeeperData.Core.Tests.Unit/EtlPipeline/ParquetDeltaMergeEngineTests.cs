@@ -455,6 +455,125 @@ public class ParquetDeltaMergeEngineTests
     }
 
     [Fact]
+    public async Task A_string_column_upgrades_to_timestamp_when_held_values_are_in_a_source_date_shape()
+    {
+        // A held value in the feed's own datetime text parses to the type even though it is not
+        // canonical - it is rewritten to canonical form as the type adopts, so the column upgrades
+        // rather than pinning to string forever. Values already in canonical form survive as-is.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|FROM_DATE",
+            "I|01/001/0001|2018-01-05 00:00:00",
+            "I|01/001/0002|2019-03-14T00:00:00.0000000");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0003" }),
+            (new DataField<DateTime?>("FROM_DATE"), new DateTime?[] { new DateTime(2020, 6, 1) }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("FROM_DATE", typeof(DateTime)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|FROM_DATE",
+            "01/001/0001|2018-01-05T00:00:00.0000000",
+            "01/001/0002|2019-03-14T00:00:00.0000000",
+            "01/001/0003|2020-06-01T00:00:00.0000000");
+    }
+
+    [Fact]
+    public async Task A_string_column_stays_a_string_when_a_held_date_value_matches_no_source_shape()
+    {
+        // "05/01/2018" is none of the detector's timestamp shapes - it has no agreed meaning as a
+        // DateTime, so the column stays text rather than guessing.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|FROM_DATE", "I|01/001/0001|05/01/2018");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0002" }),
+            (new DataField<DateTime?>("FROM_DATE"), new DateTime?[] { new DateTime(2020, 6, 1) }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("FROM_DATE", typeof(ReadOnlyMemory<char>)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|FROM_DATE",
+            "01/001/0001|05/01/2018",
+            "01/001/0002|2020-06-01T00:00:00.0000000");
+    }
+
+    [Fact]
+    public async Task A_string_column_upgrades_to_boolean_when_held_values_are_true_or_false_in_any_casing()
+    {
+        // "true" and "FALSE" both parse to the type - the only two values it has - so they are
+        // rewritten to canonical form as the column adopts it rather than pinning to string.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|FLAGGED",
+            "I|01/001/0001|true",
+            "I|01/001/0002|FALSE");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0003" }),
+            (new DataField<bool?>("FLAGGED"), new bool?[] { true }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("FLAGGED", typeof(bool)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|FLAGGED",
+            "01/001/0001|True",
+            "01/001/0002|False",
+            "01/001/0003|True");
+    }
+
+    [Fact]
+    public async Task A_string_column_stays_a_string_when_a_held_value_is_not_a_recognised_boolean()
+    {
+        // "1" and "0" are how a feed may encode a flag, but bool.Parse refuses them - no agreed
+        // meaning, so the column stays text.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|FLAGGED", "I|01/001/0001|1");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0002" }),
+            (new DataField<bool?>("FLAGGED"), new bool?[] { false }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("FLAGGED", typeof(ReadOnlyMemory<char>)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|FLAGGED",
+            "01/001/0001|1",
+            "01/001/0002|False");
+    }
+
+    [Fact]
     public async Task An_upgraded_column_widens_back_to_string_when_a_later_file_disagrees()
     {
         // The upgrade is reversible: a string file arriving after the upgrade widens the column

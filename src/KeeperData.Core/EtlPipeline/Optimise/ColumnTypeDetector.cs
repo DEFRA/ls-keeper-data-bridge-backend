@@ -68,6 +68,16 @@ public static class ColumnTypeDetector
             : s_preference.FirstOrDefault(candidates.Contains, ColumnDataType.String);
     }
 
+    /// <summary>Parse a value against the timestamp shapes the detector accepts. Exposed so a
+    /// caller testing a held string can try the same source forms rather than only the canonical
+    /// one.</summary>
+    public static bool TryParseTimestamp(string value, out DateTime timestamp)
+        => DateTime.TryParseExact(value, s_timestampFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out timestamp);
+
+    /// <summary>Parse a value against the bare date shape the detector accepts.</summary>
+    public static bool TryParseDate(string value, out DateOnly date)
+        => DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+
     /// <summary>
     /// The types a single value is compatible with.
     /// </summary>

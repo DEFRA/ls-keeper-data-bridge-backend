@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<DecryptStage>();
         services.AddScoped<NormaliseStage>();
+        services.AddScoped<OptimiseStage>();
         services.AddScoped<SnapshotStage>();
         services.AddScoped<LoadDuckDbStage>();
         services.AddScoped<ExportSqliteStage>();

@@ -1,3 +1,4 @@
+using KeeperData.Core.EtlPipeline.Parquet;
 using Parquet;
 using Parquet.Schema;
 
@@ -30,7 +31,7 @@ public sealed partial class ParquetDeltaMergeEngine
 
         public static async Task<ParquetTable> ReadAsync(Stream stream, string key, CancellationToken cancellationToken)
         {
-            await using var seekable = await AsSeekableAsync(stream, cancellationToken);
+            await using var seekable = await ParquetStreams.AsSeekableAsync(stream, cancellationToken);
             await using var reader = await ParquetReader.CreateAsync(seekable, cancellationToken: cancellationToken);
 
             var fields = reader.Schema.GetDataFields();
@@ -55,16 +56,16 @@ public sealed partial class ParquetDeltaMergeEngine
             return rows;
         }
 
+        /// <summary>Every column, read typed then rendered to its canonical text. Rows stay strings so
+        /// keying, ordering and drift compare one representation; the typed field metadata survives on
+        /// <see cref="Fields"/> for the write side to recover the types from.</summary>
         private static async Task<string?[][]> ReadColumnsAsync(ParquetRowGroupReader rowGroup, DataField[] fields, CancellationToken cancellationToken)
         {
-            var rowCount = (int)rowGroup.RowCount;
             var columns = new string?[fields.Length][];
 
             for (var column = 0; column < fields.Length; column++)
             {
-                var buf = new string?[rowCount];
-                await rowGroup.ReadAsync(fields[column], buf.AsMemory(), cancellationToken: cancellationToken);
-                columns[column] = buf;
+                columns[column] = await ParquetColumns.ReadAsStringsAsync(rowGroup, fields[column], cancellationToken);
             }
 
             return columns;
@@ -87,21 +88,5 @@ public sealed partial class ParquetDeltaMergeEngine
             }
         }
 
-        /// <summary>Parquet is read back to front, so a forward-only stream (an object download) is
-        /// buffered first.</summary>
-        private static async Task<Stream> AsSeekableAsync(Stream stream, CancellationToken cancellationToken)
-        {
-            if (stream.CanSeek)
-            {
-                stream.Position = 0;
-                return new NonDisposingStream(stream);
-            }
-
-            var buffer = new MemoryStream();
-            await stream.CopyToAsync(buffer, cancellationToken);
-            buffer.Position = 0;
-
-            return buffer;
-        }
     }
 }

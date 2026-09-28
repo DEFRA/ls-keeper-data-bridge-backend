@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
 
-/// <summary>Snapshot. Input: NormalisedFileSet. Output: SnapshotFile.
+/// <summary>Snapshot. Input: OptimisedFileSet. Output: SnapshotFile.
 /// Every normalised file newer than the latest snapshot is folded onto it, oldest first, and the
 /// result is written under the newest source timestamp applied.</summary>
 public class SnapshotStageTests
@@ -26,7 +26,7 @@ public class SnapshotStageTests
     private static DataSetDefinition Definition(string name, DataSetIngestionMode mode = DataSetIngestionMode.Delta) =>
         new(name, $"{name}_{{0}}", ["CPH"], ChangeType.HeaderName, [], IngestionMode: mode);
 
-    private Task<List<SnapshotFile>> RunAsync(params NormalisedFileSet[] inputs) =>
+    private Task<List<SnapshotFile>> RunAsync(params OptimisedFileSet[] inputs) =>
         StageRunner.RunAsync(
             new SnapshotStage(
                 _storage,
@@ -43,7 +43,7 @@ public class SnapshotStageTests
         PutNormalised("sam_cph_holdings", "20251113121333", "I|01/001/0001|Old Farm");
         PutNormalised("sam_cph_holdings", "20251115121333", "U|01/001/0001|Updated Farm");
 
-        var output = await RunAsync(new NormalisedFileSet(SamCph));
+        var output = await RunAsync(new OptimisedFileSet(SamCph));
 
         output.Should().ContainSingle()
             .Which.Key.Should().Be("sam_cph_holdings/sam_cph_holdings_20251115121333.parquet");
@@ -57,7 +57,7 @@ public class SnapshotStageTests
         PutNormalised("sam_cph_holdings", "20251114121333", "U|01/001/0001|Updated Farm", "I|01/001/0003|New Farm");
         PutNormalised("sam_cph_holdings", "20251115121333", "D|01/001/0002|Should Not Delete");
 
-        var output = await RunAsync(new NormalisedFileSet(SamCph));
+        var output = await RunAsync(new OptimisedFileSet(SamCph));
 
         ParquetFixture.ToLines(Snapshots.BytesOf(output.Single().Key)).Should().Equal(
             "CPH|HOLDING_NAME",
@@ -71,11 +71,11 @@ public class SnapshotStageTests
     {
         PutNormalised("sam_cph_holdings", "20251113121333", "I|01/001/0001|Old Farm");
 
-        var first = await RunAsync(new NormalisedFileSet(SamCph));
+        var first = await RunAsync(new OptimisedFileSet(SamCph));
 
         PutNormalised("sam_cph_holdings", "20251114121333", "U|01/001/0001|Updated Farm");
 
-        var second = await RunAsync(new NormalisedFileSet(SamCph));
+        var second = await RunAsync(new OptimisedFileSet(SamCph));
 
         first.Single().AppliedKeys.Should().Equal("sam_cph_holdings/sam_cph_holdings_20251113121333.parquet");
         second.Single().AppliedKeys.Should().Equal("sam_cph_holdings/sam_cph_holdings_20251114121333.parquet");
@@ -89,7 +89,7 @@ public class SnapshotStageTests
     {
         PutNormalised("sam_cph_holdings", "20251113121333", "I|01/001/0001|Old Farm");
 
-        var output = await RunAsync(new NormalisedFileSet(SamCph));
+        var output = await RunAsync(new OptimisedFileSet(SamCph));
 
         ParquetFixture.ToLines(Snapshots.BytesOf(output.Single().Key))[0].Should().Be("CPH|HOLDING_NAME");
     }
@@ -99,8 +99,8 @@ public class SnapshotStageTests
     {
         PutNormalised("sam_cph_holdings", "20251113121333", "I|01/001/0001|Old Farm");
 
-        var first = await RunAsync(new NormalisedFileSet(SamCph));
-        var second = await RunAsync(new NormalisedFileSet(SamCph));
+        var first = await RunAsync(new OptimisedFileSet(SamCph));
+        var second = await RunAsync(new OptimisedFileSet(SamCph));
 
         second.Single().Key.Should().Be(first.Single().Key);
         second.Single().Created.Should().BeFalse();
@@ -112,10 +112,10 @@ public class SnapshotStageTests
     public async Task Retains_older_snapshots_rather_than_replacing_them()
     {
         PutNormalised("sam_cph_holdings", "20251113121333", "I|01/001/0001|Old Farm");
-        await RunAsync(new NormalisedFileSet(SamCph));
+        await RunAsync(new OptimisedFileSet(SamCph));
 
         PutNormalised("sam_cph_holdings", "20251114121333", "U|01/001/0001|Updated Farm");
-        await RunAsync(new NormalisedFileSet(SamCph));
+        await RunAsync(new OptimisedFileSet(SamCph));
 
         Snapshots.Keys.Should().BeEquivalentTo(
             "sam_cph_holdings/sam_cph_holdings_20251113121333.parquet",
@@ -129,7 +129,7 @@ public class SnapshotStageTests
         PutNormalised("sam_cph_holdings", "20251113121333", "I|01/001/0001|Old Farm");
         Snapshots.Put(key, "written by someone else");
 
-        var output = await RunAsync(new NormalisedFileSet(SamCph));
+        var output = await RunAsync(new OptimisedFileSet(SamCph));
 
         output.Single().Created.Should().BeFalse();
         Snapshots.ContentOf(key).Should().Be("written by someone else");
@@ -141,7 +141,7 @@ public class SnapshotStageTests
         PutNormalised("sam_cph_holdings", "20251113121333", "I|01/001/0001|Old Farm", "I|01/001/0002|Keep Farm");
         PutNormalised("sam_cph_holdings", "20251115121333", "D|01/001/0002|Should Not Delete");
 
-        var output = await RunAsync(new NormalisedFileSet(SamCph));
+        var output = await RunAsync(new OptimisedFileSet(SamCph));
 
         output.Single().Should().BeEquivalentTo(new
         {
@@ -158,7 +158,7 @@ public class SnapshotStageTests
     {
         Normalised.Put("sam_cph_holdings/sam_cph_holdings.parquet", ParquetFixture.From(Header, "I|01/001/0001|Old Farm"));
 
-        var run = async () => await RunAsync(new NormalisedFileSet(SamCph));
+        var run = async () => await RunAsync(new OptimisedFileSet(SamCph));
 
         await run.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*sam_cph_holdings.parquet*");
@@ -170,7 +170,7 @@ public class SnapshotStageTests
         Normalised.Put("sam_cph_holdings/sam_cph_holdings_20251113121333.parquet", ParquetFixture.From(Header, "I|01/001/0001|Old Farm"));
         Normalised.Put("sam_cph_holdings/other_20251113121333.parquet", ParquetFixture.From(Header, "I|01/001/0002|Keep Farm"));
 
-        var run = async () => await RunAsync(new NormalisedFileSet(SamCph));
+        var run = async () => await RunAsync(new OptimisedFileSet(SamCph));
 
         await run.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*no rule for which to apply first*");
@@ -182,18 +182,43 @@ public class SnapshotStageTests
         PutNormalised("sam_cph_holdings", "20251113121333", "I|01/001/0001|Old Farm");
         PutNormalised("sam_cph_holdings", "20251114121333", "U|01/001/0001|Updated Farm");
 
-        var output = await RunAsync(new NormalisedFileSet(SamCph)
+        var output = await RunAsync(new OptimisedFileSet(SamCph)
         {
-            Files = ["sam_cph_holdings/sam_cph_holdings_20251113121333.parquet"]
+            Files = [new OptimisedFile(EtlPipelineFolders.Normalised, "sam_cph_holdings/sam_cph_holdings_20251113121333.parquet")]
         });
 
         output.Single().Key.Should().Be("sam_cph_holdings/sam_cph_holdings_20251113121333.parquet");
     }
 
     [Fact]
+    public async Task Reads_each_source_file_from_the_folder_the_optimise_stage_named()
+    {
+        // A file the optimise stage rewrote lives in optimised/, a pass-through file stays in
+        // normalised/, and the payload says which is which.
+        PutNormalised("sam_cph_holdings", "20251113121333", "I|01/001/0001|Old Farm");
+        _storage.Folder(EtlPipelineFolders.Optimised).Put(
+            "sam_cph_holdings/sam_cph_holdings_20251114121333.parquet",
+            ParquetFixture.From(Header, "U|01/001/0001|Updated Farm"));
+
+        var output = await RunAsync(new OptimisedFileSet(SamCph)
+        {
+            Files =
+            [
+                new OptimisedFile(EtlPipelineFolders.Normalised, "sam_cph_holdings/sam_cph_holdings_20251113121333.parquet"),
+                new OptimisedFile(EtlPipelineFolders.Optimised, "sam_cph_holdings/sam_cph_holdings_20251114121333.parquet")
+            ]
+        });
+
+        output.Single().Key.Should().Be("sam_cph_holdings/sam_cph_holdings_20251114121333.parquet");
+        ParquetFixture.ToLines(Snapshots.BytesOf(output.Single().Key)).Should().Equal(
+            "CPH|HOLDING_NAME",
+            "01/001/0001|Updated Farm");
+    }
+
+    [Fact]
     public async Task Produces_nothing_when_the_dataset_has_no_normalised_file()
     {
-        var output = await RunAsync(new NormalisedFileSet(SamCph));
+        var output = await RunAsync(new OptimisedFileSet(SamCph));
 
         output.Should().BeEmpty();
         Snapshots.Keys.Should().BeEmpty();
@@ -214,8 +239,8 @@ public class SnapshotStageTests
         PutNormalised("cts_keeper", "20251113121333", "I|02/002/0002|Other Farm");
 
         var output = await RunAsync(
-            new NormalisedFileSet(SamCph),
-            new NormalisedFileSet(Definition("cts_keeper")));
+            new OptimisedFileSet(SamCph),
+            new OptimisedFileSet(Definition("cts_keeper")));
 
         output.Select(o => o.Definition.Name).Should().Equal("sam_cph_holdings", "cts_keeper");
         Snapshots.Keys.Should().HaveCount(2);
@@ -228,7 +253,7 @@ public class SnapshotStageTests
         Normalised.Put("sam_showground/sam_showground_20251113121333.parquet", "older");
         Normalised.Put("sam_showground/sam_showground_20251115121333.parquet", "latest");
 
-        var output = await RunAsync(new NormalisedFileSet(definition));
+        var output = await RunAsync(new OptimisedFileSet(definition));
 
         output.Single().Key.Should().Be("sam_showground/sam_showground_20251115121333.parquet");
         Snapshots.ContentOf(output.Single().Key).Should().Be("latest");

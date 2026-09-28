@@ -1,5 +1,6 @@
 using FluentAssertions;
 using KeeperData.Bridge.Controllers;
+using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
@@ -24,6 +25,7 @@ public class EtlStagingControllerSqliteTests
 
         _controller = new EtlStagingController(
             _storageProvider.Object,
+            Mock.Of<IDataSetDefinitions>(),
             Mock.Of<ILogger<EtlStagingController>>());
     }
 

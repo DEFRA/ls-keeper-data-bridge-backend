@@ -131,6 +131,11 @@ public sealed class EtlImportStatusObserver(
             NormalisedKeys = normalised.Files
         },
 
+        OptimisedFileSet optimised => new EtlImportDatasetProgress(optimised.Definition.Name)
+        {
+            OptimisedKeys = [.. optimised.Files.Select(file => $"{file.Folder}/{file.Key}")]
+        },
+
         SnapshotFile snapshot => new EtlImportDatasetProgress(snapshot.Definition.Name)
         {
             SnapshotKey = snapshot.Key,
@@ -155,6 +160,7 @@ public sealed class EtlImportStatusObserver(
             SourceFiles = second.SourceFiles.Count > 0 ? second.SourceFiles : first.SourceFiles,
             RawKeys = second.RawKeys.Count > 0 ? second.RawKeys : first.RawKeys,
             NormalisedKeys = second.NormalisedKeys.Count > 0 ? second.NormalisedKeys : first.NormalisedKeys,
+            OptimisedKeys = second.OptimisedKeys.Count > 0 ? second.OptimisedKeys : first.OptimisedKeys,
             SnapshotKey = second.SnapshotKey ?? first.SnapshotKey,
             SnapshotSourceTimestamp = second.SnapshotSourceTimestamp ?? first.SnapshotSourceTimestamp,
             RowCount = second.RowCount ?? first.RowCount,

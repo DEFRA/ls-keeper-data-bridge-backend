@@ -19,7 +19,12 @@ public static class PipelineExtensions
         NormaliseStage stage)
         => builder.Then(stage);
 
-    public static PipelineBuilder<SnapshotFile> Snapshot(this PipelineBuilder<NormalisedFileSet> builder, SnapshotStage stage)
+    public static PipelineBuilder<OptimisedFileSet> Optimise(
+        this PipelineBuilder<NormalisedFileSet> builder,
+        OptimiseStage stage)
+        => builder.Then(stage);
+
+    public static PipelineBuilder<SnapshotFile> Snapshot(this PipelineBuilder<OptimisedFileSet> builder, SnapshotStage stage)
         => builder.Then(stage);
 
     public static PipelineBuilder<StagingDatabase> LoadDuckDb(this PipelineBuilder<SnapshotFile> builder, LoadDuckDbStage stage)

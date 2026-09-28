@@ -14,6 +14,10 @@ public static class EtlPipelineFolders
     /// Materialised by the normalise stage.</summary>
     public const string Normalised = "normalised";
 
+    /// <summary>Normalised parquet files rewritten with resolved column types, projections and row
+    /// filters applied. Materialised by the optimise stage.</summary>
+    public const string Optimised = "optimised";
+
     /// <summary>Normalised parquet files reprocessed into snapshots by walking the deltas.
     /// Materialised by the snapshot stage.</summary>
     public const string Snapshots = "snapshots";

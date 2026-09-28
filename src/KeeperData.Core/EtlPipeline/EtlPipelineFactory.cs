@@ -11,6 +11,7 @@ public sealed class EtlPipelineFactory(
     IExternalCatalogueServiceFactory catalogueFactory,
     DecryptStage decryptStage,
     NormaliseStage normaliseStage,
+    OptimiseStage optimiseStage,
     SnapshotStage snapshotStage,
     LoadDuckDbStage loadDuckDbStage,
     ExportSqliteStage exportSqliteStage) : IEtlPipelineFactory
@@ -21,6 +22,7 @@ public sealed class EtlPipelineFactory(
             .Discover()               // -> DiscoveredFileSet
             .Decrypt(decryptStage)    // -> RawFileSet        (raw/)
             .Normalise(normaliseStage) // -> NormalisedFileSet (normalised/*.parquet)
+            .Optimise(optimiseStage)  // -> OptimisedFileSet  (optimised/*.parquet)
             .Snapshot(snapshotStage)  // -> SnapshotFile      (snapshots/*.parquet)
             .LoadDuckDb(loadDuckDbStage) // -> StagingDatabase (staging/*.duckdb)
             .ExportSqlite(exportSqliteStage) // -> SqliteExportFile (views/*.sqlite)

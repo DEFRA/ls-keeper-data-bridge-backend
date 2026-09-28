@@ -1,4 +1,6 @@
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.EtlPipeline.Optimise;
+using KeeperData.Core.EtlPipeline.Parquet;
 using Parquet;
 using Parquet.Schema;
 
@@ -135,18 +137,39 @@ public sealed partial class ParquetDeltaMergeEngine
             var fields = _fields.ToArray();
             var rows = _rows.Where(row => row is not null).ToList();
 
+            // A column non-nullable where it arrived can still hold nulls in the merged output - a
+            // file that dropped it leaves nulls behind - so it is widened before the schema is built.
+            for (var column = 0; column < fields.Length; column++)
+            {
+                if (!fields[column].IsNullable && rows.Exists(row => row![column] is null))
+                {
+                    fields[column] = AsNullable(fields[column]);
+                }
+            }
+
             await using var writer = await ParquetWriter.CreateAsync(new ParquetSchema(fields), output, cancellationToken: cancellationToken);
             using var rowGroup = writer.CreateRowGroup();
 
             for (var column = 0; column < fields.Length; column++)
             {
-                var values = new string?[rows.Count];
-                for (var row = 0; row < rows.Count; row++)
-                    values[row] = rows[row]![column];
+                var field = fields[column];
+                var values = Array.CreateInstance(ParquetColumns.ElementType(field), rows.Count);
 
-                await rowGroup.WriteAsync(fields[column], (IReadOnlyCollection<string?>)values);
+                for (var row = 0; row < rows.Count; row++)
+                {
+                    // Canonical text back to the field's type: the inverse of the read, so it cannot
+                    // fail for a value the read produced.
+                    values.SetValue(ParquetValueText.Parse(ParquetColumns.ElementType(field), rows[row]![column]), row);
+                }
+
+                await ParquetColumns.WriteAsync(rowGroup, field, values, cancellationToken);
             }
         }
+
+        private static DataField AsNullable(DataField field)
+            => field is DecimalDataField decimalField
+                ? new DecimalDataField(field.Name, decimalField.Precision, decimalField.Scale, isNullable: true)
+                : new DataField(field.Name, Nullable.GetUnderlyingType(field.ClrType) ?? field.ClrType, isNullable: true);
 
         /// <summary>Reconciles the file's columns with the output's, widening the output for any column
         /// it introduces, and returns where each output column is found in the file - or -1 when the
@@ -156,9 +179,9 @@ public sealed partial class ParquetDeltaMergeEngine
             var establishing = _fields.Count == 0;
 
             var added = MergeNewColumns(table);
-            var (indexes, missing) = BuildIndexMap(table);
+            var (indexes, missing, retyped, declined) = BuildIndexMap(table);
 
-            return new Alignment(indexes, new SchemaDrift(missing, establishing ? [] : added));
+            return new Alignment(indexes, new SchemaDrift(missing, establishing ? [] : added, retyped, declined));
         }
 
         /// <summary>Adds any column the file introduces to the output schema, widening the rows already
@@ -183,11 +206,20 @@ public sealed partial class ParquetDeltaMergeEngine
         }
 
         /// <summary>For each output column, where it is found in the file - or -1 when the file does not
-        /// carry it - alongside the names of any output columns the file is missing.</summary>
-        private (int[] Indexes, List<string> Missing) BuildIndexMap(ParquetTable table)
+        /// carry it - alongside the names of any output columns the file is missing, the columns whose
+        /// type changed, and the columns whose upgrade was declined.
+        ///
+        /// A column two files disagree on the type of widens to string rather than failing the merge:
+        /// the values are already held as canonical text, so a string column keeps every cut of the data
+        /// legible. A column established as text goes the other way when a typed file arrives: if every
+        /// held value survives conversion the column adopts the incoming type, so a snapshot that
+        /// predates typed input migrates instead of pinning the column to string forever.</summary>
+        private (int[] Indexes, List<string> Missing, List<RetypedColumn> Retyped, List<RetypedColumn> Declined) BuildIndexMap(ParquetTable table)
         {
             var indexes = new int[_fields.Count];
             var missing = new List<string>();
+            var retyped = new List<RetypedColumn>();
+            var declined = new List<RetypedColumn>();
 
             for (var column = 0; column < _fields.Count; column++)
             {
@@ -197,10 +229,153 @@ public sealed partial class ParquetDeltaMergeEngine
                 if (indexes[column] < 0)
                 {
                     missing.Add(name);
+                    continue;
+                }
+
+                var held = _fields[column];
+                var incoming = table.Fields[indexes[column]];
+
+                if (SameType(held, incoming))
+                {
+                    continue;
+                }
+
+                if (IsText(held))
+                {
+                    if (IsText(incoming))
+                    {
+                        continue;
+                    }
+
+                    if (CanRetype(column, incoming))
+                    {
+                        retyped.Add(new RetypedColumn(name, TypeName(held), TypeName(incoming)));
+                        _fields[column] = incoming;
+                    }
+                    else
+                    {
+                        declined.Add(new RetypedColumn(name, TypeName(held), TypeName(incoming)));
+                    }
+                }
+                else
+                {
+                    retyped.Add(new RetypedColumn(name, TypeName(held), TypeName(incoming)));
+                    _fields[column] = new DataField<string?>(name);
                 }
             }
 
-            return (indexes, missing);
+            return (indexes, missing, retyped, declined);
+        }
+
+        /// <summary>A text column a file carries typed upgrades only when every value already held can
+        /// take the type's canonical form. "007" parses as a number but loses its zeros, so it keeps
+        /// the column text rather than rewriting the values, the same standard the optimise detector
+        /// applies.
+        ///
+        /// Values whose meaning survives the rewrite get a second chance: a date in a feed's own
+        /// datetime shape, or "true"/"FALSE" for a boolean, parses to the type even though it is not
+        /// canonical text, so it is rewritten to canonical form as the type adopts rather than
+        /// declining the column - the write path parses strictly, so the value has to be canonical
+        /// before the field commits. A value matching no shape still declines.</summary>
+        private bool CanRetype(int column, DataField incoming)
+        {
+            var type = ParquetColumns.ElementType(incoming);
+            List<(int Row, string Canonical)>? rewrites = null;
+
+            for (var index = 0; index < _rows.Count; index++)
+            {
+                var value = _rows[index]?[column];
+
+                if (value is null || IsCanonical(type, value))
+                {
+                    continue;
+                }
+
+                if (!TryNormalize(type, value, out var canonical))
+                {
+                    return false;
+                }
+
+                (rewrites ??= []).Add((index, canonical!));
+            }
+
+            if (rewrites is not null)
+            {
+                foreach (var (row, canonical) in rewrites)
+                {
+                    _rows[row]![column] = canonical;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>The strict test every type must pass: the held value parses and its canonical
+        /// form is the held text exactly, so adopting the type rewrites nothing.</summary>
+        private static bool IsCanonical(Type type, string value)
+            => ParquetValueText.TryParse(type, value, out var parsed)
+                && string.Equals(ParquetValueText.Format(parsed), value, StringComparison.Ordinal);
+
+        /// <summary>The source shapes a held value can take and still carry one agreed meaning, so
+        /// it can be rewritten to canonical text: the forms the optimise detector accepts for date
+        /// and time values, and true/false in any casing for booleans - the only two values the
+        /// type has. Every other type declines: a value outside the canonical form has no agreed
+        /// meaning to write.</summary>
+        private static bool TryNormalize(Type type, string value, out string? canonical)
+        {
+            canonical = null;
+
+            var target = Nullable.GetUnderlyingType(type) ?? type;
+            object? parsed = null;
+
+            if (target == typeof(DateTime) && ColumnTypeDetector.TryParseTimestamp(value, out var timestamp))
+            {
+                parsed = timestamp;
+            }
+            else if (target == typeof(DateOnly) && ColumnTypeDetector.TryParseDate(value, out var date))
+            {
+                parsed = date;
+            }
+            else if (target == typeof(bool) && bool.TryParse(value, out var flag))
+            {
+                parsed = flag;
+            }
+
+            if (parsed is null)
+            {
+                return false;
+            }
+
+            canonical = ParquetValueText.Format(parsed);
+            return true;
+        }
+
+        private static bool SameType(DataField a, DataField b)
+        {
+            var typeA = Nullable.GetUnderlyingType(a.ClrType) ?? a.ClrType;
+            var typeB = Nullable.GetUnderlyingType(b.ClrType) ?? b.ClrType;
+
+            return typeA == typeB
+                && (a is not DecimalDataField decimalA
+                    || b is DecimalDataField decimalB && decimalA.Precision == decimalB.Precision && decimalA.Scale == decimalB.Scale);
+        }
+
+        /// <summary>Parquet.Net declares a string field's CLR type as ReadOnlyMemory&lt;char&gt; and a
+        /// byte array's as ReadOnlyMemory&lt;byte&gt;; both are already the widest form a column can take.</summary>
+        private static bool IsText(DataField field)
+        {
+            var type = Nullable.GetUnderlyingType(field.ClrType) ?? field.ClrType;
+
+            return type == typeof(string) || type == typeof(ReadOnlyMemory<char>) || type == typeof(ReadOnlyMemory<byte>);
+        }
+
+        private static string TypeName(DataField field)
+        {
+            var type = Nullable.GetUnderlyingType(field.ClrType) ?? field.ClrType;
+
+            return type == typeof(ReadOnlyMemory<char>) ? "string"
+                : type == typeof(ReadOnlyMemory<byte>) ? "byte[]"
+                : type.Name;
         }
 
         /// <summary>Grows the rows already held so they carry a null for each newly added column.</summary>
@@ -292,6 +467,12 @@ public sealed partial class ParquetDeltaMergeEngine
     private sealed record AppliedDelta(long Upserted, long Deleted, long IgnoredDeletes, long Rejected, SchemaDrift Drift);
 
     /// <summary>How one file's columns differed from the output's: <paramref name="Missing"/> columns the
-    /// output carries and the file does not, <paramref name="Added"/> columns the file introduced.</summary>
-    private sealed record SchemaDrift(IReadOnlyList<string> Missing, IReadOnlyList<string> Added);
+    /// output carries and the file does not, <paramref name="Added"/> columns the file introduced,
+    /// <paramref name="Retyped"/> columns whose type changed - widened to string, or adopted the file's
+    /// type - and <paramref name="Declined"/> columns that stayed text because a held value would not
+    /// survive the conversion.</summary>
+    private sealed record SchemaDrift(IReadOnlyList<string> Missing, IReadOnlyList<string> Added, IReadOnlyList<RetypedColumn> Retyped, IReadOnlyList<RetypedColumn> Declined);
+
+    /// <summary>A column a later file carries as a different type than the output established.</summary>
+    private sealed record RetypedColumn(string Name, string HeldType, string IncomingType);
 }

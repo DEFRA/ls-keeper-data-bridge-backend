@@ -70,7 +70,7 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
         status.Error.Should().BeNull();
 
         status.Stages.Select(s => s.Name)
-            .Should().Equal("discover", "decrypt", "normalise", "snapshot", "load-duckdb", "export-sqlite");
+            .Should().Equal("discover", "decrypt", "normalise", "optimise", "snapshot", "load-duckdb", "export-sqlite");
 
         var dataset = status.Datasets.Should().ContainSingle().Subject;
 
@@ -79,6 +79,7 @@ public sealed class EtlImportStatusIntegrationTests(LocalStackFixture localStack
 
         dataset.RawKeys.Should().Equal(SourceFile);
         dataset.NormalisedKeys.Should().Equal("sam_cph_holdings/LITP_SAMCPHHOLDING_20251113121333.parquet");
+        dataset.OptimisedKeys.Should().Equal("optimised/sam_cph_holdings/LITP_SAMCPHHOLDING_20251113121333.parquet");
         dataset.SnapshotKey.Should().Be("sam_cph_holdings/sam_cph_holdings_20251113121333.parquet");
         dataset.RowCount.Should().Be(2);
         dataset.RowsUpserted.Should().Be(2);

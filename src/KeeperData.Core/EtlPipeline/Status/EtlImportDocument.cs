@@ -81,6 +81,7 @@ public class EtlImportDatasetDocument
     public List<EtlImportSourceFileDocument> SourceFiles { get; set; } = [];
     public List<string> RawKeys { get; set; } = [];
     public List<string> NormalisedKeys { get; set; } = [];
+    public List<string> OptimisedKeys { get; set; } = [];
 
     public string? SnapshotKey { get; set; }
 

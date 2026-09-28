@@ -24,8 +24,6 @@ public class EtlImportStatusResponse
     public Guid ImportId { get; set; }
     public required string Status { get; set; }
     public required string SourceType { get; set; }
-
-    /// <summary>The dataset the run was restricted to, or null for all of them.</summary>
     public string? Dataset { get; set; }
 
     public DateTime RequestedAtUtc { get; set; }
@@ -91,6 +89,7 @@ public class EtlImportDatasetResponse
     public List<EtlImportSourceFileResponse> SourceFiles { get; set; } = [];
     public List<string> RawPaths { get; set; } = [];
     public List<string> NormalisedPaths { get; set; } = [];
+    public List<string> OptimisedPaths { get; set; } = [];
     public string? SnapshotPath { get; set; }
     public DateTime? SnapshotSourceTimestampUtc { get; set; }
     public long? RowCount { get; set; }

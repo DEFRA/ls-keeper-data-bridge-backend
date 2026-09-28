@@ -33,8 +33,30 @@ public sealed record AuditColumns(string SequenceColumn, string TimestampColumn)
 /// merged in audit order rather than file order.</param>
 public record DataSetDefinition(string Name, string FilePrefixFormat, string[] PrimaryKeyHeaderNames, string ChangeTypeHeaderName, string[] Accumulators, string DatePattern = EtlConstants.DatePattern, string DateTimePattern = EtlConstants.DateTimePattern, FileFormat Format = FileFormat.SimplePsv, DataSetIngestionMode IngestionMode = DataSetIngestionMode.Snapshot, PasswordDerivationPolicy PasswordDerivation = PasswordDerivationPolicy.FileNameVerbatim, string? SourceKeyPattern = null, string? BaselineKeyPattern = null, AuditColumns? Audit = null)
 {
-    /// <summary>Columns the snapshot suppresses. An empty array keeps every column.</summary>
+    /// <summary>Columns the snapshot suppresses. Mutually exclusive with <see cref="IncludedColumns"/>.</summary>
     public string[] ExcludedColumns { get; init; } = [];
+
+    /// <summary>Columns the optimise stage keeps. Mutually exclusive with <see cref="ExcludedColumns"/>.</summary>
+    public string[]? IncludedColumns { get; init; }
+
+    /// <summary>Explicit column type overrides, keyed by column name (case-insensitive). Wins over
+    /// auto-detection; may not name a merge-required column, which is always a string.</summary>
+    public IReadOnlyDictionary<string, ColumnDataType>? ColumnTypes { get; init; }
+
+    /// <summary>Auto-detect the type of columns with no explicit <see cref="ColumnTypes"/> entry.</summary>
+    public bool AutoDetectColumnTypes { get; init; } = true;
+
+    /// <summary>Rows sampled per column for auto-detection.</summary>
+    public int TypeDetectionSampleRows { get; init; } = 10_000;
+
+    /// <summary>Per-row predicate applied by the optimise stage; false drops the row.</summary>
+    public Func<IReadOnlyDictionary<string, object?>, bool>? RowFilter { get; init; }
+
+    /// <summary>Precision for columns resolved to <see cref="ColumnDataType.Decimal"/>.</summary>
+    public byte DecimalPrecision { get; init; } = 38;
+
+    /// <summary>Scale for columns resolved to <see cref="ColumnDataType.Decimal"/>.</summary>
+    public byte DecimalScale { get; init; } = 18;
 }
 
 public class DataSetDefinitions : IDataSetDefinitions

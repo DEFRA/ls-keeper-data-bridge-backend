@@ -3,6 +3,7 @@ using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline.Snapshots;
 using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
 using Microsoft.Extensions.Logging.Abstractions;
+using Parquet.Schema;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
 
@@ -19,11 +20,10 @@ public class ParquetDeltaMergeEngineTests
     private readonly ParquetDeltaMergeEngine _engine = new(NullLogger<ParquetDeltaMergeEngine>.Instance);
 
     private static DeltaMergeSource Source(string key, string header, params string[] rows)
-    {
-        var content = ParquetFixture.From(header, rows);
+        => Source(key, ParquetFixture.From(header, rows));
 
-        return new DeltaMergeSource(key, _ => Task.FromResult<Stream>(new MemoryStream(content)));
-    }
+    private static DeltaMergeSource Source(string key, byte[] content)
+        => new(key, _ => Task.FromResult<Stream>(new MemoryStream(content)));
 
     private async Task<(IReadOnlyList<string> Lines, DeltaMergeResult Result)> MergeAsync(
         DeltaMergeSource? baseSnapshot,
@@ -260,6 +260,43 @@ public class ParquetDeltaMergeEngineTests
     }
 
     [Fact]
+    public async Task Deletes_apply_when_the_dataset_defines_an_audit_order()
+    {
+        // With audit configured a delete tombstones the row: the slot is held so a later insert can
+        // reinstate it, and a delete for a key never seen - or already tombstoned - is a no-op.
+        var audited = SamCph with { Audit = new AuditColumns("SEQ", "CHANGED_AT") };
+
+        using var output = new MemoryStream();
+
+        var result = await _engine.MergeAsync(
+            audited,
+            null,
+            [
+                Source("seed", DeltaHeader, "I|01/001/0001|Keep Farm", "I|01/001/0002|Doomed Farm"),
+                Source("delete", DeltaHeader, "D|01/001/0002|Doomed Farm", "D|01/001/0002|Doomed Farm", "D|01/001/0099|Ghost Farm"),
+                Source("adds", "CHANGE_TYPE|CPH|HOLDING_NAME|NEW_COLUMN", "I|01/001/0003|New Farm|X")
+            ],
+            output);
+
+        result.RowsDeleted.Should().Be(1);
+
+        ParquetFixture.ToLines(output.ToArray()).Should().Equal(
+            "CPH|HOLDING_NAME|NEW_COLUMN",
+            "01/001/0001|Keep Farm|",
+            "01/001/0003|New Farm|X");
+    }
+
+    [Fact]
+    public async Task Fails_to_write_when_no_file_supplied_a_schema()
+    {
+        using var output = new MemoryStream();
+
+        var merge = async () => await _engine.MergeAsync(SamCph, null, [], output);
+
+        await merge.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Nothing to write*");
+    }
+
+    [Fact]
     public async Task Rewrites_the_snapshot_unchanged_when_there_are_no_deltas()
     {
         var (lines, result) = await MergeAsync(Source("snapshot", SnapshotHeader, "01/001/0001|Old Farm"));
@@ -267,5 +304,306 @@ public class ParquetDeltaMergeEngineTests
         lines.Should().Equal("CPH|HOLDING_NAME", "01/001/0001|Old Farm");
         result.DeltasApplied.Should().Be(0);
         result.RowCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Typed_columns_merge_into_a_typed_snapshot()
+    {
+        // The shape optimise output takes when a column converts: merge-required columns stay
+        // strings, the rest carry their native type.
+        var delta = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I", "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0001", "01/001/0002" }),
+            (new DataField<long?>("EASTING"), new long?[] { 123456, 654321 }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("delta", delta)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("EASTING", typeof(long)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|EASTING",
+            "01/001/0001|123456",
+            "01/001/0002|654321");
+    }
+
+    [Fact]
+    public async Task A_column_two_files_disagree_on_the_type_of_widens_to_string()
+    {
+        // File one detects EASTING as Int64, file two carries it as text: the merged column widens
+        // rather than fails, and the already-held value stays legible because it was stored as
+        // canonical text.
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0001" }),
+            (new DataField<long?>("EASTING"), new long?[] { 123456 }));
+
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|EASTING", "I|01/001/0002|654321");
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", typed), Source("second", texty)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("EASTING", typeof(ReadOnlyMemory<char>)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|EASTING",
+            "01/001/0001|123456",
+            "01/001/0002|654321");
+    }
+
+    [Fact]
+    public async Task A_non_nullable_column_widens_to_nullable_when_a_later_file_drops_it()
+    {
+        // The column arrived non-nullable, but the merge can still leave nulls in it - a file that
+        // drops it leaves nulls behind - so the output field is widened before the schema is built.
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I", "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0001", "01/001/0002" }),
+            (new DataField<long>("EASTING"), new long[] { 123456, 654321 }),
+            (new DecimalDataField("AREA", 10, 2, isNullable: false), new decimal[] { 1.5m, 2.5m }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(
+            SamCph, null,
+            [Source("first", typed), Source("second", "CHANGE_TYPE|CPH", "U|01/001/0001")],
+            output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("EASTING", typeof(long)),
+            ("AREA", typeof(decimal)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|EASTING|AREA",
+            "01/001/0001||",
+            "01/001/0002|654321|2.50");
+    }
+
+    [Fact]
+    public async Task A_string_column_upgrades_to_the_type_a_later_file_carries()
+    {
+        // The reverse of widening: a column established as text adopts the incoming type when every
+        // held value converts - a snapshot that predates typed input migrates rather than pinning
+        // the column to string forever.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|EASTING", "I|01/001/0001|123456");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0002" }),
+            (new DataField<long?>("EASTING"), new long?[] { 654321 }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("EASTING", typeof(long)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|EASTING",
+            "01/001/0001|123456",
+            "01/001/0002|654321");
+    }
+
+    [Fact]
+    public async Task A_string_column_stays_a_string_when_a_held_value_would_not_survive_conversion()
+    {
+        // "007" parses as a number but loses its zeros - the column stays text rather than silently
+        // rewriting the held values, and the refusal is logged.
+        var logger = new CapturingLogger<ParquetDeltaMergeEngine>();
+        var engine = new ParquetDeltaMergeEngine(logger);
+
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|CODE", "I|01/001/0001|007");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0002" }),
+            (new DataField<long?>("CODE"), new long?[] { 12 }));
+
+        using var output = new MemoryStream();
+
+        await engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("CODE", typeof(ReadOnlyMemory<char>)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|CODE",
+            "01/001/0001|007",
+            "01/001/0002|12");
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("CODE") && w.Contains("stays string"));
+    }
+
+    [Fact]
+    public async Task A_string_column_upgrades_to_timestamp_when_held_values_are_in_a_source_date_shape()
+    {
+        // A held value in the feed's own datetime text parses to the type even though it is not
+        // canonical - it is rewritten to canonical form as the type adopts, so the column upgrades
+        // rather than pinning to string forever. Values already in canonical form survive as-is.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|FROM_DATE",
+            "I|01/001/0001|2018-01-05 00:00:00",
+            "I|01/001/0002|2019-03-14T00:00:00.0000000");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0003" }),
+            (new DataField<DateTime?>("FROM_DATE"), new DateTime?[] { new DateTime(2020, 6, 1) }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("FROM_DATE", typeof(DateTime)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|FROM_DATE",
+            "01/001/0001|2018-01-05T00:00:00.0000000",
+            "01/001/0002|2019-03-14T00:00:00.0000000",
+            "01/001/0003|2020-06-01T00:00:00.0000000");
+    }
+
+    [Fact]
+    public async Task A_string_column_stays_a_string_when_a_held_date_value_matches_no_source_shape()
+    {
+        // "05/01/2018" is none of the detector's timestamp shapes - it has no agreed meaning as a
+        // DateTime, so the column stays text rather than guessing.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|FROM_DATE", "I|01/001/0001|05/01/2018");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0002" }),
+            (new DataField<DateTime?>("FROM_DATE"), new DateTime?[] { new DateTime(2020, 6, 1) }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("FROM_DATE", typeof(ReadOnlyMemory<char>)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|FROM_DATE",
+            "01/001/0001|05/01/2018",
+            "01/001/0002|2020-06-01T00:00:00.0000000");
+    }
+
+    [Fact]
+    public async Task A_string_column_upgrades_to_boolean_when_held_values_are_true_or_false_in_any_casing()
+    {
+        // "true" and "FALSE" both parse to the type - the only two values it has - so they are
+        // rewritten to canonical form as the column adopts it rather than pinning to string.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|FLAGGED",
+            "I|01/001/0001|true",
+            "I|01/001/0002|FALSE");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0003" }),
+            (new DataField<bool?>("FLAGGED"), new bool?[] { true }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("FLAGGED", typeof(bool)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|FLAGGED",
+            "01/001/0001|True",
+            "01/001/0002|False",
+            "01/001/0003|True");
+    }
+
+    [Fact]
+    public async Task A_string_column_stays_a_string_when_a_held_value_is_not_a_recognised_boolean()
+    {
+        // "1" and "0" are how a feed may encode a flag, but bool.Parse refuses them - no agreed
+        // meaning, so the column stays text.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|FLAGGED", "I|01/001/0001|1");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0002" }),
+            (new DataField<bool?>("FLAGGED"), new bool?[] { false }));
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(SamCph, null, [Source("first", texty), Source("second", typed)], output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("FLAGGED", typeof(ReadOnlyMemory<char>)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|FLAGGED",
+            "01/001/0001|1",
+            "01/001/0002|False");
+    }
+
+    [Fact]
+    public async Task An_upgraded_column_widens_back_to_string_when_a_later_file_disagrees()
+    {
+        // The upgrade is reversible: a string file arriving after the upgrade widens the column
+        // back, and every cut of the data survives because it was held as text all along.
+        var texty = ParquetFixture.From("CHANGE_TYPE|CPH|CODE", "I|01/001/0001|123");
+
+        var typed = ParquetFixture.FromTyped(
+            (new DataField<string?>("CHANGE_TYPE"), new string?[] { "I" }),
+            (new DataField<string?>("CPH"), new string?[] { "01/001/0002" }),
+            (new DataField<long?>("CODE"), new long?[] { 456 }));
+
+        var backToText = ParquetFixture.From("CHANGE_TYPE|CPH|CODE", "I|01/001/0003|abc");
+
+        using var output = new MemoryStream();
+
+        await _engine.MergeAsync(
+            SamCph, null,
+            [Source("first", texty), Source("second", typed), Source("third", backToText)],
+            output);
+
+        var bytes = output.ToArray();
+
+        ParquetFixture.SchemaOf(bytes).Should().Equal(
+            ("CPH", typeof(ReadOnlyMemory<char>)),
+            ("CODE", typeof(ReadOnlyMemory<char>)));
+
+        ParquetFixture.ToLines(bytes).Should().Equal(
+            "CPH|CODE",
+            "01/001/0001|123",
+            "01/001/0002|456",
+            "01/001/0003|abc");
     }
 }

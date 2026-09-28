@@ -124,6 +124,29 @@ public sealed partial class ParquetDeltaMergeEngine(ILogger<ParquetDeltaMergeEng
                 "{FileKey} introduces column(s) {AddedColumns} to dataset {DataSet}; they are null for the rows already held",
                 key, string.Join(", ", drift.Added), definition.Name);
         }
+
+        foreach (var retyped in drift.Retyped)
+        {
+            if (retyped.HeldType == "string")
+            {
+                logger.LogWarning(
+                    "{FileKey} carries column {Column} as {IncomingType} and every value dataset {DataSet} holds converts, so the column upgrades from text",
+                    key, retyped.Name, retyped.IncomingType, definition.Name);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "{FileKey} carries column {Column} as {IncomingType} but dataset {DataSet} holds it as {HeldType}; the column is widened to string",
+                    key, retyped.Name, retyped.IncomingType, definition.Name, retyped.HeldType);
+            }
+        }
+
+        foreach (var declined in drift.Declined)
+        {
+            logger.LogWarning(
+                "{FileKey} carries column {Column} as {IncomingType} but held value(s) in dataset {DataSet} do not survive conversion; the column stays {HeldType}",
+                key, declined.Name, declined.IncomingType, definition.Name, declined.HeldType);
+        }
     }
 
     private static async Task<ParquetTable> ReadTableAsync(DeltaMergeSource source, CancellationToken cancellationToken)

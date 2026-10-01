@@ -77,31 +77,16 @@ public sealed class EtlStorageController(
                 "Use the explicit value 'all' to request an all-dataset or all-stage purge."));
         }
 
-        var requestedStage = Normalise(stage, All);
-        if (!StageOrder.Contains(requestedStage, StringComparer.Ordinal) && requestedStage != All)
-        {
-            return BadRequest(Error(
-                $"Invalid stage '{stage}'. Allowed values: all, inbound, raw, normalised, optimised, snapshots, staging, views."));
-        }
+        // Validate and normalise stage and sourceType using small helpers to reduce cognitive complexity.
+        var (stageValid, requestedStage, stageError) = NormalizeAndValidateStage(stage);
+        if (!stageValid) return stageError!;
 
-        var requestedSourceType = Normalise(sourceType, BlobStorageSources.Internal);
-        if (requestedSourceType != BlobStorageSources.Internal
-            && requestedSourceType != BlobStorageSources.External)
-        {
-            return BadRequest(Error(
-                $"Invalid sourceType '{sourceType}'. Must be '{BlobStorageSources.Internal}' or '{BlobStorageSources.External}'."));
-        }
+        var (sourceValid, requestedSourceType, sourceError) = NormalizeAndValidateSourceType(sourceType);
+        if (!sourceValid) return sourceError!;
 
         var requestedDataset = Normalise(dataset, All);
-        var definition = requestedDataset == All
-            ? null
-            : dataSetDefinitions.All.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, requestedDataset, StringComparison.OrdinalIgnoreCase));
-
-        if (requestedDataset != All && definition is null)
-        {
-            return BadRequest(Error($"Dataset '{dataset}' is not recognized."));
-        }
+        var (definition, defError) = ResolveDefinition(requestedDataset, dataset!);
+        if (defError is not null) return defError;
 
         if (definition is not null && requestedStage is Staging or Views)
         {
@@ -173,6 +158,42 @@ public sealed class EtlStorageController(
             return StatusCode(StatusCodes.Status500InternalServerError,
                 Error("Failed to purge S3 stage storage."));
         }
+    }
+
+    private (bool Valid, string Normalized, IActionResult? Error) NormalizeAndValidateStage(string? stage)
+    {
+        var requestedStage = Normalise(stage, All);
+        if (!StageOrder.Contains(requestedStage, StringComparer.Ordinal) && requestedStage != All)
+        {
+            return (false, requestedStage, BadRequest(Error(
+                $"Invalid stage '{stage}'. Allowed values: all, inbound, raw, normalised, optimised, snapshots, staging, views.")));
+        }
+
+        return (true, requestedStage, null);
+    }
+
+    private (bool Valid, string Normalized, IActionResult? Error) NormalizeAndValidateSourceType(string? sourceType)
+    {
+        var requestedSourceType = Normalise(sourceType, BlobStorageSources.Internal);
+        if (requestedSourceType != BlobStorageSources.Internal && requestedSourceType != BlobStorageSources.External)
+        {
+            return (false, requestedSourceType, BadRequest(Error(
+                $"Invalid sourceType '{sourceType}'. Must be '{BlobStorageSources.Internal}' or '{BlobStorageSources.External}'.")));
+        }
+
+        return (true, requestedSourceType, null);
+    }
+
+    private (DataSetDefinition? Definition, IActionResult? Error) ResolveDefinition(string requestedDataset, string originalDataset)
+    {
+        if (requestedDataset == All) return (null, null);
+
+        var def = dataSetDefinitions.All.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, requestedDataset, StringComparison.OrdinalIgnoreCase));
+
+        if (def is null) return (null, BadRequest(Error($"Dataset '{originalDataset}' is not recognized.")));
+
+        return (def, null);
     }
 
     private PurgeTarget ResolveTarget(

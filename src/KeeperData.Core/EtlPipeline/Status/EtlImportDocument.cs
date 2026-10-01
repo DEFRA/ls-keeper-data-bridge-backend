@@ -55,6 +55,20 @@ public class EtlImportDocument
     /// <summary>Structured context about the failure - which stage, dataset, file or record it
     /// belongs to - so a caller can see where to look rather than parse the message.</summary>
     public EtlImportErrorDetail? ErrorDetail { get; set; }
+
+    /// <summary>What a purge removed. Only set on documents whose status is Purged; a purge is not
+    /// a run, so it has no stages, datasets or output keys.</summary>
+    public EtlImportPurgeDocument? Purge { get; set; }
+}
+
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
+public class EtlImportPurgeDocument
+{
+    /// <summary>The stage names the purge resolved to, downstream cascade included.</summary>
+    public List<string> Stages { get; set; } = [];
+
+    /// <summary>Objects deleted across every stage.</summary>
+    public int DeletedCount { get; set; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]

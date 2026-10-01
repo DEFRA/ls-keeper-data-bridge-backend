@@ -170,6 +170,33 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
         return new EtlImportPage([.. documents.Select(AsAbandonedIfLapsed)], totalCount);
     }
 
+    public async Task RecordPurgeAsync(EtlPurgeRecord purge, CancellationToken cancellationToken)
+    {
+        var now = UtcNow;
+
+        var document = new EtlImportDocument
+        {
+            ImportId = purge.PurgeId,
+            Status = EtlImportStatus.Purged.ToString(),
+            SourceType = purge.SourceType,
+            Dataset = purge.Dataset,
+            RequestedAtUtc = now,
+            StartedAtUtc = now,
+            CompletedAtUtc = now,
+            Purge = new EtlImportPurgeDocument
+            {
+                Stages = [.. purge.Stages],
+                DeletedCount = purge.DeletedCount
+            }
+        };
+
+        await _imports.ReplaceOneAsync(
+            d => d.ImportId == purge.PurgeId,
+            document,
+            new ReplaceOptions { IsUpsert = true },
+            cancellationToken);
+    }
+
     private async Task CompleteAsync(Guid importId, EtlImportStatus status, string? error, EtlImportErrorDetail? detail, CancellationToken cancellationToken)
     {
         var update = Builders<EtlImportDocument>.Update

@@ -51,6 +51,20 @@ public class EtlImportStatusResponse
     /// <summary>Structured context about the failure - which stage, dataset, file or record it
     /// belongs to - so a caller can see where to look rather than parse the message.</summary>
     public EtlImportErrorDetailResponse? ErrorDetail { get; set; }
+
+    /// <summary>What a purge removed. Only present when Status is Purged.</summary>
+    public EtlImportPurgeResponse? Purge { get; set; }
+}
+
+/// <summary>What a storage purge removed, mirroring what the import document stores.</summary>
+[ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
+public class EtlImportPurgeResponse
+{
+    /// <summary>The stage names the purge resolved to, downstream cascade included.</summary>
+    public List<string> Stages { get; set; } = [];
+
+    /// <summary>Objects deleted across every stage.</summary>
+    public int DeletedCount { get; set; }
 }
 
 /// <summary>Structured failure context, mirroring what the import document stores.</summary>
@@ -160,4 +174,7 @@ public class EtlImportSummaryResponse
     public string? Error { get; set; }
 
     public EtlImportErrorDetailResponse? ErrorDetail { get; set; }
+
+    /// <summary>What a purge removed. Only present when Status is Purged.</summary>
+    public EtlImportPurgeResponse? Purge { get; set; }
 }

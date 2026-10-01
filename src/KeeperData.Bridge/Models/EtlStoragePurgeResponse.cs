@@ -8,6 +8,12 @@ public sealed class EtlStoragePurgeResponse
 {
     public bool Success { get; init; }
 
+    /// <summary>Id of the purge's entry in import history.</summary>
+    public Guid PurgeId { get; init; }
+
+    /// <summary>The stages actually purged: the requested stage plus everything downstream of it.</summary>
+    public IReadOnlyList<string> PurgedStages { get; init; } = [];
+
     public int DeletedCount { get; init; }
 
     public required IReadOnlyList<string> DeletedKeys { get; init; }

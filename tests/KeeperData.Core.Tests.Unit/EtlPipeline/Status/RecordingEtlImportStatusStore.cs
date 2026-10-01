@@ -12,6 +12,7 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
     public List<(Guid ImportId, EtlImportStageProgress Progress)> Progress { get; } = [];
     public List<Guid> Succeeded { get; } = [];
     public List<(Guid ImportId, string Error, EtlImportErrorDetail? Detail)> Failed { get; } = [];
+    public List<EtlPurgeRecord> Purges { get; } = [];
 
     public EtlImportDocument? Document { get; set; }
     public EtlImportDocument? InFlight { get; set; }
@@ -64,5 +65,11 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
     {
         ListRequests.Add((skip, top));
         return Task.FromResult(new EtlImportPage([.. Listed.Skip(skip).Take(top)], Listed.Count));
+    }
+
+    public Task RecordPurgeAsync(EtlPurgeRecord purge, CancellationToken cancellationToken)
+    {
+        Purges.Add(purge);
+        return Task.CompletedTask;
     }
 }

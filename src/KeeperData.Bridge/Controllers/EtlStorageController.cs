@@ -4,6 +4,7 @@ using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Models;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.EtlPipeline.Status;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Storage;
 using KeeperData.Infrastructure.Storage;
@@ -21,6 +22,7 @@ public sealed class EtlStorageController(
     IBlobStorageServiceFactory blobStorageServiceFactory,
     IEtlPipelineStorageProvider storageProvider,
     IDataSetDefinitions dataSetDefinitions,
+    IEtlImportStatusStore statusStore,
     IWebHostEnvironment environment,
     IOptions<FeatureFlags> featureFlags,
     TimeProvider timeProvider,
@@ -30,22 +32,28 @@ public sealed class EtlStorageController(
     private const string Inbound = "inbound";
     private const string Raw = "raw";
     private const string Normalised = "normalised";
+    private const string Optimised = "optimised";
     private const string Snapshots = "snapshots";
     private const string Staging = "staging";
+    private const string Views = "views";
 
-    private static readonly string[] DatasetStages = [Inbound, Raw, Normalised, Snapshots];
-    private static readonly string[] EveryStage = [.. DatasetStages, Staging];
+    /// <summary>The pipeline order, upstream first. A named stage purges itself and everything after
+    /// it: downstream artefacts are derived from it, and are timestamp-keyed and reused rather than
+    /// rebuilt, so leaving them behind would keep the old data alive under the same keys.</summary>
+    private static readonly string[] StageOrder = [Inbound, Raw, Normalised, Optimised, Snapshots, Staging, Views];
 
     /// <summary>
     /// Purges ETL stage data in non-production environments, or when explicitly enabled for a
-    /// Production-hosted ephemeral deployment. A dataset-scoped purge deliberately excludes staging
-    /// because staging databases contain every dataset. Dataset and stage must be supplied explicitly;
-    /// use dataset=all and stage=all to request a complete purge.
+    /// Production-hosted ephemeral deployment. Purging a stage also purges everything downstream of
+    /// it; staging and views are shared all-dataset artefacts, so a dataset-scoped purge that reaches
+    /// them clears them whole. Refused while an import is in flight. Dataset and stage must be
+    /// supplied explicitly; use dataset=all and stage=all to request a complete purge.
     /// </summary>
     [HttpDelete]
     [ProducesResponseType(typeof(EtlStoragePurgeResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(EtlImportConflictResponse), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> PurgeStorage(
@@ -70,10 +78,10 @@ public sealed class EtlStorageController(
         }
 
         var requestedStage = Normalise(stage, All);
-        if (!EveryStage.Contains(requestedStage, StringComparer.Ordinal) && requestedStage != All)
+        if (!StageOrder.Contains(requestedStage, StringComparer.Ordinal) && requestedStage != All)
         {
             return BadRequest(Error(
-                $"Invalid stage '{stage}'. Allowed values: all, inbound, raw, normalised, snapshots, staging."));
+                $"Invalid stage '{stage}'. Allowed values: all, inbound, raw, normalised, optimised, snapshots, staging, views."));
         }
 
         var requestedSourceType = Normalise(sourceType, BlobStorageSources.Internal);
@@ -95,14 +103,26 @@ public sealed class EtlStorageController(
             return BadRequest(Error($"Dataset '{dataset}' is not recognized."));
         }
 
-        if (definition is not null && requestedStage == Staging)
+        if (definition is not null && requestedStage is Staging or Views)
         {
             return BadRequest(Error(
-                "The staging folder contains a shared all-dataset database and cannot be purged by dataset. " +
-                "Use dataset=all with stage=staging."));
+                $"The {requestedStage} folder holds artefacts shared across every dataset and cannot be purged by dataset. " +
+                $"Use dataset=all with stage={requestedStage}."));
         }
 
-        var stages = ResolveStages(requestedStage, definition);
+        var inFlight = await statusStore.GetInFlightAsync(cancellationToken);
+        if (inFlight is not null)
+        {
+            logger.LogWarning(
+                "Rejected an ETL storage purge because import {ImportId} is in flight", inFlight.ImportId);
+            return Conflict(new EtlImportConflictResponse
+            {
+                Message = "An ETL import is running. Purging stage storage mid-run would interleave deletes with stage writes; retry when it has finished.",
+                InFlightImportId = inFlight.ImportId
+            });
+        }
+
+        var stages = ResolveStages(requestedStage);
 
         var deletedKeys = new List<string>();
 
@@ -122,9 +142,14 @@ public sealed class EtlStorageController(
                 requestedStage,
                 requestedSourceType);
 
+            var purgeId = Guid.NewGuid();
+            await RecordPurgeAsync(purgeId, requestedSourceType, definition, stages, deletedKeys.Count, cancellationToken);
+
             return Ok(new EtlStoragePurgeResponse
             {
                 Success = true,
+                PurgeId = purgeId,
+                PurgedStages = stages,
                 DeletedCount = deletedKeys.Count,
                 DeletedKeys = deletedKeys,
                 Message = $"Successfully purged {deletedKeys.Count} object(s) from S3 stage storage.",
@@ -166,23 +191,22 @@ public sealed class EtlStorageController(
             Normalised => PipelineTarget(EtlPipelineFolders.Normalised, PrefixScope(definition is null
                 ? null
                 : SnapshotFileNaming.DataSetPrefix(definition))),
+            Optimised => PipelineTarget(EtlPipelineFolders.Optimised, PrefixScope(definition is null
+                ? null
+                : SnapshotFileNaming.DataSetPrefix(definition))),
             Snapshots => PipelineTarget(EtlPipelineFolders.Snapshots, PrefixScope(definition is null
                 ? null
                 : SnapshotFileNaming.DataSetPrefix(definition))),
             Staging => PipelineTarget(EtlPipelineFolders.Staging, PrefixScope(null)),
+            Views => PipelineTarget(EtlPipelineFolders.Views, PrefixScope(null)),
             _ => throw new InvalidOperationException($"Unsupported ETL storage stage '{stage}'.")
         };
 
-    private static string[] ResolveStages(string requestedStage, DataSetDefinition? definition)
-    {
-        if (requestedStage != All)
-        {
-            return [requestedStage];
-        }
-
-        // A targeted all-stage purge must not remove the shared all-dataset DuckDB artifacts.
-        return definition is null ? EveryStage : DatasetStages;
-    }
+    /// <summary>The requested stage and every stage downstream of it. Downstream artefacts are
+    /// derived: a snapshot rebuilt after its predecessors are purged lands on the same timestamped
+    /// key, so staging and views must go too or the next run reuses what they already hold.</summary>
+    private static string[] ResolveStages(string requestedStage)
+        => requestedStage == All ? StageOrder : StageOrder[Array.IndexOf(StageOrder, requestedStage)..];
 
     private PurgeTarget PipelineTarget(string folder, PurgeScope scope)
         => new(storageProvider.ForFolder(folder), scope, folder);
@@ -246,6 +270,28 @@ public sealed class EtlStorageController(
         }
 
         return deleted;
+    }
+
+    /// <summary>The delete already happened, so a history write that fails must not turn the
+    /// response into a failure - the purge would look like it never ran while its objects are gone.</summary>
+    private async Task RecordPurgeAsync(
+        Guid purgeId,
+        string sourceType,
+        DataSetDefinition? definition,
+        IReadOnlyList<string> stages,
+        int deletedCount,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await statusStore.RecordPurgeAsync(
+                new EtlPurgeRecord(purgeId, sourceType, definition?.Name, stages, deletedCount),
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Purge {PurgeId} succeeded but could not be recorded in import history", purgeId);
+        }
     }
 
     private ErrorResponse Error(string message)

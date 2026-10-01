@@ -133,6 +133,14 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
                         "ifnull(Email,'<null>') || '|' || ifnull(Roles,'<null>') " +
                         "FROM Party WHERE SourcePartyId='P6'")
             .Should().Equal(["<null>|<null>|<null>|<null>|<null>|<null>"]);
+
+        // The same sentinels appear across P6's address columns and must normalise away identically.
+        Strings(target, "SELECT ifnull(AddressLine1,'<null>') || '|' || ifnull(AddressStreet,'<null>') || '|' || " +
+                        "ifnull(AddressTown,'<null>') || '|' || ifnull(AddressLocality,'<null>') || '|' || " +
+                        "ifnull(AddressNation,'<null>') || '|' || ifnull(AddressPostcode,'<null>') || '|' || " +
+                        "ifnull(AddressCountryCode,'<null>') " +
+                        "FROM Party WHERE SourcePartyId='P6'")
+            .Should().Equal(["<null>|<null>|<null>|<null>|<null>|<null>|<null>"]);
     }
 
     [Fact]
@@ -185,6 +193,51 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         // reorder precedence.
         Strings(target, "SELECT PersonTitle FROM Party WHERE SourcePartyId='P3'")
             .Should().Equal(["Ms"]);
+    }
+
+    /// <summary>Address follows the same precedence rule as every other contact attribute: sam_party
+    /// is authoritative when it carries a real value, and sam_cph_holder only fills gaps.</summary>
+    [Fact]
+    public async Task Maps_address_from_sam_party_when_present()
+    {
+        var target = await RunAsync();
+
+        // P1's address lives in sam_party alone.
+        Strings(target, "SELECT AddressLine1 || '|' || AddressStreet || '|' || AddressTown || '|' || AddressLocality || '|' || " +
+                        "AddressNation || '|' || AddressPostcode || '|' || AddressCountryCode " +
+                        "FROM Party WHERE SourcePartyId='P1'")
+            .Should().Equal(["Archer Farm|Mill Lane|Exeter|Exeter District|England|EX1 2AA|GB"]);
+
+        // P3 has a real address in sam_party, which a different one in sam_cph_holder must not
+        // displace - the same precedence as its PersonTitle.
+        Strings(target, "SELECT AddressLine1 FROM Party WHERE SourcePartyId='P3'")
+            .Should().Equal(["Cooper House"]);
+    }
+
+    /// <summary>P2's address is a sentinel in sam_party, so the holder's real address must come
+    /// through rather than being masked and normalised away to null.</summary>
+    [Fact]
+    public async Task Falls_back_to_the_holder_for_address_details_sam_party_only_sentinels()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT AddressLine1 || '|' || AddressStreet || '|' || ifnull(AddressTown,'<null>') || '|' || " +
+                        "ifnull(AddressLocality,'<null>') || '|' || AddressNation || '|' || AddressPostcode || '|' || AddressCountryCode " +
+                        "FROM Party WHERE SourcePartyId='P2'")
+            .Should().Equal(["Baker Cottage|Fore Street|Exeter|<null>|England|EX1 3BB|GB"]);
+    }
+
+    /// <summary>P4 is named by sam_cph_holder alone, so its address - like its contact details -
+    /// comes entirely from the holder extract.</summary>
+    [Fact]
+    public async Task Takes_address_from_the_holder_when_sam_party_never_names_the_party()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT AddressLine1 || '|' || ifnull(AddressStreet,'<null>') || '|' || AddressTown || '|' || " +
+                        "AddressLocality || '|' || AddressNation || '|' || AddressPostcode || '|' || ifnull(AddressCountryCode,'<null>') " +
+                        "FROM Party WHERE SourcePartyId='P4'")
+            .Should().Equal(["Dunn Farm|<null>|Newport|Newport District|Wales|NP1 2CC|<null>"]);
     }
 
     [Fact]
@@ -699,3 +752,4 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 }
+

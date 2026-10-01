@@ -32,6 +32,13 @@ CREATE TABLE target.Party (
     Telephone TEXT,
     Mobile TEXT,
     Email TEXT,
+    AddressLine1 TEXT,
+    AddressStreet TEXT,
+    AddressTown TEXT,
+    AddressLocality TEXT,
+    AddressNation TEXT,
+    AddressPostcode TEXT,
+    AddressCountryCode TEXT,
     Roles TEXT
 );
 
@@ -220,6 +227,13 @@ SELECT
     COALESCE(null_dash(p.TELEPHONE_NUMBER), null_dash(h.TELEPHONE_NUMBER)) AS TELEPHONE_NUMBER,
     COALESCE(null_dash(p.MOBILE_NUMBER), null_dash(h.MOBILE_NUMBER)) AS MOBILE_NUMBER,
     COALESCE(null_dash(p.INTERNET_EMAIL_ADDRESS), null_dash(h.INTERNET_EMAIL_ADDRESS)) AS INTERNET_EMAIL_ADDRESS,
+    COALESCE(null_dash(p.PAON_DESCRIPTION), null_dash(h.PAON_DESCRIPTION)) AS PAON_DESCRIPTION,
+    COALESCE(null_dash(p.STREET), null_dash(h.STREET)) AS STREET,
+    COALESCE(null_dash(p.TOWN), null_dash(h.TOWN)) AS TOWN,
+    COALESCE(null_dash(p.LOCALITY), null_dash(h.LOCALITY)) AS LOCALITY,
+    COALESCE(title_case(p.UK_INTERNAL_CODE), title_case(h.UK_INTERNAL_CODE)) AS UK_INTERNAL_CODE,
+    COALESCE(null_dash(p.POSTCODE), null_dash(h.POSTCODE)) AS POSTCODE,
+    COALESCE(null_dash(p.COUNTRY_CODE), null_dash(h.COUNTRY_CODE)) AS COUNTRY_CODE,
     p.ROLES
 FROM (
     SELECT PARTY_ID FROM sam_party_txt
@@ -244,6 +258,13 @@ SELECT
     null_dash(TELEPHONE_NUMBER),
     null_dash(MOBILE_NUMBER),
     normalized_email(INTERNET_EMAIL_ADDRESS),
+    null_dash(PAON_DESCRIPTION),
+    null_dash(STREET),
+    null_dash(TOWN),
+    null_dash(LOCALITY),
+    null_dash(UK_INTERNAL_CODE),
+    null_dash(POSTCODE),
+    null_dash(COUNTRY_CODE),
     null_dash(ROLES)
 FROM normalized_party;
 

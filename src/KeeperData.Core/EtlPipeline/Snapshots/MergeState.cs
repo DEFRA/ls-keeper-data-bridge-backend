@@ -457,9 +457,12 @@ public sealed partial class ParquetDeltaMergeEngine
             var target = ParquetColumns.ElementType(field);
             var underlying = Nullable.GetUnderlyingType(target) ?? target;
 
-            return value.GetType() == underlying
-                ? value
-                : underlying == typeof(string) ? ParquetValueText.Format(value) : value;
+            if (value.GetType() == underlying)
+            {
+                return value;
+            }
+
+            return underlying == typeof(string) ? ParquetValueText.Format(value) : value;
         }
 
         private void Upsert(object?[] row, string compositeKey)

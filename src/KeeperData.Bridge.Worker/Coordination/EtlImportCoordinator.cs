@@ -99,10 +99,12 @@ public sealed class EtlImportCoordinator(
 
         if (cleared.Error is not null)
         {
+            var clearedStages = cleared.ClearedStages.Count == 0 ? "nothing" : string.Join(", ", cleared.ClearedStages);
+
             logger.LogError(
                 "ETL rebuild could not clear stage storage: {Error}. Cleared {ClearedStages} first ({DeletedCount} object(s))",
                 cleared.Error,
-                cleared.ClearedStages.Count == 0 ? "nothing" : string.Join(", ", cleared.ClearedStages),
+                clearedStages,
                 cleared.Deleted);
 
             return EtlImportStartResult.RebuildFailed(cleared.Error, cleared.ClearedStages);

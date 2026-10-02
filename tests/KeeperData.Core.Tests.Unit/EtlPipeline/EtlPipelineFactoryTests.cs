@@ -48,12 +48,13 @@ public class EtlPipelineFactoryTests
         var sut = new EtlPipelineFactory(
             catalogueFactoryMock.Object,
             Mock.Of<IDataSetDefinitions>(),
-            decryptStage,
-            normaliseStage,
-            optimiseStage,
-            snapshotStage,
-            loadDuckDbStage,
-            exportSqliteStage);
+            new EtlStages(
+                decryptStage,
+                normaliseStage,
+                optimiseStage,
+                snapshotStage,
+                loadDuckDbStage,
+                exportSqliteStage));
 
         // Act
         var pipeline = sut.Create();

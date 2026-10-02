@@ -76,10 +76,12 @@ public class EtlImportController(
             });
         }
 
+        var requestedDataset = dataset ?? "all";
+
         logger.LogInformation(
-            "Received request to start ETL import (sourceType={sourceType}, dataset={dataset}, rebuild={rebuild})",
+            "Received request to start ETL import (sourceType={SourceType}, dataset={Dataset}, rebuild={Rebuild})",
             sourceType,
-            dataset ?? "all",
+            requestedDataset,
             rebuild);
 
         var result = await coordinator.StartAsync(sourceType, dataset, rebuild, cancellationToken);

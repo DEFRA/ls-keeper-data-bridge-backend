@@ -169,12 +169,12 @@ internal static class RunCommand
 
     private static string? Invalid(EtlToolOptions options, IConfiguration configuration)
     {
-        foreach (var variable in new[] { options.AccessKeyVariable, options.SecretKeyVariable, options.BucketVariable })
+        var missing = new[] { options.AccessKeyVariable, options.SecretKeyVariable, options.BucketVariable }
+            .FirstOrDefault(variable => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)));
+
+        if (missing is not null)
         {
-            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)))
-            {
-                return $"{variable} is not set. Environment '{options.Environment}' needs its S3 credentials and bucket in the environment.";
-            }
+            return $"{missing} is not set. Environment '{options.Environment}' needs its S3 credentials and bucket in the environment.";
         }
 
         if (string.IsNullOrWhiteSpace(configuration["AesSalt"]))

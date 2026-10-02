@@ -52,7 +52,7 @@ internal static class EtlToolHost
         return builder.Build();
     }
 
-    private static Dictionary<string, string?> ToolOverrides(ParseResult parseResult, IConfiguration configuration)
+    private static Dictionary<string, string?> ToolOverrides(ParseResult parseResult, ConfigurationManager configuration)
     {
         var overrides = new Dictionary<string, string?>();
 

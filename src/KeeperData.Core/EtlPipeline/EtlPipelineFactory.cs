@@ -10,22 +10,17 @@ namespace KeeperData.Core.EtlPipeline;
 public sealed class EtlPipelineFactory(
     IExternalCatalogueServiceFactory catalogueFactory,
     IDataSetDefinitions dataSetDefinitions,
-    DecryptStage decryptStage,
-    NormaliseStage normaliseStage,
-    OptimiseStage optimiseStage,
-    SnapshotStage snapshotStage,
-    LoadDuckDbStage loadDuckDbStage,
-    ExportSqliteStage exportSqliteStage) : IEtlPipelineFactory
+    EtlStages stages) : IEtlPipelineFactory
 {
     public PipelineDefinition Create()
         => PipelineBuilder
             .InputSource(new S3RawFolderSource(catalogueFactory, dataSetDefinitions))
             .Discover()               // -> DiscoveredFileSet
-            .Decrypt(decryptStage)    // -> RawFileSet        (raw/)
-            .Normalise(normaliseStage) // -> NormalisedFileSet (normalised/*.parquet)
-            .Optimise(optimiseStage)  // -> OptimisedFileSet  (optimised/*.parquet)
-            .Snapshot(snapshotStage)  // -> SnapshotFile      (snapshots/*.parquet)
-            .LoadDuckDb(loadDuckDbStage) // -> StagingDatabase (staging/*.duckdb)
-            .ExportSqlite(exportSqliteStage) // -> SqliteExportFile (views/*.sqlite)
+            .Decrypt(stages.Decrypt)    // -> RawFileSet        (raw/)
+            .Normalise(stages.Normalise) // -> NormalisedFileSet (normalised/*.parquet)
+            .Optimise(stages.Optimise)  // -> OptimisedFileSet  (optimised/*.parquet)
+            .Snapshot(stages.Snapshot)  // -> SnapshotFile      (snapshots/*.parquet)
+            .LoadDuckDb(stages.LoadDuckDb) // -> StagingDatabase (staging/*.duckdb)
+            .ExportSqlite(stages.ExportSqlite) // -> SqliteExportFile (views/*.sqlite)
             .Build();
 }

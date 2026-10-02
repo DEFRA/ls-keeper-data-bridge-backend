@@ -88,13 +88,15 @@ public class BulkListingExternalCatalogueService(IBlobStorageServiceReadOnly sou
                 }
             }
 
+            var pages = Pages(count);
+
             Interlocked.Add(ref scanned, count);
-            Interlocked.Add(ref requests, Pages(count));
+            Interlocked.Add(ref requests, pages);
             matches.Add(found);
 
             _logger.LogDebug(
                 "Prefix {Prefix}: {ScannedCount} object(s) in {PageCount} listing request(s)",
-                prefix, count, Pages(count));
+                prefix, count, pages);
         });
 
         var byDefinition = matches
@@ -108,11 +110,13 @@ public class BulkListingExternalCatalogueService(IBlobStorageServiceReadOnly sou
                 : []))
             .ToImmutableList();
 
+        var matched = fileSets.Sum(set => set.Files.Length);
+        var elapsedMs = stopwatch.ElapsedMilliseconds;
+
         _logger.LogInformation(
             "Listed {PrefixCount} prefix(es) in {ElapsedMs}ms using {RequestCount} storage request(s): " +
             "{ScannedCount} object(s) scanned, {MatchedCount} matched across {DataSetCount} dataset(s)",
-            prefixes.Count, stopwatch.ElapsedMilliseconds, requests, scanned,
-            fileSets.Sum(set => set.Files.Length), definitions.Length);
+            prefixes.Count, elapsedMs, requests, scanned, matched, definitions.Length);
 
         return fileSets;
     }

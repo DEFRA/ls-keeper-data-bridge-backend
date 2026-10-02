@@ -14,8 +14,11 @@ public sealed class EtlToolOptions
     public string Environment { get; set; } = DefaultEnvironment;
 
     /// <summary>Every interstitial artefact and the SQLite read model, under one root: raw,
-    /// normalised, optimised, snapshots, staging and views. Only the source is remote.</summary>
-    public string StagingPath { get; set; } = DefaultStagingPath;
+    /// normalised, optimised, snapshots, staging and views. Only the source is remote.
+    ///
+    /// appsettings.json supplies the real location; this default only matters if that section is
+    /// missing, so it points somewhere that exists on any machine rather than a fixed drive.</summary>
+    public string StagingPath { get; set; } = DefaultStagingPath();
 
     /// <summary>The vendored DuckDB SQLite extension. The export stage cannot autoload one, so this
     /// must point at a file already on disk; left unset, the tool resolves a version match itself.</summary>
@@ -24,7 +27,10 @@ public sealed class EtlToolOptions
     /// <summary>Caps DuckDB's memory, e.g. "4GB". Null leaves it to DuckDB.</summary>
     public string? MemoryLimit { get; set; }
 
-    public const string DefaultStagingPath = @"C:\livestock\krds-etl-data";
+    public static string DefaultStagingPath()
+        => Path.Combine(
+            System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+            "krds-etl-data");
 
     public const string DefaultEnvironment = "prod";
 

@@ -47,7 +47,7 @@ internal sealed class SqliteEtlImportStatusStore : IEtlImportStatusStore
 
         document.Status = EtlImportStatus.Running.ToString();
         document.StartedAtUtc = now;
-        document.CurrentStage = stageNames.FirstOrDefault();
+        document.CurrentStage = stageNames.Count > 0 ? stageNames[0] : null;
         document.LeaseExpiresAtUtc = now.Add(EtlImportProgress.LeaseDuration);
 
         await UpsertAsync(document, cancellationToken);

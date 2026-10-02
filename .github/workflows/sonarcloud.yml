@@ -80,7 +80,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed to get PR information, if any
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          ./.sonar/scanner/dotnet-sonarscanner begin /k:"DEFRA_ls-keeper-data-bridge-backend" /o:"defra" /d:sonar.token="$SONAR_TOKEN" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml /d:sonar.exclusions="src/KeeperData.Core/EtlPipeline/Views/Sql/**"
+          ./.sonar/scanner/dotnet-sonarscanner begin /k:"DEFRA_ls-keeper-data-bridge-backend" /o:"defra" /d:sonar.token="$SONAR_TOKEN" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml /d:sonar.exclusions="src/KeeperData.Core/EtlPipeline/Views/Sql/**" /d:sonar.coverage.exclusions="src/KeeperData.Etl.Tool/**"
           dotnet build KeeperData.Bridge.sln --no-incremental
           version="$(tr -d '[:space:]' < ./src/KeeperData.Infrastructure/bin/Debug/net10.0/duckdb-version.txt)"
           chmod +x ./scripts/fetch-duckdb-sqlite-extension.sh

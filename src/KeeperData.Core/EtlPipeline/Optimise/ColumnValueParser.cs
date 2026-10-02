@@ -11,7 +11,9 @@ namespace KeeperData.Core.EtlPipeline.Optimise;
 /// column should not reinterpret that.</summary>
 public static class ColumnValueParser
 {
-    private static readonly string[] s_dateFormats = ["yyyy-MM-dd", "yyyyMMdd"];
+    /// <summary>dd-MMM-yy is Oracle's default NLS_DATE_FORMAT, DD-MON-RR, which every CTS extract
+    /// is rendered with.</summary>
+    private static readonly string[] s_dateFormats = ["yyyy-MM-dd", "yyyyMMdd", "dd-MMM-yy"];
 
     private static readonly string[] s_timestampFormats =
     [
@@ -20,8 +22,28 @@ public static class ColumnValueParser
         "yyyy-MM-dd HH:mm:ss",
         "yyyy-MM-dd HH:mm:ss.FFFFFFF",
         "yyyyMMddHHmmss",
-        "yyyy-MM-dd"
+        "yyyy-MM-dd",
+        "dd-MMM-yy"
     ];
+
+    /// <summary>Oracle's RR pivot reads a two-digit year 00-49 as 20xx and 50-99 as 19xx; .NET's yy
+    /// would read 30-99 as 19xx, so a stored '30' differs by a century. The window is pinned rather
+    /// than taken from the runtime default so that the same extract always converts to the same
+    /// date, whatever host it runs on.
+    ///
+    /// Parsing stays zone-agnostic: no AssumeLocal or AdjustToUniversal, so a value keeps the
+    /// calendar date the source wrote and DateTimeKind stays Unspecified.</summary>
+    private static readonly CultureInfo s_sourceCulture = OracleRrCulture();
+
+    private static CultureInfo OracleRrCulture()
+    {
+        var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+
+        culture.Calendar.TwoDigitYearMax = 2049;
+        culture.DateTimeFormat.Calendar.TwoDigitYearMax = 2049;
+
+        return culture;
+    }
 
     public static object? Parse(string? value, ColumnDataType target, byte decimalPrecision, byte decimalScale)
         => target switch
@@ -69,7 +91,7 @@ public static class ColumnValueParser
     {
         if (value is null or { Length: 0 }) return null;
 
-        return DateOnly.TryParseExact(value, s_dateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+        return DateOnly.TryParseExact(value, s_dateFormats, s_sourceCulture, DateTimeStyles.None, out var parsed)
             ? parsed
             : throw Failure(value);
     }
@@ -78,7 +100,7 @@ public static class ColumnValueParser
     {
         if (value is null or { Length: 0 }) return null;
 
-        return DateTime.TryParseExact(value, s_timestampFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+        return DateTime.TryParseExact(value, s_timestampFormats, s_sourceCulture, DateTimeStyles.None, out var parsed)
             ? parsed
             : throw Failure(value);
     }

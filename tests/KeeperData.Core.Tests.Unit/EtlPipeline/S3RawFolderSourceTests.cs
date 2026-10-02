@@ -13,16 +13,18 @@ public class S3RawFolderSourceTests
 {
     private readonly Mock<IExternalCatalogueService> _catalogue = new();
     private readonly Mock<IExternalCatalogueServiceFactory> _catalogueFactory = new();
+    private readonly Mock<IDataSetDefinitions> _definitions = new();
 
     private S3RawFolderSource Sut()
     {
         _catalogueFactory.Setup(f => f.Create(It.IsAny<string>())).Returns(_catalogue.Object);
-        return new S3RawFolderSource(_catalogueFactory.Object);
+        _definitions.SetupGet(d => d.All).Returns(ImmutableArray<DataSetDefinition>.Empty);
+        return new S3RawFolderSource(_catalogueFactory.Object, _definitions.Object);
     }
 
     private void GivenSourceFiles(params FileSet[] fileSets) =>
         _catalogue
-            .Setup(c => c.GetFileSetsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetAllFileSetsAsync(It.IsAny<ImmutableArray<DataSetDefinition>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(ImmutableList.Create(fileSets));
 
     private static FileSet FileSetFor(string dataset, params string[] keys) =>
@@ -52,13 +54,15 @@ public class S3RawFolderSourceTests
     }
 
     [Fact]
-    public async Task Passes_the_lookback_days_from_the_run_context()
+    public async Task Asks_for_every_file_rather_than_a_date_window()
     {
         GivenSourceFiles();
 
-        await StageRunner.RunSourceAsync(Sut(), StageRunner.Context(lookbackDays: 7));
+        await StageRunner.RunSourceAsync(Sut(), StageRunner.Context());
 
-        _catalogue.Verify(c => c.GetFileSetsAsync(7, It.IsAny<CancellationToken>()), Times.Once);
+        _catalogue.Verify(
+            c => c.GetAllFileSetsAsync(It.IsAny<ImmutableArray<DataSetDefinition>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

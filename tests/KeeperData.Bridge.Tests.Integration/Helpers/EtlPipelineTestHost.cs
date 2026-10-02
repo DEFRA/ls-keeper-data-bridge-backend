@@ -200,7 +200,6 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
 
     /// <summary>Runs the whole pipeline once, as the host would.</summary>
     public async Task<Guid> RunPipelineAsync(
-        int lookbackDays = 30,
         Guid? runId = null,
         string? dataset = null,
         CancellationToken cancellationToken = default)
@@ -214,7 +213,7 @@ public sealed class EtlPipelineTestHost : IAsyncDisposable
 
         await executor.RunAsync(
             factory.Create(),
-            new EtlPipelineContext(id, BlobStorageSources.External, lookbackDays, dataset),
+            new EtlPipelineContext(id, BlobStorageSources.External, dataset),
             cancellationToken);
 
         return id;

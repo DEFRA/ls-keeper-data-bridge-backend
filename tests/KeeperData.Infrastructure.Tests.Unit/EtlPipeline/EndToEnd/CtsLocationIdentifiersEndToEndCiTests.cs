@@ -259,10 +259,10 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
             await connection.OpenAsync();
 
             using var command = connection.CreateCommand();
-            // LID_VERSION lands as BIGINT now that optimise types it - cast it back for the
-            // string comparison, the way OptimiseEndToEndCiTests reads its typed column.
+            // Every column but the identifier is typed now that optimise declares them - LID_ID is a
+            // NUMBER(12) key, so it arrives as BIGINT like the foreign keys that reference it.
             command.CommandText =
-                "SELECT LID_ID, LID_FULL_IDENTIFIER, LID_CURRENT_MODIFIED_DATE, LID_VERSION::VARCHAR " +
+                "SELECT LID_ID::VARCHAR, LID_FULL_IDENTIFIER, LID_CURRENT_MODIFIED_DATE::VARCHAR, LID_VERSION::VARCHAR " +
                 "FROM cts_location_identifiers ORDER BY LID_ID";
 
             using var reader = await command.ExecuteReaderAsync();
@@ -273,7 +273,7 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
                 rows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)));
             }
 
-            rows.Should().BeEquivalentTo(CtsFixtures.ExpectedSteady,
+            rows.Should().BeEquivalentTo(CtsFixtures.AsStaged(CtsFixtures.ExpectedSteady),
                 "the table is named for the dataset and its schema is inferred from the snapshot, so the load stage needed nothing adding");
         }
         finally
@@ -298,7 +298,7 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
             await SeedLitprdAsync(host);
             await SeedSteadyAsync(host);
 
-            await host.RunAsync(LookbackDays);
+            await host.RunAsync();
         }
 
         using (var host = InMemoryEtlPipelineHost.Create(
@@ -306,7 +306,7 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
         {
             await SeedLitprdAsync(host);
 
-            await host.RunAsync(LookbackDays);
+            await host.RunAsync();
         }
 
         using var scope = new AssertionScope();
@@ -326,13 +326,13 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
         await SeedLitprdAsync(withCts);
         await SeedSteadyAsync(withCts);
 
-        await withCts.RunAsync(LookbackDays);
+        await withCts.RunAsync();
 
         using var withoutCts = InMemoryEtlPipelineHost.Create(CtsFixtures.RunClock, EtlFixtures.AllThree);
 
         await SeedLitprdAsync(withoutCts);
 
-        await withoutCts.RunAsync(LookbackDays);
+        await withoutCts.RunAsync();
 
         using var scope = new AssertionScope();
 
@@ -349,10 +349,6 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
                 "and its snapshot is byte-identical to the one it produces with the dataset absent");
         }
     }
-
-    /// <summary>Wide enough for one run to see both the litprd fixtures and the CTS ones, which sit
-    /// nine months apart.</summary>
-    private const int LookbackDays = 400;
 
     private static InMemoryEtlPipelineHost CreateHost(IStagingDatabaseWriter? writer = null)
         => InMemoryEtlPipelineHost.Create(CtsFixtures.RunClock, [CtsFixtures.Definition], writer);

@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.Storage;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace KeeperData.Core.ETL.Impl;
 
@@ -16,12 +19,12 @@ namespace KeeperData.Core.ETL.Impl;
 /// </summary>
 public class BulkListingExternalCatalogueService(IBlobStorageServiceReadOnly sourceBlobs,
     TimeProvider timeProvider,
-    IDataSetDefinitions dataSetDefinitions) : IExternalCatalogueService
+    IDataSetDefinitions dataSetDefinitions,
+    ILogger<BulkListingExternalCatalogueService>? logger = null) : IExternalCatalogueService
 {
     private const int MaxConcurrentDataSetListings = 10;
 
-    public Task<ImmutableList<FileSet>> GetFileSetsAsync(CancellationToken ct)
-        => GetFileSetsAsync(days: 0, ct);
+    private readonly ILogger _logger = logger ?? NullLogger<BulkListingExternalCatalogueService>.Instance;
 
     public Task<ImmutableList<FileSet>> GetFileSetsAsync(int days, CancellationToken ct)
     {
@@ -54,6 +57,72 @@ public class BulkListingExternalCatalogueService(IBlobStorageServiceReadOnly sou
 
         return [.. definitions.Select(definition => fileSetsByDefinition[definition])];
     }
+
+    /// <summary>Lists the reduced prefix set once and offers every key to every definition, so a
+    /// lane shared by six datasets is read once rather than six times.</summary>
+    public async Task<ImmutableList<FileSet>> GetAllFileSetsAsync(
+        ImmutableArray<DataSetDefinition> definitions, CancellationToken ct)
+    {
+        var prefixes = DataSetFileNaming.ListingPrefixes(definitions);
+        var matches = new ConcurrentBag<List<(DataSetDefinition Definition, EtlFile File)>>();
+        var stopwatch = Stopwatch.StartNew();
+        var scanned = 0;
+        var requests = 0;
+
+        await Parallel.ForEachAsync(prefixes, ParallelOptions(ct), async (prefix, listingToken) =>
+        {
+            var found = new List<(DataSetDefinition, EtlFile)>();
+            var count = 0;
+
+            await foreach (var blob in sourceBlobs.EnumerateAsync(prefix, listingToken))
+            {
+                count++;
+
+                foreach (var definition in definitions)
+                {
+                    // Matched before the timestamp is read: a lane holds tables this dataset cannot
+                    // parse a timestamp from, and ExtractTimestamp throws rather than skipping.
+                    if (!DataSetFileNaming.Matches(definition, blob.Key)) continue;
+
+                    found.Add((definition, new EtlFile(blob, DataSetFileNaming.ExtractTimestamp(definition, blob.Key))));
+                }
+            }
+
+            var pages = Pages(count);
+
+            Interlocked.Add(ref scanned, count);
+            Interlocked.Add(ref requests, pages);
+            matches.Add(found);
+
+            _logger.LogDebug(
+                "Prefix {Prefix}: {ScannedCount} object(s) in {PageCount} listing request(s)",
+                prefix, count, pages);
+        });
+
+        var byDefinition = matches
+            .SelectMany(found => found)
+            .GroupBy(match => match.Definition)
+            .ToDictionary(group => group.Key, group => group.Select(match => match.File).ToList());
+
+        var fileSets = definitions
+            .Select(definition => new FileSet(definition, byDefinition.TryGetValue(definition, out var files)
+                ? [.. files.OrderBy(file => file.Timestamp)]
+                : []))
+            .ToImmutableList();
+
+        var matched = fileSets.Sum(set => set.Files.Length);
+        var elapsedMs = stopwatch.ElapsedMilliseconds;
+
+        _logger.LogInformation(
+            "Listed {PrefixCount} prefix(es) in {ElapsedMs}ms using {RequestCount} storage request(s): " +
+            "{ScannedCount} object(s) scanned, {MatchedCount} matched across {DataSetCount} dataset(s)",
+            prefixes.Count, elapsedMs, requests, scanned, matched, definitions.Length);
+
+        return fileSets;
+    }
+
+    /// <summary>Listings page at 1000 keys, so this is the number of requests the prefix cost.</summary>
+    private static int Pages(int objects) => Math.Max(1, (objects + 999) / 1000);
 
     public Task<FileSet> GetFileSetAsync(DataSetDefinition definition, DateOnly date, CancellationToken ct)
         => GetFileSetAsync(definition, date, date, ct);

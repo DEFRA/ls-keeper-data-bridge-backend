@@ -23,7 +23,7 @@ public class EtlImportJob(
             // Not context.CancellationToken: the run outlives this job execution, and Quartz
             // disposes the execution context (and its token source) as soon as Execute returns.
             // Shutdown is already handled by the runner, which links ApplicationStopping.
-            var result = await coordinator.StartAsync(BlobStorageSources.External, dataset: null, CancellationToken.None);
+            var result = await coordinator.StartAsync(BlobStorageSources.External, dataset: null, rebuild: false, CancellationToken.None);
 
             if (result.Accepted)
             {

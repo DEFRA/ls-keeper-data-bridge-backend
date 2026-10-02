@@ -107,6 +107,20 @@ public static class ParquetColumns
         return strings;
     }
 
+    /// <summary>Reads one column's values boxed, each keeping the CLR type the field declares.</summary>
+    public static async Task<object?[]> ReadAsObjectsAsync(ParquetRowGroupReader reader, DataField field, CancellationToken cancellationToken)
+    {
+        var data = await ReadAsync(reader, field, cancellationToken);
+        var values = new object?[data.Length];
+
+        for (var row = 0; row < data.Length; row++)
+        {
+            values[row] = data.GetValue(row);
+        }
+
+        return values;
+    }
+
     /// <summary>Writes one column's values from an array of the field's CLR element type.</summary>
     public static Task WriteAsync(ParquetRowGroupWriter writer, DataField field, Array values, CancellationToken cancellationToken)
     {

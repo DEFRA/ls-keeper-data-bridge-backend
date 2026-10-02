@@ -69,9 +69,12 @@ public interface IExternalCatalogueService
     Task<ImmutableList<FileSet>> GetFileSetsAsync(int days, CancellationToken ct);
 
     /// <summary>
-    /// Gets the file sets for today
+    /// Every file each dataset has in storage, unbounded by date.
+    ///
+    /// This is what the pipeline discovers with. A date window cannot make discovery cheaper - the
+    /// listing is the same either way - and a window that excludes a dataset's baseline leaves its
+    /// deltas to be folded onto nothing, which produces a partial snapshot and no error. Bounding
+    /// by date is a reporting concern; the overloads above serve it.
     /// </summary>
-    /// <param name="ct"></param>
-    /// <returns></returns>
-    Task<ImmutableList<FileSet>> GetFileSetsAsync(CancellationToken ct);
+    Task<ImmutableList<FileSet>> GetAllFileSetsAsync(ImmutableArray<DataSetDefinition> definitions, CancellationToken ct);
 }

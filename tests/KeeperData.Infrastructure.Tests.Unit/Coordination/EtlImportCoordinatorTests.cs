@@ -1,8 +1,10 @@
 using FluentAssertions;
 using KeeperData.Bridge.Worker.Coordination;
 using KeeperData.Core.EtlPipeline.Status;
+using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Locking;
 using KeeperData.Core.Pipeline;
+using KeeperData.Core.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -17,6 +19,7 @@ public class EtlImportCoordinatorTests
     private readonly Mock<IDistributedLock> _distributedLock = new();
     private readonly Mock<ILockRenewingRunner> _runner = new();
     private readonly Mock<IEtlImportStatusStore> _statusStore = new();
+    private readonly Mock<IEtlPipelineStorageProvider> _storageProvider = new();
     private readonly EtlImportOptions _options = new();
     private readonly EtlImportCoordinator _sut;
 
@@ -28,6 +31,7 @@ public class EtlImportCoordinatorTests
             _runner.Object,
             new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
             _statusStore.Object,
+            _storageProvider.Object,
             Options.Create(_options));
     }
 
@@ -36,12 +40,130 @@ public class EtlImportCoordinatorTests
             .Setup(l => l.TryAcquireAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(handle);
 
+    private Mock<IBlobStorageService> SetupFolders(ClearDownResult? result = null, Exception? failure = null)
+    {
+        var folder = new Mock<IBlobStorageService>();
+
+        var setup = folder.Setup(f => f.DeleteByPrefixAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()));
+
+        if (failure is not null)
+        {
+            setup.ThrowsAsync(failure);
+        }
+        else
+        {
+            setup.ReturnsAsync(result ?? new ClearDownResult { DeletedKeys = [], TotalDeleted = 0 });
+        }
+
+        _storageProvider.Setup(p => p.ForFolder(It.IsAny<string>())).Returns(folder.Object);
+
+        return folder;
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenRebuilding_ClearsEveryStageBeforeTheRunIsQueued()
+    {
+        SetupLock(Mock.Of<IDistributedLockHandle>());
+        var folder = SetupFolders(new ClearDownResult { DeletedKeys = ["a"], TotalDeleted = 7 });
+
+        var result = await _sut.StartAsync("external", null, rebuild: true, CancellationToken.None);
+
+        result.Accepted.Should().BeTrue();
+
+        folder.Verify(
+            f => f.DeleteByPrefixAsync(string.Empty, It.IsAny<CancellationToken>()),
+            Times.Exactly(EtlStageCascade.Stages.Length),
+            "a rebuild clears every stage, not only the one it starts from");
+
+        _statusStore.Verify(
+            s => s.RecordPurgeAsync(
+                It.Is<EtlPurgeRecord>(p => p.Stages.Count == EtlStageCascade.Stages.Length && p.DeletedCount == 7 * EtlStageCascade.Stages.Length),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "the wipe belongs in the same history as the run that follows it");
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenNotRebuilding_LeavesStageStorageAlone()
+    {
+        SetupLock(Mock.Of<IDistributedLockHandle>());
+        var folder = SetupFolders();
+
+        await _sut.StartAsync("external", null, rebuild: false, CancellationToken.None);
+
+        folder.Verify(f => f.DeleteByPrefixAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>A half-cleared staging area with a run on top of it would produce a confidently wrong
+    /// read model, so a clear that cannot finish stops the run rather than proceeding.</summary>
+    [Fact]
+    public async Task StartAsync_WhenRebuildCannotClear_ReportsWhyAndStartsNothing()
+    {
+        SetupLock(Mock.Of<IDistributedLockHandle>());
+        SetupFolders(failure: new IOException("the file is in use"));
+
+        var result = await _sut.StartAsync("external", null, rebuild: true, CancellationToken.None);
+
+        result.Accepted.Should().BeFalse();
+        result.RebuildError.Should().Contain("the file is in use");
+
+        _statusStore.Verify(
+            s => s.CreateQueuedAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        _runner.Verify(
+            r => r.StartInBackground(
+                It.IsAny<IDistributedLockHandle>(),
+                It.IsAny<LockRenewalSettings>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Func<CancellationToken, Task>>(),
+                It.IsAny<Func<Exception, Task>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>Stopping is not undoing. The stages before the failure are already empty, and a wipe
+    /// that leaves no trace in the history is worse than one that fails loudly.</summary>
+    [Fact]
+    public async Task StartAsync_WhenRebuildStopsPartWayThrough_RecordsWhatItAlreadyCleared()
+    {
+        SetupLock(Mock.Of<IDistributedLockHandle>());
+
+        var cleared = new Mock<IBlobStorageService>();
+        cleared
+            .Setup(f => f.DeleteByPrefixAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ClearDownResult { DeletedKeys = ["a"], TotalDeleted = 3 });
+
+        var locked = new Mock<IBlobStorageService>();
+        locked
+            .Setup(f => f.DeleteByPrefixAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("the file is in use"));
+
+        _storageProvider
+            .Setup(p => p.ForFolder(It.IsAny<string>()))
+            .Returns((string folder) => folder == EtlPipelineFolders.Views ? locked.Object : cleared.Object);
+
+        var result = await _sut.StartAsync("external", null, rebuild: true, CancellationToken.None);
+
+        result.Accepted.Should().BeFalse();
+        result.ClearedStages.Should().Equal(EtlStageCascade.Stages[..^1]);
+
+        _statusStore.Verify(
+            s => s.RecordPurgeAsync(
+                It.Is<EtlPurgeRecord>(p =>
+                    p.Stages.Count == EtlStageCascade.Stages.Length - 1
+                    && p.DeletedCount == 3 * (EtlStageCascade.Stages.Length - 1)),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "the partial wipe still happened, so it belongs in the history");
+    }
+
     [Fact]
     public async Task StartAsync_WhenLockAcquired_RecordsTheImportAndStartsItInTheBackground()
     {
         SetupLock(Mock.Of<IDistributedLockHandle>());
 
-        var result = await _sut.StartAsync("external", "sam_cph_holdings", CancellationToken.None);
+        var result = await _sut.StartAsync("external", "sam_cph_holdings", false, CancellationToken.None);
 
         result.Accepted.Should().BeTrue();
 
@@ -75,7 +197,7 @@ public class EtlImportCoordinatorTests
                 SourceType = "external"
             });
 
-        var result = await _sut.StartAsync("external", null, CancellationToken.None);
+        var result = await _sut.StartAsync("external", null, false, CancellationToken.None);
 
         result.Accepted.Should().BeFalse();
         result.InFlightImportId.Should().Be(inFlight);
@@ -93,7 +215,7 @@ public class EtlImportCoordinatorTests
             .Setup(s => s.GetInFlightAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((EtlImportDocument?)null);
 
-        var result = await _sut.StartAsync("external", null, CancellationToken.None);
+        var result = await _sut.StartAsync("external", null, false, CancellationToken.None);
 
         result.Accepted.Should().BeFalse();
         result.InFlightImportId.Should().BeNull();
@@ -104,7 +226,7 @@ public class EtlImportCoordinatorTests
     {
         SetupLock(Mock.Of<IDistributedLockHandle>());
 
-        await _sut.StartAsync("external", null, CancellationToken.None);
+        await _sut.StartAsync("external", null, false, CancellationToken.None);
 
         _options.LockName.Should().NotBe(new IngestionRunOptions().LockName);
         _distributedLock.Verify(
@@ -118,7 +240,7 @@ public class EtlImportCoordinatorTests
         SetupLock(Mock.Of<IDistributedLockHandle>());
 
         var onFailure = CaptureOnFailure();
-        var result = await _sut.StartAsync("external", null, CancellationToken.None);
+        var result = await _sut.StartAsync("external", null, false, CancellationToken.None);
 
         await onFailure(new InvalidOperationException("Failed to renew lock for EtlImportRun"));
 
@@ -139,7 +261,7 @@ public class EtlImportCoordinatorTests
         SetupLock(Mock.Of<IDistributedLockHandle>());
 
         var onFailure = CaptureOnFailure();
-        var result = await _sut.StartAsync("external", null, CancellationToken.None);
+        var result = await _sut.StartAsync("external", null, false, CancellationToken.None);
 
         await onFailure(new PipelineExecutionException(
             "Pipeline failed after 10ms.",
@@ -173,3 +295,4 @@ public class EtlImportCoordinatorTests
         return exception => onFailure!(exception);
     }
 }
+

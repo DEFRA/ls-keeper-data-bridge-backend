@@ -47,6 +47,7 @@ public class EtlPipelineFactoryTests
 
         var sut = new EtlPipelineFactory(
             catalogueFactoryMock.Object,
+            Mock.Of<IDataSetDefinitions>(),
             decryptStage,
             normaliseStage,
             optimiseStage,

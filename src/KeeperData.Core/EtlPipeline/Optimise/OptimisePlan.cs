@@ -8,7 +8,8 @@ namespace KeeperData.Core.EtlPipeline.Optimise;
 public sealed record ColumnResolution(int SourceIndex, DataField Source, bool Kept, bool MergeRequired, ColumnDataType TargetType, DataField? TargetField);
 
 /// <summary>What the optimise stage does to one file: which columns survive the projection, and
-/// the type each surviving column is written as. Merge-required columns are always kept as strings.</summary>
+/// the type each surviving column is written as. Merge-required columns are always kept, and stay
+/// strings unless the definition declares otherwise.</summary>
 public sealed class OptimisePlan
 {
     private OptimisePlan(ColumnResolution[] columns)
@@ -36,16 +37,12 @@ public sealed class OptimisePlan
                 $"Dataset '{definition.Name}' declares both IncludedColumns and ExcludedColumns; they are mutually exclusive.");
         }
 
-        if (definition.ColumnTypes is { Count: > 0 } types)
+        if (definition.ColumnTypes is { Count: > 0 } types
+            && types.ContainsKey(definition.ChangeTypeHeaderName))
         {
-            var required = MergeRequiredColumns(definition);
-            var conflict = types.Keys.FirstOrDefault(required.Contains);
-
-            if (conflict is not null)
-            {
-                throw new InvalidOperationException(
-                    $"Dataset '{definition.Name}' declares a column type for '{conflict}', which the merge requires to stay a string.");
-            }
+            throw new InvalidOperationException(
+                $"Dataset '{definition.Name}' declares a column type for '{definition.ChangeTypeHeaderName}', " +
+                "which the merge compares as text.");
         }
     }
 
@@ -99,15 +96,18 @@ public sealed class OptimisePlan
         bool mergeRequired,
         IReadOnlyDictionary<string, ColumnDataType>? detectedTypes)
     {
-        if (mergeRequired)
-        {
-            return ColumnDataType.String;
-        }
-
         if (definition.ColumnTypes is not null
             && definition.ColumnTypes.TryGetValue(columnName, out var declared))
         {
             return declared;
+        }
+
+        // Detection samples each file on its own, so two files of one dataset can resolve the same
+        // column differently. That is survivable for an ordinary column and not for a key, whose
+        // rendering decides which rows are the same row.
+        if (mergeRequired)
+        {
+            return ColumnDataType.String;
         }
 
         if (definition.AutoDetectColumnTypes

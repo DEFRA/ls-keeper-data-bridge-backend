@@ -164,7 +164,7 @@ public class BulkListingExternalCatalogueServiceTests
     }
 
     [Fact]
-    public async Task WithNoArgumentsBeyondCancellation_ReturnsOnlyTodaysFiles()
+    public async Task ForTodayOnly_ReturnsOnlyTodaysFiles()
     {
         var today = new DateOnly(2024, 10, 20);
         var catalogue = CatalogueAt(today);
@@ -172,7 +172,7 @@ public class BulkListingExternalCatalogueServiceTests
             FileFor(DataSetA, today.AddDays(-1)),
             FileFor(DataSetA, today));
 
-        var fileSets = await catalogue.GetFileSetsAsync(CancellationToken.None);
+        var fileSets = await catalogue.GetFileSetsAsync(today, CancellationToken.None);
 
         DatesOf(fileSets.Single()).Should().Equal(today);
     }

@@ -9,6 +9,7 @@ namespace KeeperData.Core.EtlPipeline;
 /// Implementing a stage does not require changing this file (only adding a dependency does).</summary>
 public sealed class EtlPipelineFactory(
     IExternalCatalogueServiceFactory catalogueFactory,
+    IDataSetDefinitions dataSetDefinitions,
     DecryptStage decryptStage,
     NormaliseStage normaliseStage,
     OptimiseStage optimiseStage,
@@ -18,7 +19,7 @@ public sealed class EtlPipelineFactory(
 {
     public PipelineDefinition Create()
         => PipelineBuilder
-            .InputSource(new S3RawFolderSource(catalogueFactory))
+            .InputSource(new S3RawFolderSource(catalogueFactory, dataSetDefinitions))
             .Discover()               // -> DiscoveredFileSet
             .Decrypt(decryptStage)    // -> RawFileSet        (raw/)
             .Normalise(normaliseStage) // -> NormalisedFileSet (normalised/*.parquet)

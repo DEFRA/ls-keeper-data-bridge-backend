@@ -1,3 +1,4 @@
+using System.Globalization;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline.Optimise;
 using KeeperData.Core.EtlPipeline.Parquet;
@@ -29,7 +30,7 @@ public sealed partial class ParquetDeltaMergeEngine
 
         /// <summary>Null marks a tombstone: a row deleted by a delta, whose slot is held so the indices
         /// of the rows after it stay valid.</summary>
-        private readonly List<string?[]?> _rows = [];
+        private readonly List<object?[]?> _rows = [];
 
         private readonly List<DataField> _fields = [];
         private readonly Dictionary<string, int> _columnByName = new(StringComparer.OrdinalIgnoreCase);
@@ -70,7 +71,7 @@ public sealed partial class ParquetDeltaMergeEngine
 
             foreach (var row in InAuditOrder(table))
             {
-                var changeType = changeTypeIndex < 0 ? ChangeType.Insert : row[changeTypeIndex];
+                var changeType = changeTypeIndex < 0 ? ChangeType.Insert : row[changeTypeIndex] as string;
 
                 switch (changeType)
                 {
@@ -112,7 +113,7 @@ public sealed partial class ParquetDeltaMergeEngine
         /// row whose sequence is absent or unparsable cannot be placed in it, so it keeps its file order
         /// ahead of the rows that can, which leaves a sequenced cut of the same key winning over it.
         /// </summary>
-        private IEnumerable<string?[]> InAuditOrder(ParquetTable table)
+        private IEnumerable<object?[]> InAuditOrder(ParquetTable table)
         {
             if (definition.Audit is null)
             {
@@ -126,8 +127,16 @@ public sealed partial class ParquetDeltaMergeEngine
                 : table.Rows.OrderBy(row => Sequence(row[sequenceIndex]));
         }
 
-        private static long? Sequence(string? value)
-            => long.TryParse(value, out var sequence) ? sequence : null;
+        /// <summary>The sequence as a number, whether the column arrived typed or as text.</summary>
+        private static long? Sequence(object? value) => value switch
+        {
+            null => null,
+            long number => number,
+            int number => number,
+            short number => number,
+            string text => long.TryParse(text, CultureInfo.InvariantCulture, out var parsed) ? parsed : null,
+            _ => long.TryParse(ParquetValueText.Format(value), CultureInfo.InvariantCulture, out var parsed) ? parsed : null
+        };
 
         public async Task WriteAsync(Stream output, CancellationToken cancellationToken)
         {
@@ -157,9 +166,7 @@ public sealed partial class ParquetDeltaMergeEngine
 
                 for (var row = 0; row < rows.Count; row++)
                 {
-                    // Canonical text back to the field's type: the inverse of the read, so it cannot
-                    // fail for a value the read produced.
-                    values.SetValue(ParquetValueText.Parse(ParquetColumns.ElementType(field), rows[row]![column]), row);
+                    values.SetValue(rows[row]![column], row);
                 }
 
                 await ParquetColumns.WriteAsync(rowGroup, field, values, cancellationToken);
@@ -261,6 +268,7 @@ public sealed partial class ParquetDeltaMergeEngine
                 {
                     retyped.Add(new RetypedColumn(name, TypeName(held), TypeName(incoming)));
                     _fields[column] = new DataField<string?>(name);
+                    WidenToText(column);
                 }
             }
 
@@ -280,74 +288,101 @@ public sealed partial class ParquetDeltaMergeEngine
         private bool CanRetype(int column, DataField incoming)
         {
             var type = ParquetColumns.ElementType(incoming);
-            List<(int Row, string Canonical)>? rewrites = null;
+            var adopted = new List<(int Row, object? Value)>();
 
             for (var index = 0; index < _rows.Count; index++)
             {
                 var value = _rows[index]?[column];
 
-                if (value is null || IsCanonical(type, value))
+                if (value is null)
                 {
                     continue;
                 }
 
-                if (!TryNormalize(type, value, out var canonical))
+                if (!TryAdopt(type, value, out var converted))
                 {
                     return false;
                 }
 
-                (rewrites ??= []).Add((index, canonical!));
+                adopted.Add((index, converted));
             }
 
-            if (rewrites is not null)
+            foreach (var (row, value) in adopted)
             {
-                foreach (var (row, canonical) in rewrites)
-                {
-                    _rows[row]![column] = canonical;
-                }
+                _rows[row]![column] = value;
             }
 
             return true;
         }
 
-        /// <summary>The strict test every type must pass: the held value parses and its canonical
-        /// form is the held text exactly, so adopting the type rewrites nothing.</summary>
-        private static bool IsCanonical(Type type, string value)
-            => ParquetValueText.TryParse(type, value, out var parsed)
-                && string.Equals(ParquetValueText.Format(parsed), value, StringComparison.Ordinal);
-
-        /// <summary>The source shapes a held value can take and still carry one agreed meaning, so
-        /// it can be rewritten to canonical text: the forms the optimise detector accepts for date
-        /// and time values, and true/false in any casing for booleans - the only two values the
-        /// type has. Every other type declines: a value outside the canonical form has no agreed
-        /// meaning to write.</summary>
-        private static bool TryNormalize(Type type, string value, out string? canonical)
+        /// <summary>Rewrites a column's held values to their canonical text, for a column widening back
+        /// to string because two files disagree about its type.</summary>
+        private void WidenToText(int column)
         {
-            canonical = null;
+            for (var index = 0; index < _rows.Count; index++)
+            {
+                var row = _rows[index];
+
+                if (row is not null)
+                {
+                    row[column] = ParquetValueText.Format(row[column]);
+                }
+            }
+        }
+
+        /// <summary>Whether a held value can become the incoming type, and the value if it can.
+        ///
+        /// The strict test is that the value's canonical text parses to the type and renders back
+        /// unchanged, so adopting the type loses nothing: "007" parses as a number but loses its
+        /// zeros, so it keeps the column text instead - the same standard the optimise detector
+        /// applies. Values whose meaning survives anyway get a second chance: a date in a feed's own
+        /// shape, or "true"/"FALSE" for a boolean, carries one agreed meaning even though its text is
+        /// not canonical. A value matching no shape declines the column.</summary>
+        private static bool TryAdopt(Type type, object value, out object? adopted)
+        {
+            adopted = null;
 
             var target = Nullable.GetUnderlyingType(type) ?? type;
-            object? parsed = null;
 
-            if (target == typeof(DateTime) && ColumnTypeDetector.TryParseTimestamp(value, out var timestamp))
+            if (value.GetType() == target)
             {
-                parsed = timestamp;
-            }
-            else if (target == typeof(DateOnly) && ColumnTypeDetector.TryParseDate(value, out var date))
-            {
-                parsed = date;
-            }
-            else if (target == typeof(bool) && bool.TryParse(value, out var flag))
-            {
-                parsed = flag;
+                adopted = value;
+                return true;
             }
 
-            if (parsed is null)
+            var text = ParquetValueText.Format(value);
+
+            if (text is null)
             {
-                return false;
+                return true;
             }
 
-            canonical = ParquetValueText.Format(parsed);
-            return true;
+            if (ParquetValueText.TryParse(type, text, out var parsed)
+                && string.Equals(ParquetValueText.Format(parsed), text, StringComparison.Ordinal))
+            {
+                adopted = parsed;
+                return true;
+            }
+
+            if (target == typeof(DateTime) && ColumnTypeDetector.TryParseTimestamp(text, out var timestamp))
+            {
+                adopted = timestamp;
+                return true;
+            }
+
+            if (target == typeof(DateOnly) && ColumnTypeDetector.TryParseDate(text, out var date))
+            {
+                adopted = date;
+                return true;
+            }
+
+            if (target == typeof(bool) && bool.TryParse(text, out var flag))
+            {
+                adopted = flag;
+                return true;
+            }
+
+            return false;
         }
 
         private static bool SameType(DataField a, DataField b)
@@ -397,20 +432,37 @@ public sealed partial class ParquetDeltaMergeEngine
 
         /// <summary>The row reduced to the output columns, in output column order, with a null for any
         /// column the file does not carry.</summary>
-        private static string?[] Project(Alignment alignment, string?[] row)
+        private object?[] Project(Alignment alignment, object?[] row)
         {
             var indexes = alignment.Indexes;
-            var projected = new string?[indexes.Length];
+            var projected = new object?[indexes.Length];
 
             for (var column = 0; column < indexes.Length; column++)
             {
-                projected[column] = indexes[column] < 0 ? null : row[indexes[column]];
+                projected[column] = indexes[column] < 0 ? null : Conform(row[indexes[column]], _fields[column]);
             }
 
             return projected;
         }
 
-        private void Upsert(string?[] row, string compositeKey)
+        /// <summary>A file's value in the type the output column settled on. They differ when a retype
+        /// was declined: the column stays text while the file still carried it typed.</summary>
+        private static object? Conform(object? value, DataField field)
+        {
+            if (value is null)
+            {
+                return null;
+            }
+
+            var target = ParquetColumns.ElementType(field);
+            var underlying = Nullable.GetUnderlyingType(target) ?? target;
+
+            return value.GetType() == underlying
+                ? value
+                : underlying == typeof(string) ? ParquetValueText.Format(value) : value;
+        }
+
+        private void Upsert(object?[] row, string compositeKey)
         {
             if (_indexByKey.TryGetValue(compositeKey, out var existing))
             {
@@ -437,7 +489,9 @@ public sealed partial class ParquetDeltaMergeEngine
             return true;
         }
 
-        private string CompositeKey(ParquetTable table, string?[] row, string key)
+        /// <summary>The row's identity. Built from the canonical text of each key part so that a key
+        /// spanning several columns of different types still reduces to one comparable value.</summary>
+        private string CompositeKey(ParquetTable table, object?[] row, string key)
         {
             var parts = definition.PrimaryKeyHeaderNames.Select(name =>
             {
@@ -447,7 +501,7 @@ public sealed partial class ParquetDeltaMergeEngine
                     ? throw new InvalidOperationException(
                         $"'{key}' has no primary key column '{name}' for dataset '{definition.Name}'. " +
                         $"It carries: {string.Join(", ", table.Fields.Select(field => field.Name))}")
-                    : row[index] ?? string.Empty;
+                    : ParquetValueText.Format(row[index]) ?? string.Empty;
             });
 
             return string.Join(EtlConstants.CompositeKeyDelimiter, parts);

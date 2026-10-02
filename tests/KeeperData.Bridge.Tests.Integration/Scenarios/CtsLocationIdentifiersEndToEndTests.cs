@@ -91,7 +91,7 @@ public sealed class CtsLocationIdentifiersEndToEndTests(ITestOutputHelper output
         var staged = await QueryDatabaseAsync(
             host, StagingFileNaming.DatabaseKey(CtsFixtures.FifthDeltaSourceTimestamp));
 
-        staged.Should().BeEquivalentTo(CtsFixtures.ExpectedSteadyAdvanced,
+        staged.Should().BeEquivalentTo(CtsFixtures.AsStaged(CtsFixtures.ExpectedSteadyAdvanced),
             "the table is named for the dataset and its columns are inferred from the snapshot");
 
         output.WriteLine($"Snapshot and database agree on {staged.Count} row(s)");
@@ -209,8 +209,9 @@ public sealed class CtsLocationIdentifiersEndToEndTests(ITestOutputHelper output
             await connection.OpenAsync();
 
             using var command = connection.CreateCommand();
+            // Both columns are typed now that optimise declares them; cast them back to compare as text.
             command.CommandText =
-                "SELECT LID_ID, LID_FULL_IDENTIFIER, LID_CURRENT_MODIFIED_DATE, LID_VERSION " +
+                "SELECT LID_ID, LID_FULL_IDENTIFIER, LID_CURRENT_MODIFIED_DATE::VARCHAR, LID_VERSION::VARCHAR " +
                 "FROM cts_location_identifiers ORDER BY LID_ID";
 
             using var reader = await command.ExecuteReaderAsync();
@@ -218,15 +219,7 @@ public sealed class CtsLocationIdentifiersEndToEndTests(ITestOutputHelper output
             var rows = new List<(string, string, string, string)>();
             while (await reader.ReadAsync())
             {
-                var id = reader.GetString(0);
-                var identifier = reader.GetString(1);
-                var modified = reader.GetString(2);
-
-                // LID_VERSION may be stored as an integer in DuckDB; read as object and convert to string
-                var versionObj = reader.GetValue(3);
-                var version = versionObj == null || versionObj is DBNull ? string.Empty : versionObj.ToString()!;
-
-                rows.Add((id, identifier, modified, version));
+                rows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)));
             }
 
             return rows;

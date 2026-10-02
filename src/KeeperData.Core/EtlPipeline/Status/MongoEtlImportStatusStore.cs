@@ -14,9 +14,8 @@ namespace KeeperData.Core.EtlPipeline.Status;
 [ExcludeFromCodeCoverage(Justification = "MongoDB persistence - covered by integration tests.")]
 public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
 {
-    /// <summary>How long a run is trusted to still be alive after its last sign of progress. Longer
-    /// than any single stage is expected to take, since the lease is only extended between stages.</summary>
-    public static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(30);
+    /// <summary>How long a run is trusted to still be alive after its last sign of progress.</summary>
+    public static readonly TimeSpan LeaseDuration = EtlImportProgress.LeaseDuration;
 
     private readonly IMongoCollection<EtlImportDocument> _imports;
     private readonly TimeProvider _timeProvider;
@@ -36,17 +35,7 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
 
     public async Task CreateQueuedAsync(Guid importId, string sourceType, string? dataset, CancellationToken cancellationToken)
     {
-        var now = UtcNow;
-
-        var document = new EtlImportDocument
-        {
-            ImportId = importId,
-            Status = EtlImportStatus.Queued.ToString(),
-            SourceType = sourceType,
-            Dataset = dataset,
-            RequestedAtUtc = now,
-            LeaseExpiresAtUtc = now.Add(LeaseDuration)
-        };
+        var document = EtlImportProgress.Queued(importId, sourceType, dataset, UtcNow);
 
         await _imports.ReplaceOneAsync(
             d => d.ImportId == importId,
@@ -88,42 +77,7 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
             return;
         }
 
-        var now = UtcNow;
-
-        document.Stages.Add(new EtlImportStageDocument
-        {
-            Name = progress.StageName,
-            ItemCount = progress.ItemCount,
-            ElapsedMs = (long)progress.Elapsed.TotalMilliseconds,
-            CompletedAtUtc = now
-        });
-
-        foreach (var dataset in progress.Datasets)
-        {
-            Merge(DatasetEntry(document, dataset.Dataset), dataset);
-        }
-
-        if (progress.DuckDbKey is not null)
-        {
-            document.DuckDbKey = progress.DuckDbKey;
-        }
-
-        if (progress.SqliteKey is not null)
-        {
-            document.SqliteKey = progress.SqliteKey;
-        }
-
-        if (progress.SqliteTables is { Count: > 0 })
-        {
-            document.SqliteTables =
-                [.. progress.SqliteTables.Select(table => new EtlImportViewTableDocument
-                {
-                    Name = table.Name,
-                    RowCount = table.RowCount
-                })];
-        }
-
-        document.LeaseExpiresAtUtc = now.Add(LeaseDuration);
+        EtlImportProgress.ApplyStage(document, progress, UtcNow);
 
         await ReplaceAsync(document, cancellationToken);
     }
@@ -151,7 +105,7 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
             .Limit(10)
             .ToListAsync(cancellationToken);
 
-        return candidates.FirstOrDefault(d => d.LeaseExpiresAtUtc is null || d.LeaseExpiresAtUtc > UtcNow);
+        return candidates.FirstOrDefault(d => EtlImportProgress.IsInFlight(d, UtcNow));
     }
 
     public async Task<EtlImportPage> ListAsync(int skip, int top, CancellationToken cancellationToken)
@@ -172,23 +126,7 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
 
     public async Task RecordPurgeAsync(EtlPurgeRecord purge, CancellationToken cancellationToken)
     {
-        var now = UtcNow;
-
-        var document = new EtlImportDocument
-        {
-            ImportId = purge.PurgeId,
-            Status = EtlImportStatus.Purged.ToString(),
-            SourceType = purge.SourceType,
-            Dataset = purge.Dataset,
-            RequestedAtUtc = now,
-            StartedAtUtc = now,
-            CompletedAtUtc = now,
-            Purge = new EtlImportPurgeDocument
-            {
-                Stages = [.. purge.Stages],
-                DeletedCount = purge.DeletedCount
-            }
-        };
+        var document = EtlImportProgress.Purged(purge, UtcNow);
 
         await _imports.ReplaceOneAsync(
             d => d.ImportId == purge.PurgeId,
@@ -216,57 +154,8 @@ public sealed class MongoEtlImportStatusStore : IEtlImportStatusStore
     private Task ReplaceAsync(EtlImportDocument document, CancellationToken cancellationToken)
         => _imports.ReplaceOneAsync(d => d.ImportId == document.ImportId, document, cancellationToken: cancellationToken);
 
-    /// <summary>A run whose lease lapsed is not running - the process hosting it died. Reported as
-    /// failed so a poller gets an answer instead of waiting forever on "Running".</summary>
     private EtlImportDocument AsAbandonedIfLapsed(EtlImportDocument document)
-    {
-        var running = document.Status is nameof(EtlImportStatus.Running) or nameof(EtlImportStatus.Queued);
-
-        if (!running || document.LeaseExpiresAtUtc is null || document.LeaseExpiresAtUtc > UtcNow)
-        {
-            return document;
-        }
-
-        document.Status = EtlImportStatus.Failed.ToString();
-        document.Error = "The run stopped reporting progress and is assumed to have been abandoned.";
-
-        return document;
-    }
-
-    private static EtlImportDatasetDocument DatasetEntry(EtlImportDocument document, string dataset)
-    {
-        var existing = document.Datasets.Find(d => d.Dataset == dataset);
-
-        if (existing is not null) return existing;
-
-        var created = new EtlImportDatasetDocument { Dataset = dataset };
-        document.Datasets.Add(created);
-
-        return created;
-    }
-
-    private static void Merge(EtlImportDatasetDocument target, EtlImportDatasetProgress source)
-    {
-        if (source.SourceFiles.Count > 0)
-        {
-            target.SourceFiles = [.. source.SourceFiles.Select(f => new EtlImportSourceFileDocument { Key = f.Key, Size = f.Size })];
-        }
-
-        if (source.RawKeys.Count > 0) target.RawKeys = [.. source.RawKeys];
-        if (source.NormalisedKeys.Count > 0) target.NormalisedKeys = [.. source.NormalisedKeys];
-        if (source.OptimisedKeys.Count > 0) target.OptimisedKeys = [.. source.OptimisedKeys];
-
-        target.SnapshotKey = source.SnapshotKey ?? target.SnapshotKey;
-        target.SnapshotSourceTimestampUtc = source.SnapshotSourceTimestamp?.UtcDateTime ?? target.SnapshotSourceTimestampUtc;
-        target.RowCount = source.RowCount ?? target.RowCount;
-        target.RowsUpserted = source.RowsUpserted ?? target.RowsUpserted;
-        target.RowsDeleted = source.RowsDeleted ?? target.RowsDeleted;
-        target.RowsIgnoredDeletes = source.RowsIgnoredDeletes ?? target.RowsIgnoredDeletes;
-        target.RowsRejected = source.RowsRejected ?? target.RowsRejected;
-
-        if (source.ColumnsNullified.Count > 0) target.ColumnsNullified = [.. source.ColumnsNullified];
-        if (source.ColumnsAdded.Count > 0) target.ColumnsAdded = [.. source.ColumnsAdded];
-    }
+        => EtlImportProgress.AsAbandonedIfLapsed(document, UtcNow);
 
     private DateTime UtcNow => _timeProvider.GetUtcNow().UtcDateTime;
 }

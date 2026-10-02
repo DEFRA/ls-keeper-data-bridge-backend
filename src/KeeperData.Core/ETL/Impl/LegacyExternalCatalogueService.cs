@@ -21,6 +21,13 @@ public class LegacyExternalCatalogueService(IBlobStorageServiceReadOnly sourceBl
         return await GetFileSetsAsync(0, ct);
     }
 
+    /// <summary>Not available here. This catalogue lists storage once per day in the range, so an
+    /// unbounded request would issue one listing per day since the feed began.</summary>
+    public Task<ImmutableList<FileSet>> GetAllFileSetsAsync(ImmutableArray<DataSetDefinition> definitions, CancellationToken ct)
+        => throw new NotSupportedException(
+            $"{nameof(LegacyExternalCatalogueService)} scans one day at a time and cannot list without a date range. " +
+            $"Use {nameof(BulkListingExternalCatalogueService)}.");
+
     public async Task<ImmutableList<FileSet>> GetFileSetsAsync(int days, CancellationToken ct)
     {
         var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().DateTime);

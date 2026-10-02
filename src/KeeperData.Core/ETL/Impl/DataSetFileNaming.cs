@@ -34,6 +34,28 @@ public static class DataSetFileNaming
     }
 
     /// <summary>
+    /// The fewest prefixes that still cover every one of the datasets: the union of their listing
+    /// prefixes, with any prefix another already contains removed.
+    ///
+    /// Six CTS datasets share two lanes, so listing per dataset reads the same objects six times.
+    /// Reducing first means storage is read once and every key is offered to every definition.
+    /// A prefix wrongly dropped here would silently hide a dataset, so the covering property is
+    /// asserted in the tests rather than left to inspection.
+    /// </summary>
+    public static IReadOnlyList<string> ListingPrefixes(IEnumerable<DataSetDefinition> definitions)
+    {
+        ArgumentNullException.ThrowIfNull(definitions);
+
+        var all = definitions
+            .SelectMany(ListingPrefixes)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        return [.. all.Where(prefix => !all.Exists(other =>
+            other.Length < prefix.Length && prefix.StartsWith(other, StringComparison.Ordinal)))];
+    }
+
+    /// <summary>
     /// Whether a storage key belongs to the dataset. A glob dataset matches its pattern; anything
     /// else matches its literal prefix, which is what listing under it would already have returned.
     /// </summary>

@@ -209,9 +209,10 @@ public sealed class CtsLocationIdentifiersEndToEndTests(ITestOutputHelper output
             await connection.OpenAsync();
 
             using var command = connection.CreateCommand();
-            // Both columns are typed now that optimise declares them; cast them back to compare as text.
+            // Every column but the identifier is typed now that optimise declares them - LID_ID is a
+            // NUMBER(12) key, so it arrives as BIGINT like the foreign keys that reference it.
             command.CommandText =
-                "SELECT LID_ID, LID_FULL_IDENTIFIER, LID_CURRENT_MODIFIED_DATE::VARCHAR, LID_VERSION::VARCHAR " +
+                "SELECT LID_ID::VARCHAR, LID_FULL_IDENTIFIER, LID_CURRENT_MODIFIED_DATE::VARCHAR, LID_VERSION::VARCHAR " +
                 "FROM cts_location_identifiers ORDER BY LID_ID";
 
             using var reader = await command.ExecuteReaderAsync();

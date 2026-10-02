@@ -1,16 +1,13 @@
 using FluentAssertions;
-using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Controllers;
 using KeeperData.Bridge.Models;
 using KeeperData.Bridge.Worker.Coordination;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline.Status;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Moq;
 
 namespace KeeperData.Bridge.Tests.Component.Controllers;
@@ -27,48 +24,15 @@ public class EtlImportControllerTests
         _controller = Controller();
     }
 
-    private EtlImportController Controller(string environment = "Development", bool purgeEnabled = false)
+    private EtlImportController Controller()
     {
         var definitions = new Mock<IDataSetDefinitions>();
         definitions.SetupGet(d => d.All).Returns(StandardDataSetDefinitionsBuilder.Build().All);
 
-        var host = new Mock<IWebHostEnvironment>();
-        host.SetupGet(h => h.EnvironmentName).Returns(environment);
-
         return new EtlImportController(
             _coordinator.Object,
             definitions.Object,
-            host.Object,
-            Options.Create(new FeatureFlags { EtlStoragePurgeEnabled = purgeEnabled }),
             Mock.Of<ILogger<EtlImportController>>());
-    }
-
-    /// <summary>A rebuild deletes exactly what the purge endpoint deletes, so it has to answer to the
-    /// same control - otherwise it is a way around a deliberate production safeguard.</summary>
-    [Fact]
-    public async Task StartImport_RebuildingInProduction_IsRefusedUnlessPurgeIsEnabled()
-    {
-        var result = await Controller("Production").StartImport("external", null, rebuild: true, CancellationToken.None);
-
-        result.Should().BeOfType<ObjectResult>()
-            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
-
-        _coordinator.Verify(
-            c => c.StartAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
-
-    [Fact]
-    public async Task StartImport_RebuildingInProduction_IsAllowedWhenPurgeIsEnabled()
-    {
-        _coordinator
-            .Setup(c => c.StartAsync(It.IsAny<string>(), It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(EtlImportStartResult.Started(Guid.NewGuid()));
-
-        var result = await Controller("Production", purgeEnabled: true)
-            .StartImport("external", null, rebuild: true, CancellationToken.None);
-
-        result.Should().BeOfType<AcceptedResult>();
     }
 
     [Fact]

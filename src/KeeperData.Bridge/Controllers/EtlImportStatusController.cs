@@ -87,7 +87,8 @@ public class EtlImportStatusController(
         DuckDbPath = Qualify(EtlPipelineFolders.Staging, document.DuckDbKey),
         SqlitePath = Qualify(EtlPipelineFolders.Views, document.SqliteKey),
         Error = document.Error,
-        ErrorDetail = MapDetail(document.ErrorDetail)
+        ErrorDetail = MapDetail(document.ErrorDetail),
+        Purge = MapPurge(document.Purge)
     };
 
     private static EtlImportStatusResponse Map(EtlImportDocument document) => new()
@@ -132,13 +133,21 @@ public class EtlImportStatusController(
             RowsRejected = d.RowsRejected,
             ColumnsNullified = [.. d.ColumnsNullified],
             ColumnsAdded = [.. d.ColumnsAdded]
-        })]
+        })],
+        Purge = MapPurge(document.Purge)
     };
 
     /// <summary>Stages record keys relative to their folder; callers want the whole path, the same
     /// as the staging endpoint reports.</summary>
     private static string? Qualify(string folder, string? key)
         => key is null ? null : $"{folder}/{key}";
+
+    private static EtlImportPurgeResponse? MapPurge(EtlImportPurgeDocument? purge)
+        => purge is null ? null : new EtlImportPurgeResponse
+        {
+            Stages = [.. purge.Stages],
+            DeletedCount = purge.DeletedCount
+        };
 
     private static EtlImportErrorDetailResponse? MapDetail(EtlImportErrorDetail? detail)
         => detail is null ? null : new EtlImportErrorDetailResponse

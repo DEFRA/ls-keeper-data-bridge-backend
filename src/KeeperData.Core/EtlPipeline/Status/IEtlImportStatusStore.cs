@@ -33,7 +33,21 @@ public interface IEtlImportStatusStore
     /// <summary>A page of imports, most recently requested first, so a caller that has lost an
     /// import id can still find its run. Runs whose lease has lapsed are returned as failed.</summary>
     Task<EtlImportPage> ListAsync(int skip, int top, CancellationToken cancellationToken);
+
+    /// <summary>Writes a completed purge record into the same history, so a storage wipe is visible
+    /// beside the runs it reset. A purge is recorded after it succeeds; a failed purge is a failed
+    /// request, not history.</summary>
+    Task RecordPurgeAsync(EtlPurgeRecord purge, CancellationToken cancellationToken);
 }
+
+/// <summary>What a storage purge did. Carries the resolved stage list rather than the requested
+/// stage, so the record says what was actually deleted.</summary>
+public sealed record EtlPurgeRecord(
+    Guid PurgeId,
+    string SourceType,
+    string? Dataset,
+    IReadOnlyList<string> Stages,
+    int DeletedCount);
 
 /// <summary>One page of imports, with the total available so a caller can paginate.</summary>
 public sealed record EtlImportPage(IReadOnlyList<EtlImportDocument> Imports, long TotalCount);

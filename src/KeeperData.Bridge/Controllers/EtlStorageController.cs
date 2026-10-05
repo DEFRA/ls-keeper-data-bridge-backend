@@ -198,10 +198,10 @@ public sealed class EtlStorageController(
 
     /// <summary>(stage, key) in listing order; the heap comparator inverts it so the queue's head is
     /// the largest item retained - the one to evict when a smaller one arrives.</summary>
-    private static int CompareOrder((string Stage, string Key) a, (string Stage, string Key) b)
-        => string.CompareOrdinal(a.Stage, b.Stage) is var stageOrder && stageOrder != 0
+    private static int CompareOrder((string Stage, string Key) x, (string Stage, string Key) y)
+        => string.CompareOrdinal(x.Stage, y.Stage) is var stageOrder && stageOrder != 0
             ? stageOrder
-            : string.CompareOrdinal(a.Key, b.Key);
+            : string.CompareOrdinal(x.Key, y.Key);
 
     private static readonly IComparer<(string Stage, string Key)> LargestFirst =
         Comparer<(string Stage, string Key)>.Create((a, b) => CompareOrder(b, a));

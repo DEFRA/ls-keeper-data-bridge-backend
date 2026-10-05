@@ -101,49 +101,9 @@ public sealed class EtlStorageController(
 
         try
         {
-            var objects = new List<EtlStorageReportObject>();
-
-            foreach (var reportStage in ReportStages(requestedStage))
-            {
-                var target = ResolveTarget(reportStage, requestedSourceType, definition);
-                await foreach (var item in EnumerateObjectsAsync(target, cancellationToken))
-                {
-                    objects.Add(new EtlStorageReportObject
-                    {
-                        Stage = target.DisplayFolder,
-                        Key = item.Key,
-                        SizeBytes = item.Size,
-                        LastModifiedUtc = item.LastModified
-                    });
-                }
-            }
-
-            objects.Sort((a, b) => string.CompareOrdinal(a.Stage, b.Stage)
-                is var stageOrder && stageOrder != 0 ? stageOrder : string.CompareOrdinal(a.Key, b.Key));
-
-            var groups = objects
-                .GroupBy(o => GroupFor(o.Stage, o.Key))
-                .OrderBy(g => g.Key, StringComparer.Ordinal)
-                .Select(g => new EtlStorageReportGroup
-                {
-                    Dataset = g.Key,
-                    ObjectCount = g.Count(),
-                    SizeBytes = g.Sum(o => o.SizeBytes)
-                })
-                .ToList();
-
-            return Ok(new EtlStorageReportResponse
-            {
-                Stage = requestedStage,
-                Dataset = definition?.Name ?? All,
-                SourceType = requestedSourceType,
-                ObjectCount = objects.Count,
-                TotalSizeBytes = objects.Sum(o => o.SizeBytes),
-                Groups = groups,
-                Objects = objects.Skip(skip).Take(top).ToList(),
-                Skip = skip,
-                Top = top
-            });
+            var objects = await GetObjectsForReportAsync(requestedStage, requestedSourceType, definition, cancellationToken);
+            var response = BuildReportResponse(objects, requestedStage, requestedSourceType, definition, skip, top);
+            return Ok(response);
         }
         catch (OperationCanceledException)
         {
@@ -162,6 +122,58 @@ public sealed class EtlStorageController(
             return StatusCode(StatusCodes.Status500InternalServerError,
                 Error("Failed to list S3 stage storage."));
         }
+    }
+
+    private async Task<List<EtlStorageReportObject>> GetObjectsForReportAsync(string requestedStage, string requestedSourceType, DataSetDefinition? definition, CancellationToken cancellationToken)
+    {
+        var objects = new List<EtlStorageReportObject>();
+
+        foreach (var reportStage in ReportStages(requestedStage))
+        {
+            var target = ResolveTarget(reportStage, requestedSourceType, definition);
+            await foreach (var item in EnumerateObjectsAsync(target, cancellationToken))
+            {
+                objects.Add(new EtlStorageReportObject
+                {
+                    Stage = target.DisplayFolder,
+                    Key = item.Key,
+                    SizeBytes = item.Size,
+                    LastModifiedUtc = item.LastModified
+                });
+            }
+        }
+
+        objects.Sort((a, b) => string.CompareOrdinal(a.Stage, b.Stage)
+            is var stageOrder && stageOrder != 0 ? stageOrder : string.CompareOrdinal(a.Key, b.Key));
+
+        return objects;
+    }
+
+    private EtlStorageReportResponse BuildReportResponse(List<EtlStorageReportObject> objects, string requestedStage, string requestedSourceType, DataSetDefinition? definition, int skip, int top)
+    {
+        var groups = objects
+            .GroupBy(o => GroupFor(o.Stage, o.Key))
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => new EtlStorageReportGroup
+            {
+                Dataset = g.Key,
+                ObjectCount = g.Count(),
+                SizeBytes = g.Sum(o => o.SizeBytes)
+            })
+            .ToList();
+
+        return new EtlStorageReportResponse
+        {
+            Stage = requestedStage,
+            Dataset = definition?.Name ?? All,
+            SourceType = requestedSourceType,
+            ObjectCount = objects.Count,
+            TotalSizeBytes = objects.Sum(o => o.SizeBytes),
+            Groups = groups,
+            Objects = objects.Skip(skip).Take(top).ToList(),
+            Skip = skip,
+            Top = top
+        };
     }
 
     /// <summary>The stage or stages the report covers. Unlike a purge there is no cascade: a named

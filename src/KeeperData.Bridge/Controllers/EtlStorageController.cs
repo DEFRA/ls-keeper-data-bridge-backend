@@ -206,7 +206,7 @@ public sealed class EtlStorageController(
     /// matched the way discovery matches them; the staging and views artefacts belong to every
     /// dataset at once and anything left over is unattributed.</summary>
     private string GroupFor(
-        IReadOnlyDictionary<string, DataSetDefinition> byDatasetName,
+        System.Collections.Generic.Dictionary<string, KeeperData.Core.ETL.Impl.DataSetDefinition> byDatasetName,
         string stage,
         string key)
     {

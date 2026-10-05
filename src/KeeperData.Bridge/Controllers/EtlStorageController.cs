@@ -151,8 +151,11 @@ public sealed class EtlStorageController(
 
     private EtlStorageReportResponse BuildReportResponse(List<EtlStorageReportObject> objects, string requestedStage, string requestedSourceType, DataSetDefinition? definition, int skip, int top)
     {
+        var byDatasetName = dataSetDefinitions.All
+            .ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
+
         var groups = objects
-            .GroupBy(o => GroupFor(o.Stage, o.Key))
+            .GroupBy(o => GroupFor(byDatasetName, o.Stage, o.Key))
             .OrderBy(g => g.Key, StringComparer.Ordinal)
             .Select(g => new EtlStorageReportGroup
             {
@@ -202,12 +205,15 @@ public sealed class EtlStorageController(
     /// files under its name; source lanes can be globbed (CTS tables share a folder), so they are
     /// matched the way discovery matches them; the staging and views artefacts belong to every
     /// dataset at once and anything left over is unattributed.</summary>
-    private string GroupFor(string stage, string key)
+    private string GroupFor(
+        IReadOnlyDictionary<string, DataSetDefinition> byDatasetName,
+        string stage,
+        string key)
     {
-        var firstSegment = key.Split('/', 2)[0];
-        var byName = dataSetDefinitions.All.FirstOrDefault(candidate =>
-            string.Equals(candidate.Name, firstSegment, StringComparison.OrdinalIgnoreCase));
-        if (byName is not null) return byName.Name;
+        var separator = key.IndexOf('/');
+        var firstSegment = separator >= 0 ? key[..separator] : key;
+
+        if (byDatasetName.TryGetValue(firstSegment, out var byName)) return byName.Name;
 
         var byPattern = dataSetDefinitions.All.FirstOrDefault(candidate =>
             DataSetFileNaming.Matches(candidate, key));

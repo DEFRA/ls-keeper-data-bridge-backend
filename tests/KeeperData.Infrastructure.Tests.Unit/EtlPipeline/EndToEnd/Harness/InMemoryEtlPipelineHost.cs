@@ -107,7 +107,6 @@ public sealed class InMemoryEtlPipelineHost : IDisposable
 
     /// <summary>Runs the whole pipeline once, the way the coordinator runs it.</summary>
     public async Task<Guid> RunAsync(
-        int lookbackDays = 30,
         string? dataset = null,
         Guid? runId = null,
         CancellationToken cancellationToken = default)
@@ -121,7 +120,7 @@ public sealed class InMemoryEtlPipelineHost : IDisposable
 
         await executor.RunAsync(
             factory.Create(),
-            new EtlPipelineContext(id, BlobStorageSources.External, lookbackDays, dataset),
+            new EtlPipelineContext(id, BlobStorageSources.External, dataset),
             cancellationToken);
 
         return id;

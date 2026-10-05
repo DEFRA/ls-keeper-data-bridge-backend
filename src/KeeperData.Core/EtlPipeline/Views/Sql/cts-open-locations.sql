@@ -31,8 +31,9 @@ CREATE TABLE target.CtsOpenLocation (
     -- LID_IDENTIFIER, for joining to Holding.Cph. Deliberately NOT unique: sub-locations of one
     -- holding share their parent's identifier, so two open siblings would collide. Indexed below.
     Cph TEXT,
-    LocId TEXT,
+    LocId INTEGER,
     PremisesType TEXT,
+    -- CTY_CODE is VARCHAR2 at source and carries its leading zero: '08' is a county, not eight.
     CountyCode TEXT,
     CountyName TEXT,
 
@@ -93,9 +94,10 @@ CREATE TABLE target.CtsOpenLocation (
     ContactWelshIndicator TEXT
 );
 
--- The extract carries every column as text and holds Oracle NULLs as empty strings, so restoring
--- null semantics is the caller's job. This form also trims, which is right for a predicate or a
--- join key and wrong for an output column - see cts_value.
+-- The VARCHAR2 columns hold Oracle NULLs as empty strings, so restoring null semantics is the
+-- caller's job. This form also trims, which is right for a predicate or a join key and wrong for an
+-- output column - see cts_value. The ids and dates need neither: optimise declares them, so they
+-- arrive as BIGINT and DATE and a null is already a null.
 CREATE OR REPLACE TEMP MACRO cts_nz(value) AS nullif(trim(value), '');
 
 -- The output form. The report prints an absent value as empty but is otherwise verbatim: a stored
@@ -108,20 +110,6 @@ CREATE OR REPLACE TEMP MACRO cts_value(value) AS nullif(value, '');
 -- disagree about it silently.
 CREATE OR REPLACE TEMP MACRO cts_as_at() AS getvariable('cts_query_date');
 
--- Dates are text, 'DD-MON-YY'.
-CREATE OR REPLACE TEMP MACRO cts_date(value) AS strptime(cts_nz(value), '%d-%b-%y');
-
--- Oracle's RR pivot reads 50-99 as 19xx; DuckDB's %y reads 00-68 as 20xx, so a stored '66' becomes
--- 2066 and the row falls outside the query date. Nine locations and six keeper links are affected,
--- and because the keeper effective-from is also the ordering key below, getting this wrong picks
--- the wrong keeper as well as dropping rows.
-CREATE OR REPLACE TEMP MACRO cts_rr(value) AS
-    CASE
-        WHEN cts_date(value) > TIMESTAMP '2049-12-31'
-        THEN cts_date(value) - INTERVAL 100 YEAR
-        ELSE cts_date(value)
-    END;
-
 -- The outward code's area letters: 'AB54 8FG' -> 'AB'. Section 4.2.
 CREATE OR REPLACE TEMP MACRO cts_pc_area(value) AS
     regexp_extract(upper(coalesce(trim(value), '')), '^([A-Z]{1,2})', 1);
@@ -129,14 +117,11 @@ CREATE OR REPLACE TEMP MACRO cts_pc_area(value) AS
 CREATE OR REPLACE TEMP VIEW cts_location AS
 SELECT
     LOC_ID,
-    cts_nz(LOC_CTY_ID) AS CTY_ID,
+    LOC_CTY_ID AS CTY_ID,
     cts_nz(LOC_PREMISES_TYPE) AS PREMISES_TYPE,
     cts_nz(LOC_RECEIVE_LABELS_FLAG) AS RECEIVE_LABELS_FLAG,
-    -- Both forms are needed: the raw value distinguishes "no end date" from one that fails to
-    -- parse, the parsed value answers whether it has passed.
-    cts_nz(LOC_EFFECTIVE_TO) AS EFFECTIVE_TO_RAW,
-    cts_rr(LOC_EFFECTIVE_TO) AS EFFECTIVE_TO,
-    cts_rr(LOC_EFFECTIVE_FROM) AS EFFECTIVE_FROM,
+    LOC_EFFECTIVE_TO AS EFFECTIVE_TO,
+    LOC_EFFECTIVE_FROM AS EFFECTIVE_FROM,
     cts_nz(LOC_CURRENT_STATUS) AS CURRENT_STATUS,
     LOC_TEL_NUMBER, LOC_MOBILE_NUMBER, LOC_FAX_NUMBER, LOC_EMAIL_ADDRESS
 FROM cts_locations;
@@ -173,7 +158,7 @@ SELECT * EXCLUDE (pick) FROM (
         row_number() OVER (PARTITION BY ADR_PAR_ID ORDER BY ADR_ID) AS pick
     FROM cts_addresses
     WHERE cts_nz(ADR_CURRENT_STATUS) = '1'
-      AND cts_nz(ADR_PAR_ID) IS NOT NULL
+      AND ADR_PAR_ID IS NOT NULL
 ) WHERE pick = 1;
 
 CREATE OR REPLACE TEMP VIEW cts_location_address AS
@@ -184,7 +169,7 @@ SELECT * EXCLUDE (pick) FROM (
         row_number() OVER (PARTITION BY ADR_LOC_ID ORDER BY ADR_ID) AS pick
     FROM cts_addresses
     WHERE cts_nz(ADR_CURRENT_STATUS) = '1'
-      AND cts_nz(ADR_LOC_ID) IS NOT NULL
+      AND ADR_LOC_ID IS NOT NULL
 ) WHERE pick = 1;
 
 -- One CTE serves all three link types. LPT_ID 4 (KN, keeper name) decides whether a holding is in
@@ -194,25 +179,25 @@ SELECT * EXCLUDE (pick) FROM (
 -- email addresses, so a rule is needed rather than an arbitrary pick. Latest effective-from agrees
 -- with the real report's keeper on 41,349 of 41,350 rows; earliest manages 84%. The LPR_ID
 -- tie-break is deterministic but has no business meaning - a data-quality point for BCMS, not one
--- this projection can settle.
+-- this projection can settle. It now sorts numerically rather than as text, so 1000 beats 999.
 CREATE OR REPLACE TEMP VIEW cts_party_link AS
 SELECT * EXCLUDE (pick) FROM (
     SELECT
         r.LPR_LOC_ID,
         r.LPR_PAR_ID,
-        cts_nz(r.LPR_LPT_ID) AS LPT_ID,
+        r.LPR_LPT_ID AS LPT_ID,
         row_number() OVER (
-            PARTITION BY r.LPR_LOC_ID, cts_nz(r.LPR_LPT_ID)
-            ORDER BY cts_rr(r.LPR_EFFECTIVE_FROM_DATE) DESC, r.LPR_ID DESC) AS pick
+            PARTITION BY r.LPR_LOC_ID, r.LPR_LPT_ID
+            ORDER BY r.LPR_EFFECTIVE_FROM_DATE DESC, r.LPR_ID DESC) AS pick
     FROM cts_location_party_rels r
     JOIN cts_party p
       ON p.PAR_ID = r.LPR_PAR_ID
      AND p.CURRENT_STATUS = '1'
-    WHERE cts_nz(r.LPR_LPT_ID) IN ('4', '5', '8')
+    WHERE r.LPR_LPT_ID IN (4, 5, 8)
       AND cts_nz(r.LPR_CURRENT_STATUS) = '1'
-      AND cts_rr(r.LPR_EFFECTIVE_FROM_DATE) <= cts_as_at()
-      AND (cts_nz(r.LPR_EFFECTIVE_TO_DATE) IS NULL
-           OR cts_rr(r.LPR_EFFECTIVE_TO_DATE) > cts_as_at())
+      AND r.LPR_EFFECTIVE_FROM_DATE <= cts_as_at()
+      AND (r.LPR_EFFECTIVE_TO_DATE IS NULL
+           OR r.LPR_EFFECTIVE_TO_DATE > cts_as_at())
 ) WHERE pick = 1;
 
 -- The keeper, correspondence and contact blocks are the same fourteen columns drawn the same way,
@@ -295,10 +280,10 @@ JOIN cts_identifier i
  AND i.CURRENT_STATUS = '1'
 JOIN cts_party_link k
   ON k.LPR_LOC_ID = l.LOC_ID
- AND k.LPT_ID = '4'
+ AND k.LPT_ID = 4
 JOIN cts_location_country g
   ON g.LOC_ID = l.LOC_ID
-WHERE (l.EFFECTIVE_TO_RAW IS NULL OR l.EFFECTIVE_TO > cts_as_at())
+WHERE (l.EFFECTIVE_TO IS NULL OR l.EFFECTIVE_TO > cts_as_at())
   AND l.EFFECTIVE_FROM <= cts_as_at()
   AND l.RECEIVE_LABELS_FLAG = 'Y'
   AND l.CURRENT_STATUS = '1'
@@ -374,11 +359,11 @@ SELECT
     cts_value(contact.PAR_WELSH_INDICATOR)
 FROM cts_open_location o
 LEFT JOIN cts_party_block keeper
-  ON keeper.LPR_LOC_ID = o.LOC_ID AND keeper.LPT_ID = '4'
+  ON keeper.LPR_LOC_ID = o.LOC_ID AND keeper.LPT_ID = 4
 LEFT JOIN cts_party_block corres
-  ON corres.LPR_LOC_ID = o.LOC_ID AND corres.LPT_ID = '5'
+  ON corres.LPR_LOC_ID = o.LOC_ID AND corres.LPT_ID = 5
 LEFT JOIN cts_party_block contact
-  ON contact.LPR_LOC_ID = o.LOC_ID AND contact.LPT_ID = '8';
+  ON contact.LPR_LOC_ID = o.LOC_ID AND contact.LPT_ID = 8;
 
 CREATE INDEX ix_cts_open_location_cph ON target.main.CtsOpenLocation (Cph);
 CREATE INDEX ix_cts_open_location_keeper_post_code ON target.main.CtsOpenLocation (KeeperPostCode);

@@ -111,6 +111,37 @@ public class ColumnValueParserTests
         parse.Should().Throw<FormatException>();
     }
 
+    // Oracle's RR window is 1950-2049. '30' is the case .NET's own two-digit default gets wrong:
+    // it would pivot at 2029 and read 1930.
+    [Theory]
+    [InlineData("01-JUL-96", 1996, 7, 1)]
+    [InlineData("01-JAN-50", 1950, 1, 1)]
+    [InlineData("31-DEC-49", 2049, 12, 31)]
+    [InlineData("01-APR-00", 2000, 4, 1)]
+    [InlineData("15-MAR-30", 2030, 3, 15)]
+    public void Parses_an_oracle_rr_date(string value, int year, int month, int day)
+    {
+        ColumnValueParser.Parse(value, ColumnDataType.Date, Precision, Scale)
+            .Should().Be(new DateOnly(year, month, day));
+    }
+
+    [Theory]
+    [InlineData("01-jul-96")]
+    [InlineData("01-Jul-96")]
+    public void Month_abbreviations_are_case_insensitive(string value)
+    {
+        ColumnValueParser.Parse(value, ColumnDataType.Date, Precision, Scale)
+            .Should().Be(new DateOnly(1996, 7, 1));
+    }
+
+    [Fact]
+    public void A_parsed_timestamp_carries_no_zone()
+    {
+        ColumnValueParser.ParseTimestamp("01-JUL-96")
+            .Should().Be(new DateTime(1996, 7, 1))
+            .And.Subject.As<DateTime>().Kind.Should().Be(DateTimeKind.Unspecified);
+    }
+
     [Theory]
     [InlineData("2025-11-13T12:13:33")]
     [InlineData("2025-11-13 12:13:33")]

@@ -12,7 +12,7 @@ public sealed partial class ParquetDeltaMergeEngine
     {
         private readonly Dictionary<string, int> _indexByName = new(StringComparer.OrdinalIgnoreCase);
 
-        private ParquetTable(DataField[] fields, List<string?[]> rows)
+        private ParquetTable(DataField[] fields, List<object?[]> rows)
         {
             Fields = fields;
             Rows = rows;
@@ -25,7 +25,7 @@ public sealed partial class ParquetDeltaMergeEngine
 
         public DataField[] Fields { get; }
 
-        public List<string?[]> Rows { get; }
+        public List<object?[]> Rows { get; }
 
         public int IndexOf(string name) => _indexByName.TryGetValue(name, out var index) ? index : -1;
 
@@ -42,9 +42,9 @@ public sealed partial class ParquetDeltaMergeEngine
                 : new ParquetTable(fields, rows);
         }
 
-        private static async Task<List<string?[]>> ReadRowsAsync(ParquetReader reader, DataField[] fields, CancellationToken cancellationToken)
+        private static async Task<List<object?[]>> ReadRowsAsync(ParquetReader reader, DataField[] fields, CancellationToken cancellationToken)
         {
-            var rows = new List<string?[]>();
+            var rows = new List<object?[]>();
 
             for (var group = 0; group < reader.RowGroupCount; group++)
             {
@@ -56,28 +56,28 @@ public sealed partial class ParquetDeltaMergeEngine
             return rows;
         }
 
-        /// <summary>Every column, read typed then rendered to its canonical text. Rows stay strings so
-        /// keying, ordering and drift compare one representation; the typed field metadata survives on
-        /// <see cref="Fields"/> for the write side to recover the types from.</summary>
-        private static async Task<string?[][]> ReadColumnsAsync(ParquetRowGroupReader rowGroup, DataField[] fields, CancellationToken cancellationToken)
+        /// <summary>Every column in the CLR type its field declares. The optimise stage has already
+        /// resolved what each column is, so the merge works on those values rather than on text it
+        /// would have to parse back before writing.</summary>
+        private static async Task<object?[][]> ReadColumnsAsync(ParquetRowGroupReader rowGroup, DataField[] fields, CancellationToken cancellationToken)
         {
-            var columns = new string?[fields.Length][];
+            var columns = new object?[fields.Length][];
 
             for (var column = 0; column < fields.Length; column++)
             {
-                columns[column] = await ParquetColumns.ReadAsStringsAsync(rowGroup, fields[column], cancellationToken);
+                columns[column] = await ParquetColumns.ReadAsObjectsAsync(rowGroup, fields[column], cancellationToken);
             }
 
             return columns;
         }
 
-        private static void AppendRows(List<string?[]> rows, string?[][] columns, int fieldCount)
+        private static void AppendRows(List<object?[]> rows, object?[][] columns, int fieldCount)
         {
             var count = columns.Length == 0 ? 0 : columns[0].Length;
 
             for (var row = 0; row < count; row++)
             {
-                var values = new string?[fieldCount];
+                var values = new object?[fieldCount];
 
                 for (var column = 0; column < fieldCount; column++)
                 {

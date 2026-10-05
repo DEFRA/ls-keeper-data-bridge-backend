@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SnapshotStage>();
         services.AddScoped<LoadDuckDbStage>();
         services.AddScoped<ExportSqliteStage>();
+        services.AddScoped<EtlStages>();
 
         services.AddXsvHcdtHelper(x =>
         {

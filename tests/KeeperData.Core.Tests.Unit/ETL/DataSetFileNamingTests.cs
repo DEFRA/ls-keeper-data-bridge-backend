@@ -29,6 +29,43 @@ public class DataSetFileNamingTests
     public void ListingPrefixes_ForALiteralDataSet_YieldsItsSinglePrefix()
         => DataSetFileNaming.ListingPrefixes(Litprd).Should().Equal("litprd/LITP_SAMCPHHOLDING_");
 
+    [Fact]
+    public void ListingPrefixes_AcrossDataSets_ListsALaneOnceHoweverManyShareIt()
+    {
+        var addresses = Cts with { SourceKeyPattern = "cads/cts/{bulk,daily}/*CT_ADDRESSES*" };
+
+        DataSetFileNaming.ListingPrefixes([Cts, addresses, Litprd])
+            .Should().BeEquivalentTo(["cads/cts/bulk/", "cads/cts/daily/", "litprd/LITP_SAMCPHHOLDING_"]);
+    }
+
+    [Fact]
+    public void ListingPrefixes_AcrossDataSets_DropsAPrefixAnotherAlreadyContains()
+    {
+        var wholeFolder = Litprd with { FilePrefixFormat = "litprd/" };
+
+        DataSetFileNaming.ListingPrefixes([Litprd, wholeFolder])
+            .Should().Equal("litprd/");
+    }
+
+    /// <summary>The reduction is the one place a dataset could be silently lost: drop a prefix
+    /// nothing else covers and its files are never listed. Asserted over the real definitions.</summary>
+    [Fact]
+    public void ListingPrefixes_AcrossDataSets_StillCoverEveryDataSetsOwnPrefixes()
+    {
+        var definitions = StandardDataSetDefinitionsBuilder.Build().All;
+        var reduced = DataSetFileNaming.ListingPrefixes(definitions);
+
+        foreach (var definition in definitions)
+        {
+            foreach (var prefix in DataSetFileNaming.ListingPrefixes(definition))
+            {
+                reduced.Should().Contain(
+                    candidate => prefix.StartsWith(candidate, StringComparison.Ordinal),
+                    "listing {0} must still reach {1}", definition.Name, prefix);
+            }
+        }
+    }
+
     [Theory]
     [InlineData(CtsBulkKey)]
     [InlineData(CtsDailyKey)]

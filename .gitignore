@@ -274,3 +274,7 @@ library.db
 /coverage-report-final
 /coverage-report-full
 *.patch
+
+# SonarCloud scanner and the coverage report it consumes
+/.sonar/
+/coverage.xml

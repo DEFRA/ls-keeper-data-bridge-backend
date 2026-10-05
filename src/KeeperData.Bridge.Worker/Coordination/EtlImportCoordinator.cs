@@ -1,8 +1,10 @@
 using KeeperData.Core;
 using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Status;
+using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Locking;
 using KeeperData.Core.Pipeline;
+using KeeperData.Infrastructure.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -19,11 +21,16 @@ public sealed class EtlImportCoordinator(
     ILockRenewingRunner runner,
     IServiceScopeFactory scopeFactory,
     IEtlImportStatusStore statusStore,
+    IEtlPipelineStorageProvider storageProvider,
     IOptions<EtlImportOptions> options) : IEtlImportCoordinator
 {
     private readonly EtlImportOptions _options = options.Value;
 
-    public async Task<EtlImportStartResult> StartAsync(string sourceType, string? dataset, CancellationToken cancellationToken = default)
+    public async Task<EtlImportStartResult> StartAsync(
+        string sourceType,
+        string? dataset,
+        bool rebuild = false,
+        CancellationToken cancellationToken = default)
     {
         var importId = Guid.NewGuid();
 
@@ -39,6 +46,12 @@ public sealed class EtlImportCoordinator(
                 inFlight?.ImportId);
 
             return EtlImportStartResult.Conflict(inFlight?.ImportId);
+        }
+
+        if (rebuild && await ClearForRebuildAsync(cancellationToken) is { } failure)
+        {
+            await @lock.DisposeAsync();
+            return failure;
         }
 
         // Written before the run starts so a poll immediately after the response finds the import,
@@ -67,6 +80,41 @@ public sealed class EtlImportCoordinator(
         return EtlImportStartResult.Started(importId);
     }
 
+    /// <summary>Clears every stage so the run rebuilds from the source files. Runs under the import
+    /// lock and before the run is queued, so it cannot interleave with a stage writing.</summary>
+    private async Task<EtlImportStartResult?> ClearForRebuildAsync(CancellationToken cancellationToken)
+    {
+        var stages = EtlStageCascade.Stages;
+
+        logger.LogWarning("ETL rebuild requested: clearing {Stages}", EtlStageCascade.Names);
+
+        var cleared = await EtlStageCascade.ClearAsync(storageProvider, stages, cancellationToken: cancellationToken);
+
+        if (cleared.ClearedStages.Count > 0)
+        {
+            await statusStore.RecordPurgeAsync(
+                new EtlPurgeRecord(Guid.NewGuid(), BlobStorageSources.External, null, cleared.ClearedStages, cleared.Deleted),
+                cancellationToken);
+        }
+
+        if (cleared.Error is not null)
+        {
+            var clearedStages = cleared.ClearedStages.Count == 0 ? "nothing" : string.Join(", ", cleared.ClearedStages);
+
+            logger.LogError(
+                "ETL rebuild could not clear stage storage: {Error}. Cleared {ClearedStages} first ({DeletedCount} object(s))",
+                cleared.Error,
+                clearedStages,
+                cleared.Deleted);
+
+            return EtlImportStartResult.RebuildFailed(cleared.Error, cleared.ClearedStages);
+        }
+
+        logger.LogInformation("ETL rebuild cleared {DeletedCount} object(s)", cleared.Deleted);
+
+        return null;
+    }
+
     private async Task RunPipelineAsync(Guid importId, string sourceType, string? dataset, CancellationToken cancellationToken)
     {
         // The run outlives the request that started it, so it gets a scope of its own rather than
@@ -75,7 +123,7 @@ public sealed class EtlImportCoordinator(
 
         var pipeline = scope.ServiceProvider.GetRequiredService<IEtlPipelineFactory>().Create();
         var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
-        var context = new EtlPipelineContext(importId, sourceType, EtlConstants.DefaultLookbackDays, dataset);
+        var context = new EtlPipelineContext(importId, sourceType, dataset);
 
         // Status for the run itself is written by the pipeline's status observer; this only has to
         // report failures that happen outside the pipeline (lock loss, shutdown).

@@ -9,22 +9,18 @@ namespace KeeperData.Core.EtlPipeline;
 /// Implementing a stage does not require changing this file (only adding a dependency does).</summary>
 public sealed class EtlPipelineFactory(
     IExternalCatalogueServiceFactory catalogueFactory,
-    DecryptStage decryptStage,
-    NormaliseStage normaliseStage,
-    OptimiseStage optimiseStage,
-    SnapshotStage snapshotStage,
-    LoadDuckDbStage loadDuckDbStage,
-    ExportSqliteStage exportSqliteStage) : IEtlPipelineFactory
+    IDataSetDefinitions dataSetDefinitions,
+    EtlStages stages) : IEtlPipelineFactory
 {
     public PipelineDefinition Create()
         => PipelineBuilder
-            .InputSource(new S3RawFolderSource(catalogueFactory))
+            .InputSource(new S3RawFolderSource(catalogueFactory, dataSetDefinitions))
             .Discover()               // -> DiscoveredFileSet
-            .Decrypt(decryptStage)    // -> RawFileSet        (raw/)
-            .Normalise(normaliseStage) // -> NormalisedFileSet (normalised/*.parquet)
-            .Optimise(optimiseStage)  // -> OptimisedFileSet  (optimised/*.parquet)
-            .Snapshot(snapshotStage)  // -> SnapshotFile      (snapshots/*.parquet)
-            .LoadDuckDb(loadDuckDbStage) // -> StagingDatabase (staging/*.duckdb)
-            .ExportSqlite(exportSqliteStage) // -> SqliteExportFile (views/*.sqlite)
+            .Decrypt(stages.Decrypt)    // -> RawFileSet        (raw/)
+            .Normalise(stages.Normalise) // -> NormalisedFileSet (normalised/*.parquet)
+            .Optimise(stages.Optimise)  // -> OptimisedFileSet  (optimised/*.parquet)
+            .Snapshot(stages.Snapshot)  // -> SnapshotFile      (snapshots/*.parquet)
+            .LoadDuckDb(stages.LoadDuckDb) // -> StagingDatabase (staging/*.duckdb)
+            .ExportSqlite(stages.ExportSqlite) // -> SqliteExportFile (views/*.sqlite)
             .Build();
 }

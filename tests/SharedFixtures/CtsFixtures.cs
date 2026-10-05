@@ -1,5 +1,6 @@
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline.Storage;
+using System.Globalization;
 
 namespace KeeperData.Tests.SharedFixtures;
 
@@ -166,11 +167,11 @@ public static class CtsFixtures
     /// <summary>Part 001 alone, before any delta carrying rows has been applied.</summary>
     public static (string Id, string Identifier, string Modified, string Version)[] ExpectedBulkOnly =>
     [
-        ("898949", "AH-31/124/0042", "11-SEP-02", "1"),
-        ("125602", "AH-21/173/0011", "20-OCT-09", "1"),
-        ("171094", "AH-32/199/9003", "20-OCT-09", "1"),
-        ("60423", "AH-10/325/0068", "20-OCT-09", "1"),
-        ("287594", "AH-55/437/0047", "20-OCT-09", "1")
+        ("898949", "AH-31/124/0042", Modified(2002, 9, 11), "1"),
+        ("125602", "AH-21/173/0011", Modified(2009, 10, 20), "1"),
+        ("171094", "AH-32/199/9003", Modified(2009, 10, 20), "1"),
+        ("60423", "AH-10/325/0068", Modified(2009, 10, 20), "1"),
+        ("287594", "AH-55/437/0047", Modified(2009, 10, 20), "1")
     ];
 
     /// <summary>Both parts and no delta at all: what a reset from a baseline cut after the deltas
@@ -178,7 +179,7 @@ public static class CtsFixtures
     public static (string Id, string Identifier, string Modified, string Version)[] ExpectedBothBulksOnly =>
     [
         .. ExpectedBulkOnly,
-        ("307566", "AH-75/306/0062", "20-OCT-09", "1")
+        ("307566", "AH-75/306/0062", Modified(2009, 10, 20), "1")
     ];
 
     /// <summary>After part 001 and the deltas up to and including the fourth: 898949 deleted, 60423
@@ -186,28 +187,40 @@ public static class CtsFixtures
     /// carried it.</summary>
     public static (string Id, string Identifier, string Modified, string Version)[] ExpectedSteady =>
     [
-        ("125602", "AH-21/173/0011", "20-OCT-09", "1"),
-        ("171094", "AH-32/199/9003", "20-OCT-09", "1"),
-        ("60423", "AH-10/325/0068", "25-AUG-26", "1"),
-        ("287594", "AH-55/437/0047", "20-OCT-09", "1"),
-        ("11867589", "AH-31/534/5307", "24-AUG-26", "1"),
-        ("11867590", "AH-10/169/0375", "24-AUG-26", "1"),
-        ("11867604", "AH-55/018/8004", "25-AUG-26", "1")
+        ("125602", "AH-21/173/0011", Modified(2009, 10, 20), "1"),
+        ("171094", "AH-32/199/9003", Modified(2009, 10, 20), "1"),
+        ("60423", "AH-10/325/0068", Modified(2026, 8, 25), "1"),
+        ("287594", "AH-55/437/0047", Modified(2009, 10, 20), "1"),
+        ("11867589", "AH-31/534/5307", Modified(2026, 8, 24), "1"),
+        ("11867590", "AH-10/169/0375", Modified(2026, 8, 24), "1"),
+        ("11867604", "AH-55/018/8004", Modified(2026, 8, 25), "1")
     ];
 
     /// <summary>And after the fifth delta, 287594 at the higher of its two sequences.</summary>
     public static (string Id, string Identifier, string Modified, string Version)[] ExpectedSteadyAdvanced =>
     [
         .. ExpectedSteady.Where(row => row.Id != "287594"),
-        ("287594", "AH-55/437/0047", "26-AUG-26", "2")
+        ("287594", "AH-55/437/0047", Modified(2026, 8, 26), "2")
     ];
 
     /// <summary>And with both bulk parts, the row part 002 carries as well.</summary>
     public static (string Id, string Identifier, string Modified, string Version)[] ExpectedReset =>
     [
         .. ExpectedSteadyAdvanced,
-        ("307566", "AH-75/306/0062", "20-OCT-09", "1")
+        ("307566", "AH-75/306/0062", Modified(2009, 10, 20), "1")
     ];
+
+    /// <summary>LID_CURRENT_MODIFIED_DATE is declared a date, so the snapshot carries the canonical
+    /// form of the DD-MON-RR the extract writes rather than the text itself. A two-digit year is read
+    /// on Oracle's RR pivot, which is why '09' here is 2009 and '96' elsewhere is 1996.</summary>
+    private static string Modified(int year, int month, int day)
+        => new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc).ToString("O", CultureInfo.InvariantCulture);
+
+    /// <summary>The same rows as the staging database holds them. The declared date reaches DuckDB as
+    /// a DATE, which renders without the time part the snapshot's canonical text carries.</summary>
+    public static (string Id, string Identifier, string Modified, string Version)[] AsStaged(
+        (string Id, string Identifier, string Modified, string Version)[] rows)
+        => [.. rows.Select(row => (row.Id, row.Identifier, row.Modified[..10], row.Version))];
 
     /// <summary>The key the fourth delta deletes.</summary>
     public const string DeletedKey = "898949";

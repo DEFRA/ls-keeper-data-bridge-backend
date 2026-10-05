@@ -337,17 +337,53 @@ public class OptimiseStageTests
     }
 
     [Fact]
-    public async Task Rejects_a_column_type_declared_for_a_merge_required_column()
+    public async Task Writes_a_merge_required_column_with_the_type_the_definition_declares()
+    {
+        // A key is a string unless the definition says otherwise. CTS keys are NUMBER(12) at source,
+        // and a key typed on one side of a join and not the other is worse than either choice.
+        var definition = new DataSetDefinition(
+            "cts_locations", "cts_locations_{0}", ["LOC_ID"], ChangeType.HeaderName, [])
+        {
+            AutoDetectColumnTypes = false,
+            ColumnTypes = new Dictionary<string, ColumnDataType> { ["LOC_ID"] = ColumnDataType.Int64 }
+        };
+
+        PutNormalised(Key, "CHANGE_TYPE|LOC_ID|HOLDING_NAME", "I|403734|Old Farm");
+
+        await RunAsync(definition, Key);
+
+        ParquetFixture.SchemaOf(Optimised.BytesOf(Key)).Should()
+            .Contain(("LOC_ID", typeof(long)), "the declaration is what the key is written as");
+    }
+
+    [Fact]
+    public async Task Leaves_a_merge_required_column_a_string_when_nothing_declares_it()
+    {
+        // Detection samples each file on its own, so it is never allowed to decide a key's type -
+        // two files could then render the same row's key two different ways.
+        var definition = new DataSetDefinition(
+            "cts_locations", "cts_locations_{0}", ["LOC_ID"], ChangeType.HeaderName, []);
+
+        PutNormalised(Key, "CHANGE_TYPE|LOC_ID|HOLDING_NAME", "I|403734|Old Farm");
+
+        await RunAsync(definition, Key);
+
+        ParquetFixture.SchemaOf(Optimised.BytesOf(Key)).Should()
+            .Contain(("LOC_ID", typeof(ReadOnlyMemory<char>)));
+    }
+
+    [Fact]
+    public async Task Rejects_a_column_type_declared_for_the_change_type_column()
     {
         var definition = new DataSetDefinition(
             "sam_cph_holdings", "sam_cph_holdings_{0}", ["CPH"], ChangeType.HeaderName, [])
         {
-            ColumnTypes = new Dictionary<string, ColumnDataType> { ["CPH"] = ColumnDataType.Int64 }
+            ColumnTypes = new Dictionary<string, ColumnDataType> { [ChangeType.HeaderName] = ColumnDataType.Int64 }
         };
 
         var run = async () => await RunAsync(definition, Key);
 
-        await run.Should().ThrowAsync<InvalidOperationException>().WithMessage("*'CPH'*string*");
+        await run.Should().ThrowAsync<InvalidOperationException>().WithMessage("*compares as text*");
     }
 
     [Fact]

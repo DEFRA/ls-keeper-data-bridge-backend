@@ -1,3 +1,4 @@
+using DuckDB.NET.Data;
 using FluentAssertions;
 using KeeperData.Core.EtlPipeline.Views;
 using KeeperData.Infrastructure.EtlPipeline.Views;
@@ -109,9 +110,10 @@ public sealed class CtsOpenLocationTests : IDisposable
         => (await FieldAsync("AH-10/001/0002", "KeeperSurname")).Should().Be("CARTER");
 
     [Fact]
-    public async Task Reads_a_two_digit_year_the_way_Oracle_does()
-        // Effective from 22-JUN-66. Oracle's RR pivot reads 1966; DuckDB's %y reads 2066, which
-        // would put the holding in the future and drop it. Section 7.6.
+    public async Task Keeps_a_holding_whose_effective_from_predates_the_RR_pivot()
+        // Stored as 22-JUN-66, which ColumnValueParser resolves to 1966 rather than 2066 before the
+        // projection sees it - see ColumnValueParserTests. Were it read as 2066 the holding would
+        // sit in the future and be dropped. Section 7.6.
         => (await LocationNumbersAsync()).Should().Contain("AH-08/001/0004");
 
     [Fact]
@@ -243,6 +245,24 @@ public sealed class CtsOpenLocationTests : IDisposable
         // The two scripts share a database and nothing else. A collision between them would most
         // likely show up as a SAM table losing rows.
         => Scalar(await _export.Value, "SELECT count(*) FROM Holding").Should().Be(4);
+
+    private static List<string> Rows(string databasePath)
+    {
+        using var connection = Open(databasePath);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT * FROM CtsOpenLocation ORDER BY LocationNumber";
+
+        var rows = new List<string>();
+        using var reader = command.ExecuteReader();
+
+        while (reader.Read())
+        {
+            rows.Add(string.Join('\u241F', Enumerable.Range(0, reader.FieldCount)
+                .Select(index => reader.IsDBNull(index) ? "<null>" : reader.GetValue(index).ToString())));
+        }
+
+        return rows;
+    }
 
     private async Task<List<string>> LocationNumbersAsync()
         => Strings(await _export.Value, "SELECT LocationNumber FROM CtsOpenLocation ORDER BY LocationNumber");

@@ -49,8 +49,9 @@ public sealed class EtlStorageController(
     /// Lists the objects in a stage folder - key, size and last-modified - for debugging storage
     /// growth and verifying what a stage actually holds. Read-only, so unlike the purge it needs no
     /// feature flag; it also reports on staging and views, which a purge can only touch for every
-    /// dataset at once. Totals and dataset groups cover the whole listing; the objects themselves
-    /// are returned a page at a time because a folder can hold thousands.
+    /// dataset at once - a dataset-scoped 'all' skips them, since the shared artefacts do not belong
+    /// to the dataset. Totals and dataset groups cover the whole listing; the objects themselves are
+    /// returned a page at a time because a folder can hold thousands.
     /// </summary>
     [HttpGet("objects")]
     [ProducesResponseType(typeof(EtlStorageReportResponse), StatusCodes.Status200OK)]
@@ -101,9 +102,9 @@ public sealed class EtlStorageController(
 
         try
         {
-            var objects = await GetObjectsForReportAsync(requestedStage, requestedSourceType, definition, cancellationToken);
-            var response = BuildReportResponse(objects, requestedStage, requestedSourceType, definition, skip, top);
-            return Ok(response);
+            var report = await ReportAsync(
+                requestedStage, requestedSourceType, definition, skip, top, cancellationToken);
+            return Ok(report);
         }
         catch (OperationCanceledException)
         {
@@ -124,16 +125,39 @@ public sealed class EtlStorageController(
         }
     }
 
-    private async Task<List<EtlStorageReportObject>> GetObjectsForReportAsync(string requestedStage, string requestedSourceType, DataSetDefinition? definition, CancellationToken cancellationToken)
+    /// <summary>Streams the listing once, accumulating only what the response needs: the totals and
+    /// per-dataset groups over every object, and the requested page of them. The page is the first
+    /// skip + top objects in (stage, key) order and is held in a bounded heap, so a stage grown to
+    /// hundreds of thousands of keys still costs memory for a page, not for the folder.</summary>
+    private async Task<EtlStorageReportResponse> ReportAsync(
+        string requestedStage,
+        string requestedSourceType,
+        DataSetDefinition? definition,
+        int skip,
+        int top,
+        CancellationToken cancellationToken)
     {
-        var objects = new List<EtlStorageReportObject>();
+        var byDatasetName = dataSetDefinitions.All
+            .ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
+        var groups = new Dictionary<string, (int Count, long SizeBytes)>(StringComparer.Ordinal);
+        var page = new PriorityQueue<EtlStorageReportObject, (string Stage, string Key)>(LargestFirst);
+        var pageCapacity = (long)skip + top;
+        var objectCount = 0;
+        var totalSizeBytes = 0L;
 
-        foreach (var reportStage in ReportStages(requestedStage))
+        foreach (var reportStage in ReportStages(requestedStage, definition))
         {
             var target = ResolveTarget(reportStage, requestedSourceType, definition);
             await foreach (var item in EnumerateObjectsAsync(target, cancellationToken))
             {
-                objects.Add(new EtlStorageReportObject
+                objectCount++;
+                totalSizeBytes += item.Size;
+
+                var group = GroupFor(byDatasetName, target.DisplayFolder, item.Key);
+                groups.TryGetValue(group, out var totals);
+                groups[group] = (totals.Count + 1, totals.SizeBytes + item.Size);
+
+                KeepForPage(page, pageCapacity, new EtlStorageReportObject
                 {
                     Stage = target.DisplayFolder,
                     Key = item.Key,
@@ -143,46 +167,79 @@ public sealed class EtlStorageController(
             }
         }
 
-        objects.Sort((a, b) => string.CompareOrdinal(a.Stage, b.Stage)
-            is var stageOrder && stageOrder != 0 ? stageOrder : string.CompareOrdinal(a.Key, b.Key));
-
-        return objects;
-    }
-
-    private EtlStorageReportResponse BuildReportResponse(List<EtlStorageReportObject> objects, string requestedStage, string requestedSourceType, DataSetDefinition? definition, int skip, int top)
-    {
-        var byDatasetName = dataSetDefinitions.All
-            .ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
-
-        var groups = objects
-            .GroupBy(o => GroupFor(byDatasetName, o.Stage, o.Key))
-            .OrderBy(g => g.Key, StringComparer.Ordinal)
-            .Select(g => new EtlStorageReportGroup
-            {
-                Dataset = g.Key,
-                ObjectCount = g.Count(),
-                SizeBytes = g.Sum(o => o.SizeBytes)
-            })
-            .ToList();
+        // The heap yields its contents largest-first, so reversing them is the listing order.
+        var items = new List<EtlStorageReportObject>(page.Count);
+        while (page.TryDequeue(out var item, out _))
+        {
+            items.Add(item);
+        }
+        items.Reverse();
 
         return new EtlStorageReportResponse
         {
             Stage = requestedStage,
             Dataset = definition?.Name ?? All,
             SourceType = requestedSourceType,
-            ObjectCount = objects.Count,
-            TotalSizeBytes = objects.Sum(o => o.SizeBytes),
-            Groups = groups,
-            Objects = objects.Skip(skip).Take(top).ToList(),
+            ObjectCount = objectCount,
+            TotalSizeBytes = totalSizeBytes,
+            Groups = [.. groups
+                .OrderBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => new EtlStorageReportGroup
+                {
+                    Dataset = g.Key,
+                    ObjectCount = g.Value.Count,
+                    SizeBytes = g.Value.SizeBytes
+                })],
+            Objects = items.Skip(skip).Take(top).ToList(),
             Skip = skip,
             Top = top
         };
     }
 
+    /// <summary>(stage, key) in listing order; the heap comparator inverts it so the queue's head is
+    /// the largest item retained - the one to evict when a smaller one arrives.</summary>
+    private static int CompareOrder((string Stage, string Key) a, (string Stage, string Key) b)
+        => string.CompareOrdinal(a.Stage, b.Stage) is var stageOrder && stageOrder != 0
+            ? stageOrder
+            : string.CompareOrdinal(a.Key, b.Key);
+
+    private static readonly IComparer<(string Stage, string Key)> LargestFirst =
+        Comparer<(string Stage, string Key)>.Create((a, b) => CompareOrder(b, a));
+
+    /// <summary>Retains an object only if it falls inside the requested page: the first skip + top
+    /// items in (stage, key) order. Anything larger than the heap's head cannot make the page.</summary>
+    private static void KeepForPage(
+        PriorityQueue<EtlStorageReportObject, (string Stage, string Key)> page,
+        long pageCapacity,
+        EtlStorageReportObject candidate)
+    {
+        if (pageCapacity <= 0) return;
+
+        var order = (candidate.Stage, candidate.Key);
+
+        if (page.Count < pageCapacity)
+        {
+            page.Enqueue(candidate, order);
+        }
+        else if (page.TryPeek(out _, out var largest) && CompareOrder(order, largest) < 0)
+        {
+            page.Dequeue();
+            page.Enqueue(candidate, order);
+        }
+    }
+
     /// <summary>The stage or stages the report covers. Unlike a purge there is no cascade: a named
-    /// stage reports on just its folder, and 'all' reports on every folder in turn.</summary>
-    private static string[] ReportStages(string requestedStage)
-        => requestedStage == All ? StageOrder : [requestedStage];
+    /// stage reports on just its folder, and 'all' reports on every folder in turn - except the
+    /// shared staging and views artefacts, which a dataset-scoped report skips because they do not
+    /// belong to the dataset.</summary>
+    private static string[] ReportStages(string requestedStage, DataSetDefinition? definition)
+    {
+        if (requestedStage != All) return [requestedStage];
+
+        return definition is null
+            ? StageOrder
+            : StageOrder.Where(stage => stage is not Staging and not Views).ToArray();
+    }
 
     /// <summary>Every object a target's scope covers: the whole prefix, or - where the prefixes alone
     /// are broader than the request, as they are for glob lanes - only the keys that belong to it.</summary>
@@ -206,7 +263,7 @@ public sealed class EtlStorageController(
     /// matched the way discovery matches them; the staging and views artefacts belong to every
     /// dataset at once and anything left over is unattributed.</summary>
     private string GroupFor(
-        System.Collections.Generic.Dictionary<string, KeeperData.Core.ETL.Impl.DataSetDefinition> byDatasetName,
+        IReadOnlyDictionary<string, DataSetDefinition> byDatasetName,
         string stage,
         string key)
     {

@@ -513,6 +513,24 @@ public class EtlStorageControllerTests
     }
 
     [Fact]
+    public async Task Dataset_scoped_all_skips_the_shared_staging_and_views_folders()
+    {
+        LaneObjects(_normalised, "sam_cph_holdings/", Object("sam_cph_holdings/a.parquet", 20));
+        LaneObjects(_staging, null, Object("krds-db.duckdb", 30));
+        LaneObjects(_views, null, Object("krds-db.sqlite", 40));
+
+        var result = await Controller().ListObjects("all", "sam_cph_holdings");
+
+        var response = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStorageReportResponse>().Subject;
+        response.ObjectCount.Should().Be(1);
+        response.TotalSizeBytes.Should().Be(20);
+        response.Objects.Select(o => o.Stage).Should().Equal("normalised");
+        _staging.VerifyNoOtherCalls();
+        _views.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Report_matches_cts_keys_by_pattern_not_prefix()
     {
         LaneObjects(_raw, "cads/cts/bulk/",

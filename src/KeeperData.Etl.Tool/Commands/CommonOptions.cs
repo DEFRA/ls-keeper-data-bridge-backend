@@ -20,4 +20,11 @@ internal static class CommonOptions
     {
         Description = "Emit JSON instead of a table."
     };
+
+    /// <summary>Only ever turns seeding on: off is the default, and a flag that could also assert the
+    /// default would make "did I ask for this?" unanswerable from the command line alone.</summary>
+    public static readonly Option<bool> SeedTestData = new("--seed-test-data")
+    {
+        Description = "Write the known test keepers into the SQLite read model, replacing any real data sharing their CPHs."
+    };
 }

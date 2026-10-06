@@ -49,6 +49,12 @@ public static class SqliteViewDefinition
     /// assembled text, so editing any one script invalidates the export.</summary>
     public static string Version { get; } = Fingerprint(Sql);
 
+    /// <summary>Identifies a transformation assembled from something other than <see cref="Parts"/>.
+    /// The export is reused on the strength of this, so a run that seeds test data has to fingerprint
+    /// differently from one that does not - otherwise turning the flag on would leave an already
+    /// exported timestamp alone and appear to do nothing.</summary>
+    public static string VersionOf(IReadOnlyList<SqliteViewPart> parts) => Fingerprint(Assemble(parts));
+
     /// <summary>Every table the transformation can produce. What a run actually produced is narrower
     /// whenever a part was skipped, so this is not the export's contract - that is the table list
     /// recorded against the exported object.</summary>

@@ -51,7 +51,11 @@ public sealed class DuckDbSqliteViewWriter(
         await SetQueryDateAsync(connection, request.QueryDate, cancellationToken);
 
         var staged = await StagedTablesAsync(connection, cancellationToken);
-        var tables = new List<SqliteViewTable>();
+
+        // Keyed by name, because a later part may add rows to a table an earlier one produced. The
+        // export records these as its reconciliation counts, so the last reading has to be the one
+        // that survives - and the table still has to appear once, where it was first produced.
+        var tables = new OrderedDictionary<string, long>(StringComparer.Ordinal);
 
         foreach (var part in request.Parts)
         {
@@ -68,14 +72,14 @@ public sealed class DuckDbSqliteViewWriter(
 
                 logger.LogInformation("SQLite view table {TableName} holds {RowCount} row(s)", name, rowCount);
 
-                tables.Add(new SqliteViewTable(name, rowCount));
+                tables[name] = rowCount;
             }
         }
 
         await ExecuteAsync(connection, "CHECKPOINT target", cancellationToken);
         await ExecuteAsync(connection, "DETACH target", cancellationToken);
 
-        return new SqliteViewWriteResult(tables);
+        return new SqliteViewWriteResult([.. tables.Select(table => new SqliteViewTable(table.Key, table.Value))]);
     }
 
     /// <summary>Whether this environment loaded the source system the part reads. All of its tables

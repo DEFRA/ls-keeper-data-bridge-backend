@@ -1,4 +1,5 @@
 using KeeperData.Core.ETL.Abstract;
+using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.Storage;
 using KeeperData.Etl.Tool.Configuration;
 using KeeperData.Infrastructure.EtlPipeline.Views;
@@ -24,6 +25,7 @@ internal static class ConfigCommand
         {
             CommonOptions.Environment,
             CommonOptions.Staging,
+            CommonOptions.SeedTestData,
             check
         };
 
@@ -47,6 +49,10 @@ internal static class ConfigCommand
             var extension = host.Services.GetRequiredService<IOptions<DuckDbConfiguration>>().Value.SqliteExtensionPath;
 
             Console.WriteLine($"SQLite ext    : {Describe(extension, isFile: true)}");
+
+            var seedTestData = host.Services.GetRequiredService<IOptions<EtlFeatureFlags>>().Value.SeedTestDataEnabled;
+
+            Console.WriteLine($"Test data     : {(seedTestData ? "seeded into the read model" : "not seeded")}");
 
             Console.WriteLine();
             Console.WriteLine("Datasets");

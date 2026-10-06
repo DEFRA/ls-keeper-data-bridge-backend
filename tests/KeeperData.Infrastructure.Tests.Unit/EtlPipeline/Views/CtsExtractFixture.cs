@@ -21,6 +21,16 @@ public static class CtsExtractFixture
     /// either side of it.</summary>
     public const string QueryDate = "2026-09-15";
 
+    /// <summary>A staging database holding the CTS tables and nothing else - the mirror of the
+    /// environment that loads no CTS extracts.</summary>
+    public static void Create(string databasePath)
+    {
+        using var connection = new DuckDBConnection($"Data Source={databasePath}");
+        connection.Open();
+
+        Create(connection);
+    }
+
     public static void Create(DuckDBConnection connection)
     {
         Execute(connection, """

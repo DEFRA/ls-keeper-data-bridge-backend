@@ -2,11 +2,13 @@ using System.Text;
 using FluentAssertions;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline;
+using KeeperData.Core.EtlPipeline.Concurrency;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Parquet;
 using XsvHcdtHelper;
@@ -30,7 +32,11 @@ public class NormaliseStageTests
         _storageProviderMock = new Mock<IEtlPipelineStorageProvider>();
         _storageProviderMock.Setup(p => p.ForFolder(It.IsAny<string>())).Returns(_blobStorageMock.Object);
         _hcdtNormaliserMock = new Mock<IXsvHcdtNormaliser>();
-        _sut = new NormaliseStage(_storageProviderMock.Object, _hcdtNormaliserMock.Object, NullLogger<NormaliseStage>.Instance);
+        _sut = new NormaliseStage(
+            _storageProviderMock.Object,
+            _hcdtNormaliserMock.Object,
+            new EtlConcurrency(Options.Create(new EtlConcurrencyOptions()), NullLogger<EtlConcurrency>.Instance),
+            NullLogger<NormaliseStage>.Instance);
 
         _pipelineContext = new EtlPipelineContext(Guid.NewGuid(), "external");
         _dataSetDef = new DataSetDefinition(

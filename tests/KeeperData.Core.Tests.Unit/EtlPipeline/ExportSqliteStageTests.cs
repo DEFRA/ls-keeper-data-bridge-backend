@@ -131,13 +131,46 @@ public class ExportSqliteStageTests
     {
         Views.Put(ExpectedKey, "missing reconciliation metadata", new Dictionary<string, string>
         {
-            [ViewsFileNaming.VersionMetadataKey] = SqliteViewDefinition.Version
+            [ViewsFileNaming.VersionMetadataKey] = SqliteViewDefinition.Version,
+            [ViewsFileNaming.TablesMetadataKey] = "Party,Holding"
         });
 
         var output = await RunAsync(Database());
 
         output.Single().Created.Should().BeTrue();
         _writer.Calls.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Rebuilds_a_current_export_that_does_not_say_which_tables_it_holds()
+    {
+        Views.Put(ExpectedKey, "written before the table list was recorded", new Dictionary<string, string>
+        {
+            [ViewsFileNaming.VersionMetadataKey] = SqliteViewDefinition.Version
+        });
+
+        var output = await RunAsync(Database());
+
+        output.Single().Created.Should().BeTrue();
+        _writer.Calls.Should().ContainSingle(
+            "an export that cannot say what it holds cannot be reconciled against");
+    }
+
+    [Fact]
+    public async Task Reuses_an_export_that_holds_fewer_tables_than_the_transformation_can_produce()
+    {
+        // An environment that loads no CTS extracts exports without Open Locations. Judging that
+        // against every table the transformation declares would rebuild it on every run.
+        _writer.Tables = [new SqliteViewTable("Party", 6), new SqliteViewTable("Holding", 4)];
+
+        await RunAsync(Database());
+        _writer.Calls.Clear();
+
+        var output = await RunAsync(Database());
+
+        output.Single().Created.Should().BeFalse();
+        output.Single().Tables.Should().BeEquivalentTo(_writer.Tables);
+        _writer.Calls.Should().BeEmpty();
     }
 
     [Fact]
@@ -157,8 +190,7 @@ public class ExportSqliteStageTests
         await RunAsync(Database());
 
         var request = _writer.Calls.Single();
-        request.Sql.Should().Be(SqliteViewDefinition.Sql);
-        request.TableNames.Should().BeEquivalentTo(SqliteViewDefinition.TableNames);
+        request.Parts.Should().BeSameAs(SqliteViewDefinition.Parts);
         request.SourceDatabasePath.Should().EndWith(".duckdb");
         request.TargetDatabasePath.Should().EndWith(".sqlite");
     }

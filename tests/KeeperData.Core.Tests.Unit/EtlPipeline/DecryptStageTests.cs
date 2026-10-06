@@ -77,6 +77,7 @@ public class DecryptStageTests
         _etlStorageProvider.Object,
         _crypto.Object,
         _passwordSalt.Object,
+        TestConcurrency.Default,
         NullLogger<DecryptStage>.Instance);
 
     private Task<List<RawFileSet>> RunAsync(params DiscoveredFileSet[] inputs) =>

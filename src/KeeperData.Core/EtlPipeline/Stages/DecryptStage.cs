@@ -1,5 +1,6 @@
 using KeeperData.Core.Crypto;
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.EtlPipeline.Concurrency;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Pipeline;
@@ -13,13 +14,17 @@ namespace KeeperData.Core.EtlPipeline.Stages;
 /// present in raw/ is skipped and never overwritten.
 ///
 /// Each file is streamed source -> decrypt -> raw, so no file is held in memory. The raw object key
-/// mirrors the source object key, so raw/ has the same layout as the source folder.</summary>
+/// mirrors the source object key, so raw/ has the same layout as the source folder.
+///
+/// Files are decrypted concurrently against the I/O budget: the work is mostly spent waiting on the
+/// source storage, so more of them fit than there are cores to run them on.</summary>
 public sealed class DecryptStage(
     IBlobStorageServiceFactory blobStorageServiceFactory,
     IEtlPipelineStorageProvider etlPipelineStorageProvider,
     IAesCryptoTransform aesCryptoTransform,
     IPasswordSaltService passwordSaltService,
-    ILogger<DecryptStage> logger) : MapStage<DiscoveredFileSet, RawFileSet>
+    EtlConcurrency concurrency,
+    ILogger<DecryptStage> logger) : ParallelMapStage<DiscoveredFileSet, RawFileSet>(concurrency)
 {
     private const string MimeTypeTextCsv = "text/csv";
 
@@ -35,44 +40,57 @@ public sealed class DecryptStage(
         var sourceBlobsStorageService = blobStorageServiceFactory.GetSource(etlContext.SourceType);
         var rawBlobsStorageService = etlPipelineStorageProvider.ForFolder(EtlPipelineFolders.Raw);
 
-        var rawKeys = new List<string>(input.Files.Count);
-
-        foreach (var file in input.Files)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var objectKey = file.StorageObject.Key;
-
-            if (await rawBlobsStorageService.ExistsAsync(objectKey, cancellationToken))
-            {
-                logger.LogInformation(
-                    "Skipping {ObjectKey} for dataset {DatasetName} - already present in {Folder} for RunId: {RunId}",
-                    objectKey, input.Definition.Name, EtlPipelineFolders.Raw, etlContext.RunId);
-
-                rawKeys.Add(objectKey);
-                continue;
-            }
-
-            var decryptedLength = await EtlArtefactWrite.RunAsync(
+        var rawKeys = await Concurrency.ForEachAsync(
+            input.Files,
+            EtlWorkload.Io,
+            (file, token) => DecryptOneAsync(
+                file.StorageObject.Key,
+                input.Definition,
+                etlContext,
+                sourceBlobsStorageService,
                 rawBlobsStorageService,
-                objectKey,
-                () => DecryptToRawAsync(
-                    objectKey, input.Definition, sourceBlobsStorageService, rawBlobsStorageService, cancellationToken),
-                logger);
-
-            logger.LogInformation(
-                "Decrypted {ObjectKey} for dataset {DatasetName} into {Folder} ({SizeMB:F2} MB) for RunId: {RunId}",
-                objectKey, input.Definition.Name, EtlPipelineFolders.Raw,
-                decryptedLength / (1024.0 * 1024.0), etlContext.RunId);
-
-            rawKeys.Add(objectKey);
-        }
+                token),
+            cancellationToken);
 
         return new RawFileSet(input.Definition)
         {
             RunId = etlContext.RunId,
             Files = rawKeys
         };
+    }
+
+    /// <summary>Decrypts one file into raw/, or leaves the one already there alone. Returns the raw
+    /// key either way.</summary>
+    private async Task<string> DecryptOneAsync(
+        string objectKey,
+        DataSetDefinition definition,
+        EtlPipelineContext etlContext,
+        IBlobStorageServiceReadOnly sourceBlobsStorageService,
+        IBlobStorageService rawBlobsStorageService,
+        CancellationToken cancellationToken)
+    {
+        if (await rawBlobsStorageService.ExistsAsync(objectKey, cancellationToken))
+        {
+            logger.LogInformation(
+                "Skipping {ObjectKey} for dataset {DatasetName} - already present in {Folder} for RunId: {RunId}",
+                objectKey, definition.Name, EtlPipelineFolders.Raw, etlContext.RunId);
+
+            return objectKey;
+        }
+
+        var decryptedLength = await EtlArtefactWrite.RunAsync(
+            rawBlobsStorageService,
+            objectKey,
+            () => DecryptToRawAsync(
+                objectKey, definition, sourceBlobsStorageService, rawBlobsStorageService, cancellationToken),
+            logger);
+
+        logger.LogInformation(
+            "Decrypted {ObjectKey} for dataset {DatasetName} into {Folder} ({SizeMB:F2} MB) for RunId: {RunId}",
+            objectKey, definition.Name, EtlPipelineFolders.Raw,
+            decryptedLength / (1024.0 * 1024.0), etlContext.RunId);
+
+        return objectKey;
     }
 
     /// <summary>Streams one encrypted source object through decryption and into raw/.

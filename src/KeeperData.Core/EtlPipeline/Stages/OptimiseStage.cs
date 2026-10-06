@@ -1,4 +1,5 @@
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.EtlPipeline.Concurrency;
 using KeeperData.Core.EtlPipeline.Optimise;
 using KeeperData.Core.EtlPipeline.Parquet;
 using KeeperData.Core.EtlPipeline.Payloads;
@@ -22,10 +23,14 @@ namespace KeeperData.Core.EtlPipeline.Stages;
 ///
 /// Type detection samples the first row group only. A column that changes type deeper in the file
 /// fails the import rather than degrading quietly: <see cref="SourceFileConversionException"/> names
-/// the file, column and record so the misclassified value can be found.</summary>
+/// the file, column and record so the misclassified value can be found.
+///
+/// Files are optimised concurrently against the CPU budget: re-encoding Parquet occupies a core, and
+/// each file is detected, planned and written entirely on its own.</summary>
 public sealed class OptimiseStage(
     IEtlPipelineStorageProvider storageProvider,
-    ILogger<OptimiseStage> logger) : MapStage<NormalisedFileSet, OptimisedFileSet>
+    EtlConcurrency concurrency,
+    ILogger<OptimiseStage> logger) : ParallelMapStage<NormalisedFileSet, OptimisedFileSet>(concurrency)
 {
     public override string Name => "optimise";
 
@@ -40,10 +45,12 @@ public sealed class OptimiseStage(
         var optimised = storageProvider.ForFolder(EtlPipelineFolders.Optimised);
 
         var keys = await KeysAsync(input, normalised, cancellationToken);
-        var files = new List<OptimisedFile>(keys.Count);
 
-        foreach (var key in keys)
-            files.Add(await OptimiseFileAsync(definition, key, normalised, optimised, cancellationToken));
+        var files = await Concurrency.ForEachAsync(
+            keys,
+            EtlWorkload.Cpu,
+            (key, token) => OptimiseFileAsync(definition, key, normalised, optimised, token),
+            cancellationToken);
 
         return new OptimisedFileSet(definition)
         {

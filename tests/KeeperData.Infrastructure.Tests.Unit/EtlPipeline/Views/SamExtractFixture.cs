@@ -6,9 +6,9 @@ namespace KeeperData.Infrastructure.Tests.Unit.EtlPipeline.Views;
 /// sentinels, comma-delimited relationship tokens, duplicate source rows, an invalid CPHH, and
 /// relationships pointing at holdings and herds that are not in the canonical population.
 ///
-/// The CTS tables are created alongside it, by <see cref="CtsExtractFixture"/>. The transformation
-/// is one script over one staging database, so a staging database missing either half does not bind
-/// - every caller needs both, and none of them needs to say so.</summary>
+/// The CTS tables are created alongside it by default, by <see cref="CtsExtractFixture"/>, because
+/// most callers want a staging database a full run would have produced. Pass includeCts: false for
+/// the environment that loads no CTS extracts at all.</summary>
 public static class SamExtractFixture
 {
     /// <summary>Every column the read model reads from sam_cph_holdings, in the order the fixture
@@ -28,9 +28,9 @@ public static class SamExtractFixture
         "FEATURE_ADDRESS_TO_DATE"
     ];
 
-    public static void Create(string databasePath) => Create(databasePath, omittedHoldingColumns: Array.Empty<string>(), holdingColumnTypes: null, herdColumnTypes: null);
+    public static void Create(string databasePath, bool includeCts = true) => Create(databasePath, omittedHoldingColumns: Array.Empty<string>(), holdingColumnTypes: null, herdColumnTypes: null, includeCts: includeCts);
 
-    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns, IReadOnlyDictionary<string,string>? holdingColumnTypes = null, IReadOnlyDictionary<string,string>? herdColumnTypes = null)
+    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns, IReadOnlyDictionary<string,string>? holdingColumnTypes = null, IReadOnlyDictionary<string,string>? herdColumnTypes = null, bool includeCts = true)
     {
         var holdingColumns = string.Join(", ",
             HoldingColumns.Where(column => !omittedHoldingColumns.Contains(column))
@@ -179,7 +179,10 @@ public static class SamExtractFixture
             }
         }
 
-        CtsExtractFixture.Create(connection);
+        if (includeCts)
+        {
+            CtsExtractFixture.Create(connection);
+        }
     }
 
     private static string Literal(string? value) => value is null ? "NULL" : $"'{value}'";

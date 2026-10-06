@@ -1,6 +1,7 @@
 using System.Globalization;
 using CsvHelper;
 using CsvHelper.Configuration;
+using KeeperData.Core.EtlPipeline.Concurrency;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage;
@@ -14,11 +15,15 @@ using KeeperData.Core.ETL.Impl;
 
 namespace KeeperData.Core.EtlPipeline.Stages;
 
-/// <summary>Converts each raw file (PSV / legacy H-C-D-T) to Parquet in normalised/. No DuckDB here.</summary>
+/// <summary>Converts each raw file (PSV / legacy H-C-D-T) to Parquet in normalised/. No DuckDB here.
+///
+/// Files are converted concurrently against the CPU budget: parsing and Parquet encoding occupy a
+/// core throughout, so this is the stage the budget exists to bound.</summary>
 public sealed class NormaliseStage(
     IEtlPipelineStorageProvider storageProvider,
     IXsvHcdtNormaliser hcdtNormaliser,
-    ILogger<NormaliseStage> logger) : MapStage<RawFileSet, NormalisedFileSet>
+    EtlConcurrency concurrency,
+    ILogger<NormaliseStage> logger) : ParallelMapStage<RawFileSet, NormalisedFileSet>(concurrency)
 {
     public override string Name => "normalise";
 
@@ -28,25 +33,21 @@ public sealed class NormaliseStage(
     protected override async Task<NormalisedFileSet> MapAsync(RawFileSet input, IPipelineContext context, CancellationToken cancellationToken)
     {
         var etlContext = (EtlPipelineContext)context;
-        var normalisedFiles = new List<string>();
 
         var rawStorage = storageProvider.ForFolder(EtlPipelineFolders.Raw);
         var normalisedStorage = storageProvider.ForFolder(EtlPipelineFolders.Normalised);
 
-        foreach (var rawFileKey in input.Files)
-        {
-            var destKey = await NormaliseFileAsync(
-                input.Definition, rawFileKey, rawStorage, normalisedStorage, cancellationToken);
+        var normalised = await Concurrency.ForEachAsync(
+            input.Files,
+            EtlWorkload.Cpu,
+            (rawFileKey, token) => NormaliseFileAsync(
+                input.Definition, rawFileKey, rawStorage, normalisedStorage, token),
+            cancellationToken);
 
-            if (destKey is not null)
-            {
-                normalisedFiles.Add(destKey);
-            }
-        }
         return new NormalisedFileSet(input.Definition)
         {
             RunId = etlContext.RunId,
-            Files = normalisedFiles
+            Files = [.. normalised.Where(key => key is not null).Select(key => key!)]
         };
     }
 

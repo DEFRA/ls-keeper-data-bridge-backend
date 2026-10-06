@@ -79,8 +79,7 @@ public sealed class ExportSqliteStage(
 
             var result = await viewWriter.WriteAsync(
                 new SqliteViewWriteRequest(
-                    sourcePath, targetPath, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames,
-                    database.SourceTimestamp),
+                    sourcePath, targetPath, SqliteViewDefinition.Parts, database.SourceTimestamp),
                 cancellationToken);
 
             await EtlArtefactWrite.RunAsync(
@@ -133,9 +132,23 @@ public sealed class ExportSqliteStage(
             return null;
         }
 
-        var tables = new List<SqliteViewTable>(SqliteViewDefinition.TableNames.Count);
+        // What the object carries, not what the transformation can produce: an environment that
+        // loads no CTS extracts exports without Open Locations, and demanding a count for it would
+        // rebuild the same database on every run.
+        var recorded = MetadataValue(metadata.UserMetadata, ViewsFileNaming.TablesMetadataKey);
 
-        foreach (var tableName in SqliteViewDefinition.TableNames)
+        if (string.IsNullOrWhiteSpace(recorded))
+        {
+            logger.LogInformation(
+                "SQLite view {ViewKey} does not record which tables it holds; rebuilding it", outputKey);
+
+            return null;
+        }
+
+        var tableNames = recorded.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var tables = new List<SqliteViewTable>(tableNames.Length);
+
+        foreach (var tableName in tableNames)
         {
             var count = MetadataValue(
                 metadata.UserMetadata,
@@ -174,7 +187,8 @@ public sealed class ExportSqliteStage(
     {
         var metadata = new Dictionary<string, string>
         {
-            [ViewsFileNaming.VersionMetadataKey] = SqliteViewDefinition.Version
+            [ViewsFileNaming.VersionMetadataKey] = SqliteViewDefinition.Version,
+            [ViewsFileNaming.TablesMetadataKey] = string.Join(',', tables.Select(table => table.Name))
         };
 
         foreach (var table in tables)

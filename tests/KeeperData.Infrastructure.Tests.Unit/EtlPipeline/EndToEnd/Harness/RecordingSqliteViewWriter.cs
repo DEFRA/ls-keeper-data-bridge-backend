@@ -30,6 +30,7 @@ public sealed class RecordingSqliteViewWriter : ISqliteViewWriter
         // The export stage uploads whatever is at this path, so it has to exist.
         await File.WriteAllTextAsync(request.TargetDatabasePath, "recorded sqlite view", cancellationToken);
 
-        return new SqliteViewWriteResult([.. request.TableNames.Select(name => new SqliteViewTable(name, 0))]);
+        return new SqliteViewWriteResult(
+            [.. request.Parts.SelectMany(part => part.TableNames).Select(name => new SqliteViewTable(name, 0))]);
     }
 }

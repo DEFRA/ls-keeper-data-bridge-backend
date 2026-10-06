@@ -7,6 +7,7 @@ using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.EtlPipeline.Status;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Storage.Dtos;
 using KeeperData.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -41,6 +42,243 @@ public sealed class EtlStorageController(
     /// it: downstream artefacts are derived from it, and are timestamp-keyed and reused rather than
     /// rebuilt, so leaving them behind would keep the old data alive under the same keys.</summary>
     private static readonly string[] StageOrder = [Inbound, Raw, Normalised, Optimised, Snapshots, Staging, Views];
+
+    private const int MaxPageSize = 1000;
+
+    /// <summary>
+    /// Lists the objects in a stage folder - key, size and last-modified - for debugging storage
+    /// growth and verifying what a stage actually holds. Read-only, so unlike the purge it needs no
+    /// feature flag; it also reports on staging and views, which a purge can only touch for every
+    /// dataset at once - a dataset-scoped 'all' skips them, since the shared artefacts do not belong
+    /// to the dataset. Totals and dataset groups cover the whole listing; the objects themselves are
+    /// returned a page at a time because a folder can hold thousands.
+    /// </summary>
+    [HttpGet("objects")]
+    [ProducesResponseType(typeof(EtlStorageReportResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status499ClientClosedRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ListObjects(
+        [FromQuery, BindRequired] string? stage,
+        [FromQuery] string? dataset,
+        [FromQuery] string? sourceType = BlobStorageSources.Internal,
+        [FromQuery] int skip = 0,
+        [FromQuery] int top = 500,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(stage))
+        {
+            return BadRequest(Error(
+                "The stage query parameter is required. " +
+                "Use the explicit value 'all' to report on every folder."));
+        }
+
+        var (stageValid, requestedStage, stageError) = NormalizeAndValidateStage(stage);
+        if (!stageValid) return stageError!;
+
+        var (sourceValid, requestedSourceType, sourceError) = NormalizeAndValidateSourceType(sourceType);
+        if (!sourceValid) return sourceError!;
+
+        var requestedDataset = Normalise(dataset, All);
+        var (definition, defError) = ResolveDefinition(requestedDataset, dataset ?? All);
+        if (defError is not null) return defError;
+
+        if (definition is not null && requestedStage is Staging or Views)
+        {
+            return BadRequest(Error(
+                $"The {requestedStage} folder holds artefacts shared across every dataset and cannot be reported by dataset. " +
+                $"Use dataset=all with stage={requestedStage}."));
+        }
+
+        if (skip < 0)
+        {
+            return BadRequest(Error("Skip must be greater than or equal to 0."));
+        }
+
+        if (top <= 0 || top > MaxPageSize)
+        {
+            return BadRequest(Error($"Top must be between 1 and {MaxPageSize}."));
+        }
+
+        try
+        {
+            var report = await ReportAsync(
+                requestedStage, requestedSourceType, definition, skip, top, cancellationToken);
+            return Ok(report);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogWarning("ETL storage report request was cancelled");
+            return StatusCode(StatusCodes.Status499ClientClosedRequest, Error("Request was cancelled."));
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Failed to report on ETL storage for dataset {Dataset}, stage {Stage}, source type {SourceType}",
+                definition?.Name ?? All,
+                requestedStage,
+                requestedSourceType);
+
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                Error("Failed to list S3 stage storage."));
+        }
+    }
+
+    /// <summary>Streams the listing once, accumulating only what the response needs: the totals and
+    /// per-dataset groups over every object, and the requested page of them. The page is the first
+    /// skip + top objects in (stage, key) order and is held in a bounded heap, so a stage grown to
+    /// hundreds of thousands of keys still costs memory for a page, not for the folder.</summary>
+    private async Task<EtlStorageReportResponse> ReportAsync(
+        string requestedStage,
+        string requestedSourceType,
+        DataSetDefinition? definition,
+        int skip,
+        int top,
+        CancellationToken cancellationToken)
+    {
+        var byDatasetName = dataSetDefinitions.All
+            .ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
+        var groups = new Dictionary<string, (int Count, long SizeBytes)>(StringComparer.Ordinal);
+        var page = new PriorityQueue<EtlStorageReportObject, (string Stage, string Key)>(LargestFirst);
+        var pageCapacity = (long)skip + top;
+        var objectCount = 0;
+        var totalSizeBytes = 0L;
+
+        foreach (var reportStage in ReportStages(requestedStage, definition))
+        {
+            var target = ResolveTarget(reportStage, requestedSourceType, definition);
+            await foreach (var item in EnumerateObjectsAsync(target, cancellationToken))
+            {
+                objectCount++;
+                totalSizeBytes += item.Size;
+
+                var group = GroupFor(byDatasetName, target.DisplayFolder, item.Key);
+                groups.TryGetValue(group, out var totals);
+                groups[group] = (totals.Count + 1, totals.SizeBytes + item.Size);
+
+                KeepForPage(page, pageCapacity, new EtlStorageReportObject
+                {
+                    Stage = target.DisplayFolder,
+                    Key = item.Key,
+                    SizeBytes = item.Size,
+                    LastModifiedUtc = item.LastModified
+                });
+            }
+        }
+
+        // The heap yields its contents largest-first, so reversing them is the listing order.
+        var items = new List<EtlStorageReportObject>(page.Count);
+        while (page.TryDequeue(out var item, out _))
+        {
+            items.Add(item);
+        }
+        items.Reverse();
+
+        return new EtlStorageReportResponse
+        {
+            Stage = requestedStage,
+            Dataset = definition?.Name ?? All,
+            SourceType = requestedSourceType,
+            ObjectCount = objectCount,
+            TotalSizeBytes = totalSizeBytes,
+            Groups = [.. groups
+                .OrderBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => new EtlStorageReportGroup
+                {
+                    Dataset = g.Key,
+                    ObjectCount = g.Value.Count,
+                    SizeBytes = g.Value.SizeBytes
+                })],
+            Objects = items.Skip(skip).Take(top).ToList(),
+            Skip = skip,
+            Top = top
+        };
+    }
+
+    /// <summary>(stage, key) in listing order; the heap comparator inverts it so the queue's head is
+    /// the largest item retained - the one to evict when a smaller one arrives.</summary>
+    private static int CompareOrder((string Stage, string Key) x, (string Stage, string Key) y)
+        => string.CompareOrdinal(x.Stage, y.Stage) is var stageOrder && stageOrder != 0
+            ? stageOrder
+            : string.CompareOrdinal(x.Key, y.Key);
+
+    private static readonly IComparer<(string Stage, string Key)> LargestFirst =
+        Comparer<(string Stage, string Key)>.Create((a, b) => CompareOrder(b, a));
+
+    /// <summary>Retains an object only if it falls inside the requested page: the first skip + top
+    /// items in (stage, key) order. Anything larger than the heap's head cannot make the page.</summary>
+    private static void KeepForPage(
+        PriorityQueue<EtlStorageReportObject, (string Stage, string Key)> page,
+        long pageCapacity,
+        EtlStorageReportObject candidate)
+    {
+        if (pageCapacity <= 0) return;
+
+        var order = (candidate.Stage, candidate.Key);
+
+        if (page.Count < pageCapacity)
+        {
+            page.Enqueue(candidate, order);
+        }
+        else if (page.TryPeek(out _, out var largest) && CompareOrder(order, largest) < 0)
+        {
+            page.Dequeue();
+            page.Enqueue(candidate, order);
+        }
+    }
+
+    /// <summary>The stage or stages the report covers. Unlike a purge there is no cascade: a named
+    /// stage reports on just its folder, and 'all' reports on every folder in turn - except the
+    /// shared staging and views artefacts, which a dataset-scoped report skips because they do not
+    /// belong to the dataset.</summary>
+    private static string[] ReportStages(string requestedStage, DataSetDefinition? definition)
+    {
+        if (requestedStage != All) return [requestedStage];
+
+        return definition is null
+            ? StageOrder
+            : StageOrder.Where(stage => stage is not Staging and not Views).ToArray();
+    }
+
+    /// <summary>Every object a target's scope covers: the whole prefix, or - where the prefixes alone
+    /// are broader than the request, as they are for glob lanes - only the keys that belong to it.</summary>
+    private static async IAsyncEnumerable<StorageObjectInfo> EnumerateObjectsAsync(
+        StorageTarget target,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var prefix in target.Scope.Prefixes)
+        {
+            await foreach (var item in target.Storage.EnumerateAsync(prefix, cancellationToken))
+            {
+                if (target.Scope.Matches?.Invoke(item.Key) == false) continue;
+
+                yield return item;
+            }
+        }
+    }
+
+    /// <summary>The dataset a key belongs to, for the grouped totals. Pipeline lanes keep a dataset's
+    /// files under its name; source lanes can be globbed (CTS tables share a folder), so they are
+    /// matched the way discovery matches them; the staging and views artefacts belong to every
+    /// dataset at once and anything left over is unattributed.</summary>
+    private string GroupFor(
+        IReadOnlyDictionary<string, DataSetDefinition> byDatasetName,
+        string stage,
+        string key)
+    {
+        var separator = key.IndexOf('/');
+        var firstSegment = separator >= 0 ? key[..separator] : key;
+
+        if (byDatasetName.TryGetValue(firstSegment, out var byName)) return byName.Name;
+
+        var byPattern = dataSetDefinitions.All.FirstOrDefault(candidate =>
+            DataSetFileNaming.Matches(candidate, key));
+        if (byPattern is not null) return byPattern.Name;
+
+        return stage is Staging or Views ? "shared" : "other";
+    }
+
 
     /// <summary>
     /// Purges ETL stage data in non-production environments, or when explicitly enabled for a
@@ -196,13 +434,13 @@ public sealed class EtlStorageController(
         return (def, null);
     }
 
-    private PurgeTarget ResolveTarget(
+    private StorageTarget ResolveTarget(
         string stage,
         string sourceType,
         DataSetDefinition? definition)
         => stage switch
         {
-            Inbound => new PurgeTarget(
+            Inbound => new StorageTarget(
                 sourceType == BlobStorageSources.External
                     ? blobStorageServiceFactory.GetSourceInternal()
                     : blobStorageServiceFactory.Get(),
@@ -229,14 +467,14 @@ public sealed class EtlStorageController(
     private static string[] ResolveStages(string requestedStage)
         => requestedStage == All ? StageOrder : StageOrder[Array.IndexOf(StageOrder, requestedStage)..];
 
-    private PurgeTarget PipelineTarget(string folder, PurgeScope scope)
+    private StorageTarget PipelineTarget(string folder, StorageScope scope)
         => new(storageProvider.ForFolder(folder), scope, folder);
 
     /// <summary>The keys a stage holding source-named files keeps for one dataset. A dataset naming its
-    /// files by a pattern rather than a fixed prefix has no single prefix to delete under - the pattern
+    /// files by a pattern rather than a fixed prefix has no single prefix to work under - the pattern
     /// is not a prefix, and the lane it starts with also holds its sibling datasets - so those lanes are
     /// listed and their keys matched by name instead.</summary>
-    private static PurgeScope SourceScope(DataSetDefinition? definition)
+    private static StorageScope SourceScope(DataSetDefinition? definition)
     {
         if (definition is null) return PrefixScope(null);
 
@@ -249,14 +487,14 @@ public sealed class EtlStorageController(
         var prefixes = DataSetFileNaming.ListingPrefixes(definition);
         bool matches(string key) => DataSetFileNaming.Matches(definition, key);
 
-        return new PurgeScope(prefixes, matches);
+        return new StorageScope(prefixes, matches);
     }
 
-    private static PurgeScope PrefixScope(string? prefix)
+    private static StorageScope PrefixScope(string? prefix)
         => new([prefix ?? string.Empty], null);
 
     private static async Task<IReadOnlyList<string>> DeleteTargetAsync(
-        PurgeTarget target,
+        StorageTarget target,
         CancellationToken cancellationToken)
     {
         var deleted = new List<string>();
@@ -339,9 +577,9 @@ public sealed class EtlStorageController(
     private static string Normalise(string? value, string defaultValue)
         => string.IsNullOrWhiteSpace(value) ? defaultValue : value.Trim().ToLowerInvariant();
 
-    private sealed record PurgeTarget(IBlobStorageService Storage, PurgeScope Scope, string DisplayFolder);
+    private sealed record StorageTarget(IBlobStorageService Storage, StorageScope Scope, string DisplayFolder);
 
-    /// <summary>What to delete: the prefixes to work under, and - where the prefixes alone are broader
-    /// than the request - which of the keys found under them belong to it.</summary>
-    private sealed record PurgeScope(IReadOnlyList<string> Prefixes, Func<string, bool>? Matches);
+    /// <summary>What a stage operation works on: the prefixes to work under, and - where the prefixes
+    /// alone are broader than the request - which of the keys found under them belong to it.</summary>
+    private sealed record StorageScope(IReadOnlyList<string> Prefixes, Func<string, bool>? Matches);
 }

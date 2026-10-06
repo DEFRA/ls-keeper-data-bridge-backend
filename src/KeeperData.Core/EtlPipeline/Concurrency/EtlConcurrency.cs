@@ -121,7 +121,9 @@ public sealed class EtlConcurrency : IDisposable
             }
             catch
             {
-                failFast.Cancel();
+                // Not Cancel(): that would run every parked sibling's cancellation callback inline
+                // on this thread, which is already busy failing.
+                await failFast.CancelAsync();
                 throw;
             }
             finally

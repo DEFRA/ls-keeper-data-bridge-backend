@@ -439,6 +439,194 @@ public class EtlStorageControllerTests
             .Which.Message.Should().NotContain("credentials");
     }
 
+    [Fact]
+    public async Task Report_lists_a_stage_folder_grouped_by_dataset()
+    {
+        Lane(_snapshots, string.Empty,
+            "sam_cph_holdings/sam_cph_holdings_20260819203115.parquet",
+            "cts_keeper/cts_keeper_20260819203115.parquet");
+
+        var result = await Controller().ListObjects("snapshots", "all");
+
+        var response = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStorageReportResponse>().Subject;
+        response.ObjectCount.Should().Be(2);
+        response.Objects.Select(o => $"{o.Stage}/{o.Key}").Should().Equal(
+            "snapshots/cts_keeper/cts_keeper_20260819203115.parquet",
+            "snapshots/sam_cph_holdings/sam_cph_holdings_20260819203115.parquet");
+        response.Groups.Select(g => g.Dataset).Should().Equal("cts_keeper", "sam_cph_holdings");
+        response.Groups.Should().OnlyContain(g => g.ObjectCount == 1);
+    }
+
+    [Fact]
+    public async Task Report_sums_size_for_the_folder_and_each_dataset()
+    {
+        LaneObjects(_snapshots, string.Empty,
+            Object("sam_cph_holdings/a.parquet", 100),
+            Object("sam_cph_holdings/b.parquet", 250),
+            Object("cts_keeper/c.parquet", 50));
+
+        var result = await Controller().ListObjects("snapshots", "all");
+
+        var response = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStorageReportResponse>().Subject;
+        response.ObjectCount.Should().Be(3);
+        response.TotalSizeBytes.Should().Be(400);
+        response.Groups.Should().ContainSingle(g =>
+            g.Dataset == "sam_cph_holdings" && g.ObjectCount == 2 && g.SizeBytes == 350);
+        response.Groups.Should().ContainSingle(g =>
+            g.Dataset == "cts_keeper" && g.ObjectCount == 1 && g.SizeBytes == 50);
+    }
+
+    [Fact]
+    public async Task Report_scopes_the_listing_to_the_dataset_its_keys_live_under()
+    {
+        var result = await Controller().ListObjects("snapshots", "sam_cph_holdings");
+
+        result.Should().BeOfType<OkObjectResult>();
+        _snapshots.Verify(s => s.EnumerateAsync(
+            "sam_cph_holdings/", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Report_folds_every_folder_together_for_stage_all()
+    {
+        LaneObjects(_raw, null, Object("litprd/LITP_SAMCPHHOLDING_20260819203115.psv", 10));
+        LaneObjects(_normalised, null, Object("sam_cph_holdings/a.parquet", 20));
+        LaneObjects(_staging, null, Object("krds-db.duckdb", 30));
+        LaneObjects(_views, null, Object("krds-db.sqlite", 40));
+
+        var result = await Controller().ListObjects("all", "all");
+
+        var response = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStorageReportResponse>().Subject;
+        response.ObjectCount.Should().Be(4);
+        response.TotalSizeBytes.Should().Be(100);
+        response.Objects.Select(o => $"{o.Stage}/{o.Key}").Should().Equal(
+            "normalised/sam_cph_holdings/a.parquet",
+            "raw/litprd/LITP_SAMCPHHOLDING_20260819203115.psv",
+            "staging/krds-db.duckdb",
+            "views/krds-db.sqlite");
+        response.Groups.Should().ContainSingle(g => g.Dataset == "shared" && g.ObjectCount == 2);
+        response.Groups.Should().ContainSingle(g =>
+            g.Dataset == "sam_cph_holdings" && g.ObjectCount == 2);
+    }
+
+    [Fact]
+    public async Task Dataset_scoped_all_skips_the_shared_staging_and_views_folders()
+    {
+        LaneObjects(_normalised, "sam_cph_holdings/", Object("sam_cph_holdings/a.parquet", 20));
+        LaneObjects(_staging, null, Object("krds-db.duckdb", 30));
+        LaneObjects(_views, null, Object("krds-db.sqlite", 40));
+
+        var result = await Controller().ListObjects("all", "sam_cph_holdings");
+
+        var response = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStorageReportResponse>().Subject;
+        response.ObjectCount.Should().Be(1);
+        response.TotalSizeBytes.Should().Be(20);
+        response.Objects.Select(o => o.Stage).Should().Equal("normalised");
+        _staging.VerifyNoOtherCalls();
+        _views.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Report_matches_cts_keys_by_pattern_not_prefix()
+    {
+        LaneObjects(_raw, "cads/cts/bulk/",
+            Object("cads/cts/bulk/CTSM_CADS_PREP_BULK_00001_001_CT_LOCATIONS_2026-07-28-094638.psv", 5),
+            Object("cads/cts/bulk/CTSM_CADS_PREP_BULK_00001_001_CT_LOCATION_PARTY_RELS_2026-07-28-094630.psv", 7));
+
+        var result = await Controller().ListObjects("raw", "cts_locations");
+
+        var response = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStorageReportResponse>().Subject;
+        response.Objects.Select(o => o.Key).Should().Equal(
+            "cads/cts/bulk/CTSM_CADS_PREP_BULK_00001_001_CT_LOCATIONS_2026-07-28-094638.psv");
+        response.Groups.Should().ContainSingle(g =>
+            g.Dataset == "cts_locations" && g.ObjectCount == 1 && g.SizeBytes == 5);
+    }
+
+    [Fact]
+    public async Task Report_pages_the_object_slice_while_totals_cover_the_whole_listing()
+    {
+        LaneObjects(_snapshots, string.Empty,
+            Object("a/1.parquet", 1),
+            Object("a/2.parquet", 1),
+            Object("a/3.parquet", 1));
+
+        var result = await Controller().ListObjects("snapshots", "all", "internal", skip: 1, top: 1);
+
+        var response = result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeOfType<EtlStorageReportResponse>().Subject;
+        response.ObjectCount.Should().Be(3);
+        response.TotalSizeBytes.Should().Be(3);
+        response.Objects.Select(o => o.Key).Should().Equal("a/2.parquet");
+        response.Skip.Should().Be(1);
+        response.Top.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("staging")]
+    [InlineData("views")]
+    public async Task Dataset_scoped_shared_folder_report_is_rejected_because_the_folder_is_shared(string stage)
+    {
+        var result = await Controller().ListObjects(stage, "sam_cph_holdings");
+
+        result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.Value.Should().BeOfType<ErrorResponse>()
+            .Which.Message.Should().Contain("shared across every dataset");
+        _staging.VerifyNoOtherCalls();
+        _views.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("other", "all", "internal", 0, 100, "Invalid stage")]
+    [InlineData("raw", "unknown", "internal", 0, 100, "not recognized")]
+    [InlineData("raw", "all", "internet", 0, 100, "Invalid sourceType")]
+    [InlineData("raw", "all", "internal", -1, 100, "Skip must be")]
+    [InlineData("raw", "all", "internal", 0, 0, "Top must be")]
+    [InlineData("raw", "all", "internal", 0, 1001, "Top must be")]
+    public async Task Report_rejects_invalid_parameters(
+        string stage,
+        string dataset,
+        string sourceType,
+        int skip,
+        int top,
+        string expectedMessage)
+    {
+        var result = await Controller().ListObjects(stage, dataset, sourceType, skip, top);
+
+        result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.Value.Should().BeOfType<ErrorResponse>()
+            .Which.Message.Should().Contain(expectedMessage);
+    }
+
+    [Fact]
+    public async Task Report_is_allowed_in_production_because_it_only_reads()
+    {
+        _environment.SetupGet(e => e.EnvironmentName).Returns("Production");
+        LaneObjects(_raw, null, Object("raw.psv", 1));
+
+        var result = await Controller().ListObjects("raw", "all");
+
+        result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task Report_failure_returns_a_safe_500_message()
+    {
+        _raw.Setup(s => s.EnumerateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Failed());
+
+        var result = await Controller().ListObjects("raw", "all");
+
+        var failed = result.Should().BeOfType<ObjectResult>().Subject;
+        failed.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        failed.Value.Should().BeOfType<ErrorResponse>()
+            .Which.Message.Should().Be("Failed to list S3 stage storage.");
+    }
+
     private EtlStorageController Controller()
     {
         var definitions = new Mock<IDataSetDefinitions>();
@@ -476,23 +664,37 @@ public class EtlStorageControllerTests
         Mock<IBlobStorageService> storage,
         string prefix,
         params string[] keys)
-        => storage.Setup(s => s.EnumerateAsync(prefix, It.IsAny<CancellationToken>()))
-            .Returns(Streamed(keys));
+        => LaneObjects(storage, prefix, keys.Select(k => Object(k)).ToArray());
 
-    private static async IAsyncEnumerable<StorageObjectInfo> Streamed(string[] keys)
+    private static void LaneObjects(
+        Mock<IBlobStorageService> storage,
+        string? prefix,
+        params StorageObjectInfo[] objects)
+        => storage.Setup(s => s.EnumerateAsync(prefix ?? string.Empty, It.IsAny<CancellationToken>()))
+            .Returns(Streamed(objects));
+
+    private static async IAsyncEnumerable<StorageObjectInfo> Streamed(StorageObjectInfo[] objects)
     {
-        foreach (var key in keys)
+        foreach (var item in objects)
         {
-            yield return Object(key);
+            yield return item;
         }
 
         await Task.CompletedTask;
     }
 
-    private static StorageObjectInfo Object(string key) => new()
+    private static async IAsyncEnumerable<StorageObjectInfo> Failed()
+    {
+        yield return Object("never");
+        await Task.CompletedTask;
+        throw new InvalidOperationException("storage went away");
+    }
+
+    private static StorageObjectInfo Object(string key, long size = 0) => new()
     {
         Container = "internal",
         Key = key,
+        Size = size,
         StorageUri = new Uri($"s3://internal/{key}")
     };
 }

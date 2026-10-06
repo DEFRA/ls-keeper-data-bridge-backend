@@ -7,6 +7,7 @@ using KeeperData.Core.Reporting.Setup;
 using KeeperData.Core.Telemetry;
 using KeeperData.Core.Throttling.Setup;
 using Microsoft.Extensions.Configuration;
+using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Concurrency;
 using KeeperData.Core.EtlPipeline.Setup;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +24,7 @@ public static class ServiceCollectionExtensions
         services.Configure<MongoResilienceConfig>(resilenceSection);
 
         services.Configure<EtlConcurrencyOptions>(configuration.GetSection(EtlConcurrencyOptions.SectionName));
+        services.Configure<EtlFeatureFlags>(configuration.GetSection(EtlFeatureFlags.SectionName));
 
         services.AddSingleton<ResilientMongoOperations>();
 

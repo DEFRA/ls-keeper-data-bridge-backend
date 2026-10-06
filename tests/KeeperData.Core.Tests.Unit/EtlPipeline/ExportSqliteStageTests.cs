@@ -1,10 +1,13 @@
 using FluentAssertions;
+using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.EtlPipeline.Views;
+using KeeperData.Core.EtlPipeline.Views.TestData;
 using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
 
@@ -26,8 +29,16 @@ public class ExportSqliteStageTests
     public ExportSqliteStageTests() => Staging.Put(StagingKey, "a staging database");
 
     private Task<List<SqliteExportFile>> RunAsync(params StagingDatabase[] inputs)
+        => RunAsync(seedTestData: false, inputs);
+
+    private Task<List<SqliteExportFile>> RunAsync(bool seedTestData, params StagingDatabase[] inputs)
         => StageRunner.RunAsync(
-            new ExportSqliteStage(_storage, _writer, NullLogger<ExportSqliteStage>.Instance), inputs);
+            new ExportSqliteStage(
+                _storage,
+                _writer,
+                Options.Create(new EtlFeatureFlags { SeedTestDataEnabled = seedTestData }),
+                NullLogger<ExportSqliteStage>.Instance),
+            inputs);
 
     private static StagingDatabase Database(bool created = true) => new()
     {
@@ -193,6 +204,46 @@ public class ExportSqliteStageTests
         request.Parts.Should().BeSameAs(SqliteViewDefinition.Parts);
         request.SourceDatabasePath.Should().EndWith(".duckdb");
         request.TargetDatabasePath.Should().EndWith(".sqlite");
+    }
+
+    [Fact]
+    public async Task Appends_the_test_keepers_to_the_transformation_when_seeding_is_enabled()
+    {
+        await RunAsync(seedTestData: true, Database());
+
+        var parts = _writer.Calls.Single().Parts;
+
+        parts.Should().HaveCount(SqliteViewDefinition.Parts.Count + 1);
+        parts[^1].Name.Should().Be(SeedTestDataPart.PartName, "the keepers are written into a read model that already exists");
+    }
+
+    /// <summary>The export is skipped on the strength of its recorded version, so a run that seeds
+    /// has to record a different one - otherwise turning the flag on would leave an already-exported
+    /// timestamp alone and look like it had done nothing.</summary>
+    [Fact]
+    public async Task Rebuilds_an_export_that_was_built_without_the_test_keepers()
+    {
+        await RunAsync(Database());
+        _writer.Calls.Clear();
+
+        var output = await RunAsync(seedTestData: true, Database());
+
+        output.Single().Created.Should().BeTrue();
+        _writer.Calls.Should().ContainSingle();
+        Views.MetadataOf(ExpectedKey)[ViewsFileNaming.VersionMetadataKey]
+            .Should().NotBe(SqliteViewDefinition.Version);
+    }
+
+    [Fact]
+    public async Task Reuses_a_seeded_export_rather_than_seeding_it_again()
+    {
+        await RunAsync(seedTestData: true, Database());
+        _writer.Calls.Clear();
+
+        var output = await RunAsync(seedTestData: true, Database());
+
+        output.Single().Created.Should().BeFalse();
+        _writer.Calls.Should().BeEmpty();
     }
 
     [Fact]

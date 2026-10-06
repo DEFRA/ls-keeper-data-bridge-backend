@@ -45,6 +45,7 @@ internal static class RunCommand
         {
             CommonOptions.Environment,
             CommonOptions.Staging,
+            CommonOptions.SeedTestData,
             dataset,
             runId,
             rebuild,

@@ -20,6 +20,9 @@ public static class ServiceCollectionExtensions
         services.AddOptions<EtlConcurrencyOptions>();
         services.TryAddSingleton<EtlConcurrency>();
 
+        // Unbound here so a host that never configures them still resolves them, off.
+        services.AddOptions<EtlFeatureFlags>();
+
         services.AddScoped<IPipelineExecutor, PipelineExecutor>();
         services.AddScoped<IEtlPipelineFactory, EtlPipelineFactory>();
 

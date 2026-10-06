@@ -1,4 +1,5 @@
 using KeeperData.Etl.Tool.Configuration;
+using KeeperData.Core.EtlPipeline;
 using KeeperData.Etl.Tool.Setup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,6 +59,11 @@ internal static class EtlToolHost
 
         Set(Commands.CommonOptions.Environment, nameof(EtlToolOptions.Environment));
         Set(Commands.CommonOptions.Staging, nameof(EtlToolOptions.StagingPath));
+
+        if (parseResult.GetValue(Commands.CommonOptions.SeedTestData))
+        {
+            overrides[$"{EtlFeatureFlags.SectionName}:{nameof(EtlFeatureFlags.SeedTestDataEnabled)}"] = "true";
+        }
 
         if (string.IsNullOrWhiteSpace(configuration["AesSalt"])
             && System.Environment.GetEnvironmentVariable(SaltEnvironmentVariable) is { Length: > 0 } salt)

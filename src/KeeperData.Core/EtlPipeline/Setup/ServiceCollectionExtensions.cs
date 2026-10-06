@@ -1,3 +1,4 @@
+using KeeperData.Core.EtlPipeline.Concurrency;
 using KeeperData.Core.EtlPipeline.Snapshots;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Status;
@@ -13,6 +14,11 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddEtlPipeline(this IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
+
+        // The budget is a property of the host, not of a run: one instance so the limit still holds
+        // when several stages are fanning out at once.
+        services.AddOptions<EtlConcurrencyOptions>();
+        services.TryAddSingleton<EtlConcurrency>();
 
         services.AddScoped<IPipelineExecutor, PipelineExecutor>();
         services.AddScoped<IEtlPipelineFactory, EtlPipelineFactory>();

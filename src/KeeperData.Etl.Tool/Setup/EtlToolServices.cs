@@ -1,5 +1,6 @@
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
+using KeeperData.Core.EtlPipeline.Concurrency;
 using KeeperData.Core.EtlPipeline.Setup;
 using KeeperData.Core.EtlPipeline.Staging;
 using KeeperData.Core.EtlPipeline.Status;
@@ -60,6 +61,8 @@ internal static class EtlToolServices
 
         services.AddCrypto(configuration);
         services.AddTransient<IExternalCatalogueServiceFactory, ExternalCatalogueServiceFactory>();
+
+        services.Configure<EtlConcurrencyOptions>(configuration.GetSection(EtlConcurrencyOptions.SectionName));
 
         services.AddEtlPipeline();
 

@@ -11,5 +11,11 @@
          safe because trim analysis warnings are already suppressed above. -->
     <EnableConfigurationBindingGenerator>false</EnableConfigurationBindingGenerator>
 
+    <!-- The ETL allocates heavily (a .NET string per field; ~1.96 TB over a full movements
+         normalise) and console hosts such as ketl otherwise default to Workstation GC, which
+         collects on the allocating thread and serialises exactly the work the stages fan out.
+         Honours the cgroup CPU and memory limits, so a constrained CDP task scales down. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+
   </PropertyGroup>
 </Project>

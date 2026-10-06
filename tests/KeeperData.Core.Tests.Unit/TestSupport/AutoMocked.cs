@@ -34,6 +34,13 @@ public static class AutoMocked
             return mock.Object;
         }
 
-        return type.IsValueType ? Activator.CreateInstance(type)! : null!;
+        if (type.IsValueType)
+        {
+            return Activator.CreateInstance(type)!;
+        }
+
+        throw new InvalidOperationException(
+            $"{type.Name} is sealed, so it cannot be mocked. Construct the type under test explicitly "
+            + "and hand it a real one.");
     }
 }

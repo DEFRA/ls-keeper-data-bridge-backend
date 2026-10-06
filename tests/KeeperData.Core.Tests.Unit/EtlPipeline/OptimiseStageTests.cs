@@ -31,7 +31,7 @@ public class OptimiseStageTests
 
     private Task<List<OptimisedFileSet>> RunAsync(DataSetDefinition definition, params string[] keys) =>
         StageRunner.RunAsync(
-            new OptimiseStage(_storage, NullLogger<OptimiseStage>.Instance),
+            new OptimiseStage(_storage, TestConcurrency.Default, NullLogger<OptimiseStage>.Instance),
             [new NormalisedFileSet(definition) { Files = keys }]);
 
     private void PutNormalised(string key, string header, params string[] rows)
@@ -392,7 +392,7 @@ public class OptimiseStageTests
         PutNormalised(Key, Header, "I|01/001/0001|Old Farm|123456");
 
         var output = await StageRunner.RunAsync(
-            new OptimiseStage(_storage, NullLogger<OptimiseStage>.Instance),
+            new OptimiseStage(_storage, TestConcurrency.Default, NullLogger<OptimiseStage>.Instance),
             [new NormalisedFileSet(Definition())]);
 
         output.Single().Files.Should().Equal(new OptimisedFile(EtlPipelineFolders.Normalised, Key));

@@ -6,6 +6,7 @@ using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Parquet;
@@ -30,7 +31,7 @@ public class NormaliseStageTests
         _storageProviderMock = new Mock<IEtlPipelineStorageProvider>();
         _storageProviderMock.Setup(p => p.ForFolder(It.IsAny<string>())).Returns(_blobStorageMock.Object);
         _hcdtNormaliserMock = new Mock<IXsvHcdtNormaliser>();
-        _sut = new NormaliseStage(_storageProviderMock.Object, _hcdtNormaliserMock.Object, NullLogger<NormaliseStage>.Instance);
+        _sut = new NormaliseStage(_storageProviderMock.Object, _hcdtNormaliserMock.Object, TestConcurrency.Default, NullLogger<NormaliseStage>.Instance);
 
         _pipelineContext = new EtlPipelineContext(Guid.NewGuid(), "external");
         _dataSetDef = new DataSetDefinition(
@@ -155,7 +156,7 @@ public class NormaliseStageTests
             .ReturnsAsync(new NonClosingMemoryStream());
 
         var stage = new NormaliseStage(
-            _storageProviderMock.Object, new XsvHcdtNormaliser(), NullLogger<NormaliseStage>.Instance);
+            _storageProviderMock.Object, new XsvHcdtNormaliser(), TestConcurrency.Default, NullLogger<NormaliseStage>.Instance);
 
         var act = () => RunStageAsync(
             new RawFileSet(_dataSetDef with { Format = FileFormat.Hcdt }) { Files = [rawFileKey] }, stage);
@@ -187,7 +188,7 @@ public class NormaliseStageTests
             .ReturnsAsync(new NonClosingMemoryStream());
 
         var stage = new NormaliseStage(
-            _storageProviderMock.Object, new XsvHcdtNormaliser(), NullLogger<NormaliseStage>.Instance);
+            _storageProviderMock.Object, new XsvHcdtNormaliser(), TestConcurrency.Default, NullLogger<NormaliseStage>.Instance);
 
         var act = () => RunStageAsync(
             new RawFileSet(_dataSetDef with { Format = FileFormat.Hcdt }) { Files = [rawFileKey] }, stage);
@@ -225,7 +226,7 @@ public class NormaliseStageTests
             .ReturnsAsync(outputStream);
 
         var stage = new NormaliseStage(
-            _storageProviderMock.Object, new XsvHcdtNormaliser(), NullLogger<NormaliseStage>.Instance);
+            _storageProviderMock.Object, new XsvHcdtNormaliser(), TestConcurrency.Default, NullLogger<NormaliseStage>.Instance);
 
         var results = await RunStageAsync(
             new RawFileSet(_dataSetDef with { Format = FileFormat.Hcdt }) { Files = [rawFileKey] }, stage);

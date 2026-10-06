@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using DuckDB.NET.Data;
 using FluentAssertions;
 using KeeperData.Core.EtlPipeline.Views;
 using KeeperData.Infrastructure.EtlPipeline.Views;
@@ -48,8 +49,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, name);
 
         await Sut().WriteAsync(
-            new SqliteViewWriteRequest(
-                _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
+            new SqliteViewWriteRequest(_sourcePath, target, SqliteViewDefinition.Parts, QueryDate));
 
         return target;
     }
@@ -66,13 +66,114 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         }
     }
 
+    /// <summary>The remote environments that load no CTS extracts. Before the parts were gated the
+    /// whole script failed to bind here, and the SAM read model was lost along with the CTS one.</summary>
+    [Fact]
+    public async Task Skips_the_cts_projection_when_the_staging_database_holds_no_cts_tables()
+    {
+        var source = Path.Combine(_workingDirectory, "sam-only.duckdb");
+        SamExtractFixture.Create(source, includeCts: false);
+
+        var target = Path.Combine(_workingDirectory, "sam-only.sqlite");
+
+        var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
+            source, target, SqliteViewDefinition.Parts, QueryDate));
+
+        result.Tables.Select(table => table.Name).Should().Equal(
+            "Party", "Holding", "Herd", "HoldingAnimalProfile", "PartyRole");
+
+        Scalar(target, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='CtsOpenLocation'")
+            .Should().Be(0L, "an absent table tells a reader CTS was never loaded; an empty one would not");
+
+        Scalar(target, "SELECT count(*) FROM Holding").Should().Be(4L, "the SAM half is unaffected");
+    }
+
+    /// <summary>All of a part's tables or none of them: a projection run over half its sources would
+    /// answer confidently and wrongly.</summary>
+    [Fact]
+    public async Task Skips_the_cts_projection_when_only_some_of_its_tables_were_loaded()
+    {
+        var source = Path.Combine(_workingDirectory, "partial-cts.duckdb");
+        SamExtractFixture.Create(source);
+        Drop(source, "cts_counties");
+
+        var target = Path.Combine(_workingDirectory, "partial-cts.sqlite");
+
+        var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
+            source, target, SqliteViewDefinition.Parts, QueryDate));
+
+        result.Tables.Select(table => table.Name).Should().NotContain("CtsOpenLocation");
+    }
+
+    [Fact]
+    public async Task Refuses_to_build_a_read_model_with_no_sam_tables_to_build_it_from()
+    {
+        var source = Path.Combine(_workingDirectory, "cts-only.duckdb");
+        CtsExtractFixture.Create(source);
+
+        var act = async () => await Sut().WriteAsync(new SqliteViewWriteRequest(
+            source, Path.Combine(_workingDirectory, "never-written.sqlite"),
+            SqliteViewDefinition.Parts, QueryDate));
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain("sam_party").And.Contain("krds-read-model",
+                "a required part names what it was missing rather than leaving a binder error to explain it");
+    }
+
+    /// <summary>What keeps the declared lists honest. A script that starts reading a new staging
+    /// table gets it from a fixture, and this fails until it is declared alongside.</summary>
+    [Fact]
+    public void Declares_every_staging_table_its_parts_read()
+    {
+        var samOnly = Path.Combine(_workingDirectory, "declared-sam.duckdb");
+        SamExtractFixture.Create(samOnly, includeCts: false);
+
+        var ctsOnly = Path.Combine(_workingDirectory, "declared-cts.duckdb");
+        CtsExtractFixture.Create(ctsOnly);
+
+        StagedTables(samOnly).Should().BeEquivalentTo(Part("krds-read-model").RequiredSourceTables);
+        StagedTables(ctsOnly).Should().BeEquivalentTo(Part("cts-open-locations").RequiredSourceTables);
+    }
+
+    private static SqliteViewPart Part(string name)
+        => SqliteViewDefinition.Parts.Single(part => part.Name == name);
+
+    private static void Drop(string databasePath, string table)
+    {
+        using var connection = new DuckDBConnection($"Data Source={databasePath}");
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = $"DROP TABLE {table}";
+        command.ExecuteNonQuery();
+    }
+
+    private static List<string> StagedTables(string databasePath)
+    {
+        using var connection = new DuckDBConnection($"Data Source={databasePath}");
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT table_name FROM duckdb_tables()";
+
+        var tables = new List<string>();
+        using var reader = command.ExecuteReader();
+
+        while (reader.Read())
+        {
+            tables.Add(reader.GetString(0));
+        }
+
+        return tables;
+    }
+
     [Fact]
     public async Task Applies_the_configured_memory_limit()
     {
         var target = Path.Combine(_workingDirectory, "memory-limited.sqlite");
 
         var result = await Sut("512MB").WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
+            _sourcePath, target, SqliteViewDefinition.Parts, QueryDate));
 
         result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
     }
@@ -88,7 +189,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
             """;
 
         await Sut().WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, sql, ["WriterSettings"], QueryDate));
+            _sourcePath, target, [new SqliteViewPart("settings", sql, [], ["WriterSettings"], Required: true)], QueryDate));
 
         Scalar(target, "SELECT PreserveInsertionOrder FROM WriterSettings").Should().Be(0);
     }
@@ -99,7 +200,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, "counted.sqlite");
 
         var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
+            _sourcePath, target, SqliteViewDefinition.Parts, QueryDate));
 
         result.Tables.Should().BeEquivalentTo(new[]
         {
@@ -532,7 +633,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, "typed.sqlite");
 
         var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
-            typedSource, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
+            typedSource, target, SqliteViewDefinition.Parts, QueryDate));
 
         result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
 
@@ -585,7 +686,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, "thin.sqlite");
 
         var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
-            thinSource, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
+            thinSource, target, SqliteViewDefinition.Parts, QueryDate));
 
         result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
 
@@ -644,7 +745,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = await RunAsync();
 
         var act = async () => await Sut().WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
+            _sourcePath, target, SqliteViewDefinition.Parts, QueryDate));
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already exists*");
     }
@@ -655,8 +756,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var act = async () => await Sut().WriteAsync(new SqliteViewWriteRequest(
             _sourcePath,
             Path.Combine(_workingDirectory, "blank-table.sqlite"),
-            SqliteViewDefinition.Sql,
-            [""],
+            [new SqliteViewPart("blank", "SELECT 1", [], [""], Required: true)],
             QueryDate));
 
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("Table name is required*");
@@ -675,8 +775,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var act = async () => await writer.WriteAsync(new SqliteViewWriteRequest(
             _sourcePath,
             Path.Combine(_workingDirectory, "never-written.sqlite"),
-            SqliteViewDefinition.Sql,
-            SqliteViewDefinition.TableNames,
+            SqliteViewDefinition.Parts,
             QueryDate));
 
         (await act.Should().ThrowAsync<SqliteViewExtensionException>())

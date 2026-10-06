@@ -171,7 +171,7 @@ public sealed class EtlPipelineEndToEndCiTests
         host.Folders.Folder(EtlPipelineFolders.Staging).Keys.Should().BeEmpty(
             "a filtered run cannot publish a partial database under the shared staging name");
         host.Folders.Folder(EtlPipelineFolders.Views).Keys.Should().BeEmpty(
-            "the read model requires all of its source tables");
+            "there is no staging database to export from");
     }
 
     [Fact]
@@ -394,8 +394,7 @@ public sealed class EtlPipelineEndToEndCiTests
                 "the read model carries the same source timestamp as the staging database it came from");
 
         var request = viewWriter.OnlyCall;
-        request.Sql.Should().Be(SqliteViewDefinition.Sql, "the embedded transformation is what runs");
-        request.TableNames.Should().BeEquivalentTo(SqliteViewDefinition.TableNames);
+        request.Parts.Should().BeSameAs(SqliteViewDefinition.Parts, "the embedded transformation is what runs");
     }
 
     [Fact]

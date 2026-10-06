@@ -9,9 +9,13 @@
 -- 35 are staleness in the source extract and 2 are the known limitation in section 4.2 below.
 -- Change the rule there first, then here.
 --
--- Runs in the same DuckDB command as krds-read-model.sql, so that script's temp macros are in
+-- Runs on the same DuckDB connection as krds-read-model.sql, so that script's temp macros are in
 -- scope. This one defines its own, prefixed cts_, and relies on none of them: the two scripts are
 -- independent of each other and of the order they are concatenated in.
+--
+-- Skipped entirely where the six cts_ staging tables below are absent, so an environment that loads
+-- no CTS extracts exports a read model without this table rather than failing. The list is declared
+-- in SqliteViewDefinition - a new table read here has to be added there too.
 --
 -- The caller owns the connection, attaches source and target, and supplies the query date. To run
 -- this by hand in the duckdb CLI:

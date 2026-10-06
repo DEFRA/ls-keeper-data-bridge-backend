@@ -49,7 +49,7 @@ public sealed class CtsOpenLocationTests : IDisposable
             Options.Create(new DuckDbConfiguration { SqliteExtensionPath = DuckDbSqliteExtension.Path }),
             NullLogger<DuckDbSqliteViewWriter>.Instance)
             .WriteAsync(new SqliteViewWriteRequest(
-                _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames, QueryDate));
+                _sourcePath, target, SqliteViewDefinition.Parts, QueryDate));
 
         return target;
     }
@@ -204,7 +204,7 @@ public sealed class CtsOpenLocationTests : IDisposable
             Options.Create(new DuckDbConfiguration { SqliteExtensionPath = DuckDbSqliteExtension.Path }),
             NullLogger<DuckDbSqliteViewWriter>.Instance)
             .WriteAsync(new SqliteViewWriteRequest(
-                _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames,
+                _sourcePath, target, SqliteViewDefinition.Parts,
                 new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero)));
 
         Strings(target, "SELECT LocationNumber FROM CtsOpenLocation ORDER BY LocationNumber")
@@ -223,8 +223,7 @@ public sealed class CtsOpenLocationTests : IDisposable
             .WriteAsync(new SqliteViewWriteRequest(
                 _sourcePath,
                 Path.Combine(_workingDirectory, "counted.sqlite"),
-                SqliteViewDefinition.Sql,
-                SqliteViewDefinition.TableNames,
+                SqliteViewDefinition.Parts,
                 QueryDate));
 
         result.Tables.Should().ContainEquivalentOf(new SqliteViewTable("CtsOpenLocation", 9));

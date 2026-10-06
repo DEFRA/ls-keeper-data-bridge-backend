@@ -9,9 +9,9 @@ public sealed record SqliteViewTable(string Name, long RowCount);
 /// <summary>One transformation: read the source database, write the target one.</summary>
 /// <param name="SourceDatabasePath">The staging DuckDB database. Opened read-only.</param>
 /// <param name="TargetDatabasePath">Where to create the SQLite database. Must not already exist.</param>
-/// <param name="Sql">The transformation body. The writer owns attaching and detaching, so this must
-/// not carry its own ATTACH, CHECKPOINT or DETACH.</param>
-/// <param name="TableNames">Tables to count once the transformation has run, for reporting.</param>
+/// <param name="Parts">The transformation body, in execution order. The writer owns attaching and
+/// detaching, so none may carry its own ATTACH, CHECKPOINT or DETACH. The writer runs only the
+/// parts the source database can satisfy, so the result need not cover all of them.</param>
 /// <param name="QueryDate">The date the transformation evaluates its as-at rules against. The
 /// snapshots' source timestamp rather than today: the export is reused on the strength of that
 /// timestamp and the script version, so a transformation that read the clock would answer
@@ -20,8 +20,7 @@ public sealed record SqliteViewTable(string Name, long RowCount);
 public sealed record SqliteViewWriteRequest(
     string SourceDatabasePath,
     string TargetDatabasePath,
-    string Sql,
-    IReadOnlyList<string> TableNames,
+    IReadOnlyList<SqliteViewPart> Parts,
     DateTimeOffset QueryDate);
 
 [ExcludeFromCodeCoverage(Justification = "Transformation result record - no logic to test.")]

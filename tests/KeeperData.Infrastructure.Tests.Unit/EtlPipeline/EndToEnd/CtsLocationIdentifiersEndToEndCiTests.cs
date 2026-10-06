@@ -285,10 +285,10 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
     [Fact]
     public async Task ReadModel_IsUnchanged_ByTheDatasetBeingRegistered()
     {
-        // The read model's SQL never names the dataset, so it is excluded by omission rather than by
-        // anything the export stage does. What the export stage is asked to build is therefore the
-        // comparison; the transformation itself is covered by DuckDbSqliteViewWriterTests, whose
-        // fixtures carry the columns it reads.
+        // Whether the dataset was loaded is the writer's business, decided from the staging
+        // database, so what the export stage is asked to build does not vary with it. The
+        // transformation itself is covered by DuckDbSqliteViewWriterTests, whose fixtures carry the
+        // columns it reads.
         var withCts = new RecordingSqliteViewWriter();
         var withoutCts = new RecordingSqliteViewWriter();
 
@@ -311,10 +311,10 @@ public sealed class CtsLocationIdentifiersEndToEndCiTests
 
         using var scope = new AssertionScope();
 
-        withCts.OnlyCall.Sql.Should().Be(withoutCts.OnlyCall.Sql);
-        withCts.OnlyCall.TableNames.Should().BeEquivalentTo(withoutCts.OnlyCall.TableNames);
-        withCts.OnlyCall.TableNames.Should().NotContain(CtsFixtures.Definition.Name,
-            "the read model reads none of this dataset's columns, so it must not be asked for the table either");
+        withCts.OnlyCall.Parts.Should().BeEquivalentTo(withoutCts.OnlyCall.Parts);
+        withCts.OnlyCall.Parts.SelectMany(part => part.TableNames)
+            .Should().NotContain(CtsFixtures.Definition.Name,
+                "a registered dataset does not become a read-model table of its own");
     }
 
     [Fact]

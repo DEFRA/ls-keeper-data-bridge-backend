@@ -28,23 +28,25 @@ public sealed class ExportSqliteStage(
     /// <summary>What this host runs, and what that identifies itself as. Settled once, so every run
     /// of the process exports the same thing.</summary>
     private readonly (IReadOnlyList<SqliteViewPart> Parts, string Version) _transformation =
-        Compose(featureFlags.Value.SeedTestDataEnabled);
+        Compose(featureFlags.Value.TestDataPolicy);
 
     public string Name => "export-sqlite";
 
     /// <summary>Seeding changes what the export holds, so it has to change what the export is
     /// fingerprinted as: an already-exported timestamp is skipped on the strength of that
-    /// fingerprint, and turning the flag on would otherwise do nothing until new source data
+    /// fingerprint, and changing the policy would otherwise do nothing until new source data
     /// arrived.</summary>
-    private static (IReadOnlyList<SqliteViewPart>, string) Compose(bool seedTestData)
+    private static (IReadOnlyList<SqliteViewPart>, string) Compose(TestDataPolicy policy)
     {
-        if (!seedTestData)
+        var personas = SeedTestData.For(policy);
+
+        if (personas.Count == 0)
         {
             return (SqliteViewDefinition.Parts, SqliteViewDefinition.Version);
         }
 
         IReadOnlyList<SqliteViewPart> parts =
-            [.. SqliteViewDefinition.Parts, SeedTestDataPart.Create(SeedTestData.Personas)];
+            [.. SqliteViewDefinition.Parts, SeedTestDataPart.Create(personas)];
 
         return (parts, SqliteViewDefinition.VersionOf(parts));
     }

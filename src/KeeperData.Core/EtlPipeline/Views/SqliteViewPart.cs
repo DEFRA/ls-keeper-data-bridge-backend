@@ -15,10 +15,15 @@ namespace KeeperData.Core.EtlPipeline.Views;
 /// <param name="TableNames">The target tables the body produces, counted once it has run.</param>
 /// <param name="Required">Whether a missing source table is a failure rather than a skip. True for
 /// a part the read model would be meaningless without.</param>
+/// <param name="ToleratesFailure">Whether an error running the body is logged and stepped over
+/// rather than failing the export. Separate from <paramref name="Required"/>, which only governs
+/// absent source tables: this governs the body itself going wrong. True only for a part nothing
+/// downstream depends on, so that it can never take a run down.</param>
 [ExcludeFromCodeCoverage(Justification = "Transformation definition record - no logic to test.")]
 public sealed record SqliteViewPart(
     string Name,
     string Sql,
     IReadOnlyList<string> RequiredSourceTables,
     IReadOnlyList<string> TableNames,
-    bool Required);
+    bool Required,
+    bool ToleratesFailure = false);

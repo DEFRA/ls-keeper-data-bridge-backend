@@ -4,16 +4,68 @@ using KeeperData.Core.EtlPipeline.Views.TestData;
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
 
 /// <summary>The personas are data, so what is worth testing is that they can be turned into rows the
-/// read model will accept, and that two of them never contend for the same row.</summary>
+/// read model will accept, that two of them never contend for the same row, and that each policy
+/// only does what its name promises.
+///
+/// The generator is written never to fail, which means a malformed persona quietly produces less SQL
+/// instead of failing SQL. These are what make that loud.</summary>
 public class SeedTestDataTests
 {
+    public static TheoryData<TestDataPolicy> Policies => [TestDataPolicy.Additive, TestDataPolicy.Full];
+
+    private static IEnumerable<TestPersona> AllPersonas
+        => new[] { TestDataPolicy.Additive, TestDataPolicy.Full }.SelectMany(SeedTestData.For);
+
     private static IEnumerable<TestHolding> Holdings
-        => SeedTestData.Personas.SelectMany(persona => persona.Holdings);
+        => AllPersonas.SelectMany(persona => persona.Holdings);
+
+    private static IEnumerable<TestHolding> HoldingsOf(TestDataPolicy policy)
+        => SeedTestData.For(policy).SelectMany(persona => persona.Holdings);
+
+    [Fact]
+    public void Seeds_nothing_at_all_without_a_policy()
+        => SeedTestData.For(TestDataPolicy.None).Should().BeEmpty();
+
+    /// <summary>The acceptance criterion for production: one keeper, holder of two existing CPHs.</summary>
+    [Fact]
+    public void Attaches_the_production_keeper_to_both_holdings_as_holder()
+    {
+        var persona = SeedTestData.For(TestDataPolicy.Additive).Single();
+
+        persona.Party.Email.Should().Be("defralivestock@gmail.com");
+        persona.Party.SourcePartyId.Should().Be("CT35TP4RTY");
+
+        persona.Holdings.Select(holding => holding.Cph)
+            .Should().BeEquivalentTo(["08/205/8000", "03/202/0021"]);
+
+        persona.Holdings.SelectMany(holding => holding.Roles).Select(role => role.Role)
+            .Should().AllBe("holder");
+    }
+
+    /// <summary>The whole point of the additive policy. A claimed holding would delete the real
+    /// herds, animal profiles and party roles of whatever shares its CPH.</summary>
+    [Fact]
+    public void Claims_nothing_under_the_additive_policy()
+        => HoldingsOf(TestDataPolicy.Additive).Should().OnlyContain(holding => !holding.Claimed);
+
+    /// <summary>An unclaimed holding belongs to the extract, so anything a persona says about it
+    /// beyond its roles is written nowhere and would mislead the next reader.</summary>
+    [Fact]
+    public void Describes_nothing_about_a_holding_it_does_not_claim()
+    {
+        foreach (var holding in Holdings.Where(holding => !holding.Claimed))
+        {
+            holding.Should().BeEquivalentTo(
+                new TestHolding { Cph = holding.Cph, Roles = holding.Roles },
+                "{0} is not claimed, so only its CPH and roles reach the read model", holding.Cph);
+        }
+    }
 
     [Fact]
     public void Finds_the_single_holding_keeper_by_the_email_and_role_a_caller_queries_on()
     {
-        var persona = SeedTestData.Personas.Single(p => p.Party.Email == "defralivestock+single-holding@gmail.com");
+        var persona = SeedTestData.For(TestDataPolicy.Full)
+            .Single(p => p.Party.Email == "defralivestock+single-holding@gmail.com");
 
         persona.Holdings
             .Where(holding => holding.Roles.Any(role => role.Role == "holder"))
@@ -21,21 +73,22 @@ public class SeedTestDataTests
             .Should().Equal("03/202/0021");
     }
 
-    [Fact]
-    public void Names_each_persona_once()
-        => SeedTestData.Personas.Select(persona => persona.Name).Should().OnlyHaveUniqueItems();
+    [Theory]
+    [MemberData(nameof(Policies))]
+    public void Names_each_persona_once(TestDataPolicy policy)
+        => SeedTestData.For(policy).Select(persona => persona.Name).Should().OnlyHaveUniqueItems();
 
     [Fact]
     public void Gives_each_persona_its_own_party()
     {
-        SeedTestData.Personas.Select(persona => persona.Party.SourcePartyId).Should().OnlyHaveUniqueItems();
-        SeedTestData.Personas.Select(persona => persona.Party.Email).Should().OnlyHaveUniqueItems();
+        AllPersonas.Select(persona => persona.Party.SourcePartyId).Should().OnlyHaveUniqueItems();
+        AllPersonas.Select(persona => persona.Party.Email).Should().OnlyHaveUniqueItems();
     }
 
     [Fact]
     public void Keeps_the_source_party_ids_out_of_the_namespace_the_extracts_use()
     {
-        foreach (var persona in SeedTestData.Personas)
+        foreach (var persona in AllPersonas)
         {
             persona.Party.SourcePartyId.Should().NotMatchRegex(
                 "^[Cc][0-9]+$",
@@ -46,7 +99,7 @@ public class SeedTestDataTests
     [Fact]
     public void Stores_the_email_as_the_read_model_folds_it()
     {
-        foreach (var persona in SeedTestData.Personas)
+        foreach (var persona in AllPersonas)
         {
             persona.Party.Email.Should().Be(
                 persona.Party.Email.Trim().ToLowerInvariant(),
@@ -54,9 +107,10 @@ public class SeedTestDataTests
         }
     }
 
-    [Fact]
-    public void Claims_each_holding_for_one_persona_only()
-        => Holdings.Select(holding => holding.Cph).Should().OnlyHaveUniqueItems();
+    [Theory]
+    [MemberData(nameof(Policies))]
+    public void Claims_each_holding_for_one_persona_only(TestDataPolicy policy)
+        => HoldingsOf(policy).Select(holding => holding.Cph).Should().OnlyHaveUniqueItems();
 
     [Fact]
     public void Shapes_every_cph_as_the_read_model_expects()
@@ -116,6 +170,8 @@ public class SeedTestDataTests
         }
     }
 
+    /// <summary>The generator skips a role naming a herd that is not there rather than failing, so
+    /// without this a typo would simply lose the role.</summary>
     [Fact]
     public void Points_every_herd_level_role_at_a_herd_of_its_own_holding()
     {

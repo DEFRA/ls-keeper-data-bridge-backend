@@ -64,7 +64,10 @@ public sealed class DuckDbSqliteViewWriter(
                 continue;
             }
 
-            await ExecuteAsync(connection, part.Sql, cancellationToken);
+            if (!await TryExecutePartAsync(connection, part, cancellationToken))
+            {
+                continue;
+            }
 
             foreach (var name in part.TableNames)
             {
@@ -80,6 +83,31 @@ public sealed class DuckDbSqliteViewWriter(
         await ExecuteAsync(connection, "DETACH target", cancellationToken);
 
         return new SqliteViewWriteResult([.. tables.Select(table => new SqliteViewTable(table.Key, table.Value))]);
+    }
+
+    /// <summary>Runs a part, honouring its tolerance for its own failure. A tolerated failure may
+    /// leave the part's work half done; that is the trade for a part that must never stop the
+    /// export, and the statements of such a part are written so each stands alone.</summary>
+    private async Task<bool> TryExecutePartAsync(
+        DuckDBConnection connection,
+        SqliteViewPart part,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ExecuteAsync(connection, part.Sql, cancellationToken);
+
+            return true;
+        }
+        catch (Exception exception) when (part.ToleratesFailure && exception is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                exception,
+                "{PartName} failed and was skipped. The read model is complete without it, but will not carry what it writes",
+                part.Name);
+
+            return false;
+        }
     }
 
     /// <summary>Whether this environment loaded the source system the part reads. All of its tables

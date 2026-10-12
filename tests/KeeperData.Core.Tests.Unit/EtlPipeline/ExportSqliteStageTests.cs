@@ -29,14 +29,14 @@ public class ExportSqliteStageTests
     public ExportSqliteStageTests() => Staging.Put(StagingKey, "a staging database");
 
     private Task<List<SqliteExportFile>> RunAsync(params StagingDatabase[] inputs)
-        => RunAsync(seedTestData: false, inputs);
+        => RunAsync(TestDataPolicy.None, inputs);
 
-    private Task<List<SqliteExportFile>> RunAsync(bool seedTestData, params StagingDatabase[] inputs)
+    private Task<List<SqliteExportFile>> RunAsync(TestDataPolicy policy, params StagingDatabase[] inputs)
         => StageRunner.RunAsync(
             new ExportSqliteStage(
                 _storage,
                 _writer,
-                Options.Create(new EtlFeatureFlags { SeedTestDataEnabled = seedTestData }),
+                Options.Create(new EtlFeatureFlags { TestDataPolicy = policy }),
                 NullLogger<ExportSqliteStage>.Instance),
             inputs);
 
@@ -206,19 +206,22 @@ public class ExportSqliteStageTests
         request.TargetDatabasePath.Should().EndWith(".sqlite");
     }
 
-    [Fact]
-    public async Task Appends_the_test_keepers_to_the_transformation_when_seeding_is_enabled()
+    [Theory]
+    [InlineData(TestDataPolicy.Additive)]
+    [InlineData(TestDataPolicy.Full)]
+    public async Task Appends_the_test_keepers_to_the_transformation_when_a_policy_seeds(TestDataPolicy policy)
     {
-        await RunAsync(seedTestData: true, Database());
+        await RunAsync(policy, Database());
 
         var parts = _writer.Calls.Single().Parts;
 
         parts.Should().HaveCount(SqliteViewDefinition.Parts.Count + 1);
         parts[^1].Name.Should().Be(SeedTestDataPart.PartName, "the keepers are written into a read model that already exists");
+        parts[^1].ToleratesFailure.Should().BeTrue("test data must never stop an export");
     }
 
     /// <summary>The export is skipped on the strength of its recorded version, so a run that seeds
-    /// has to record a different one - otherwise turning the flag on would leave an already-exported
+    /// has to record a different one - otherwise changing the policy would leave an already-exported
     /// timestamp alone and look like it had done nothing.</summary>
     [Fact]
     public async Task Rebuilds_an_export_that_was_built_without_the_test_keepers()
@@ -226,7 +229,7 @@ public class ExportSqliteStageTests
         await RunAsync(Database());
         _writer.Calls.Clear();
 
-        var output = await RunAsync(seedTestData: true, Database());
+        var output = await RunAsync(TestDataPolicy.Full, Database());
 
         output.Single().Created.Should().BeTrue();
         _writer.Calls.Should().ContainSingle();
@@ -234,13 +237,27 @@ public class ExportSqliteStageTests
             .Should().NotBe(SqliteViewDefinition.Version);
     }
 
+    /// <summary>Two policies seed different keepers, so one cannot be mistaken for the other's
+    /// output and left in place.</summary>
+    [Fact]
+    public async Task Rebuilds_an_export_that_was_built_under_a_different_policy()
+    {
+        await RunAsync(TestDataPolicy.Additive, Database());
+        _writer.Calls.Clear();
+
+        var output = await RunAsync(TestDataPolicy.Full, Database());
+
+        output.Single().Created.Should().BeTrue();
+        _writer.Calls.Should().ContainSingle();
+    }
+
     [Fact]
     public async Task Reuses_a_seeded_export_rather_than_seeding_it_again()
     {
-        await RunAsync(seedTestData: true, Database());
+        await RunAsync(TestDataPolicy.Full, Database());
         _writer.Calls.Clear();
 
-        var output = await RunAsync(seedTestData: true, Database());
+        var output = await RunAsync(TestDataPolicy.Full, Database());
 
         output.Single().Created.Should().BeFalse();
         _writer.Calls.Should().BeEmpty();

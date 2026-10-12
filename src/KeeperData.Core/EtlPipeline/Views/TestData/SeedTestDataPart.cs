@@ -6,26 +6,31 @@ namespace KeeperData.Core.EtlPipeline.Views.TestData;
 /// <summary>The personas as the transformation's last part.
 ///
 /// It runs after the read model is built and on the same connection, so it derives ids from the
-/// macros the real rows were keyed by rather than reimplementing them. That is what makes a persona
-/// naming a CPH the extracts also carry land on that holding's row instead of beside it.
+/// macros the real rows were keyed by rather than reimplementing them. That is what lets a persona
+/// address a holding the extracts also carry.
 ///
-/// A seeded holding is claimed outright: its herds, profiles and roles are cleared before the
-/// persona's are written, so a test holding carries what the persona says rather than that plus
-/// whatever the day's extract attached to the same CPH.</summary>
+/// Nothing here may stop the export. Every statement stands alone and is guarded by what it needs:
+/// a row is written only where it is absent and the rows it points at are present, so a holding
+/// that never arrived leaves the persona inert rather than dangling. Which statements are written
+/// at all is decided here, in C#, so a malformed persona produces less SQL rather than failing
+/// SQL.</summary>
 public static class SeedTestDataPart
 {
     public const string PartName = "krds-test-data";
 
-    /// <summary>Tables the part writes to. All are produced by the read model first, so the writer
-    /// counts them a second time once the seed has run.</summary>
-    private static readonly string[] Tables = ["Party", "Holding", "Herd", "HoldingAnimalProfile", "PartyRole"];
-
     public static SqliteViewPart Create(IReadOnlyList<TestPersona> personas)
-        => new(PartName, Sql(personas), [], Tables, Required: false);
+        => new(PartName, Sql(personas), [], TablesFor(personas), Required: false, ToleratesFailure: true);
 
     internal static string Sql(IReadOnlyList<TestPersona> personas)
     {
         var builder = new StringBuilder();
+
+        // Every claim is cleared before anything is written, so a persona attached to a holding
+        // another persona owns cannot have its rows deleted by that claim afterwards.
+        foreach (var holding in personas.SelectMany(persona => persona.Holdings).Where(holding => holding.Claimed))
+        {
+            AppendClaim(builder, holding);
+        }
 
         foreach (var persona in personas)
         {
@@ -35,55 +40,93 @@ public static class SeedTestDataPart
         return builder.ToString();
     }
 
-    private static void AppendPersona(StringBuilder builder, TestPersona persona)
+    /// <summary>What these personas write to, so the export counts those tables again and claims
+    /// credit for no others.</summary>
+    private static IReadOnlyList<string> TablesFor(IReadOnlyList<TestPersona> personas)
     {
-        var partyId = $"source_guid('party', {Literal(persona.Party.SourcePartyId)})";
+        var holdings = personas.SelectMany(persona => persona.Holdings).ToArray();
+        var claimed = holdings.Where(holding => holding.Claimed).ToArray();
 
-        builder.AppendLine($"-- {persona.Name}");
+        List<string> tables = [];
 
-        // Every delete precedes every insert: clearing a holding's roles after the party's were
-        // written would take the persona's own back out again.
-        builder.AppendLine($"DELETE FROM target.PartyRole WHERE PartyId = {partyId};");
-        builder.AppendLine($"DELETE FROM target.Party WHERE Id = {partyId};");
-
-        foreach (var holding in persona.Holdings)
+        if (personas.Count > 0)
         {
-            var holdingId = HoldingId(holding.Cph);
-
-            builder.AppendLine($"DELETE FROM target.PartyRole WHERE HoldingId = {holdingId};");
-            builder.AppendLine($"DELETE FROM target.HoldingAnimalProfile WHERE HoldingId = {holdingId};");
-            builder.AppendLine($"DELETE FROM target.Herd WHERE HoldingId = {holdingId};");
-            builder.AppendLine($"DELETE FROM target.Holding WHERE Id = {holdingId};");
+            tables.Add("Party");
         }
 
-        AppendParty(builder, persona.Party, partyId);
+        if (claimed.Length > 0)
+        {
+            tables.Add("Holding");
+        }
+
+        if (claimed.Any(holding => holding.Herds.Count > 0))
+        {
+            tables.Add("Herd");
+        }
+
+        if (claimed.Any(holding => holding.AnimalProfiles.Count > 0))
+        {
+            tables.Add("HoldingAnimalProfile");
+        }
+
+        if (holdings.Any(holding => holding.Roles.Count > 0))
+        {
+            tables.Add("PartyRole");
+        }
+
+        return tables;
+    }
+
+    private static void AppendClaim(StringBuilder builder, TestHolding holding)
+    {
+        var holdingId = HoldingId(holding.Cph);
+
+        builder.AppendLine($"-- claim {holding.Cph}");
+        builder.AppendLine($"DELETE FROM target.PartyRole WHERE HoldingId = {holdingId};");
+        builder.AppendLine($"DELETE FROM target.HoldingAnimalProfile WHERE HoldingId = {holdingId};");
+        builder.AppendLine($"DELETE FROM target.Herd WHERE HoldingId = {holdingId};");
+        builder.AppendLine($"DELETE FROM target.Holding WHERE Id = {holdingId};");
+        builder.AppendLine();
+    }
+
+    private static void AppendPersona(StringBuilder builder, TestPersona persona)
+    {
+        builder.AppendLine($"-- {persona.Name}");
+
+        AppendParty(builder, persona.Party);
 
         foreach (var holding in persona.Holdings)
         {
-            AppendHolding(builder, holding);
-
-            foreach (var herd in holding.Herds)
+            // An unclaimed holding belongs to the extract. The persona attaches roles to it and
+            // leaves its own row, herds and profiles exactly as they arrived.
+            if (holding.Claimed)
             {
-                AppendHerd(builder, holding, herd);
-            }
+                AppendHolding(builder, holding);
 
-            foreach (var profile in holding.AnimalProfiles)
-            {
-                AppendAnimalProfile(builder, holding, profile);
+                foreach (var herd in holding.Herds)
+                {
+                    AppendHerd(builder, holding, herd);
+                }
+
+                foreach (var profile in holding.AnimalProfiles)
+                {
+                    AppendAnimalProfile(builder, holding, profile);
+                }
             }
 
             foreach (var role in holding.Roles)
             {
-                AppendRole(builder, persona.Party, holding, role, partyId);
+                AppendRole(builder, persona.Party, holding, role);
             }
         }
 
         builder.AppendLine();
     }
 
-    private static void AppendParty(StringBuilder builder, TestParty party, string partyId)
+    private static void AppendParty(StringBuilder builder, TestParty party)
         => AppendInsert(builder, "Party",
-            ("Id", partyId),
+            [$"NOT EXISTS (SELECT 1 FROM target.Party WHERE Id = {PartyId(party)} OR SourcePartyId = {Literal(party.SourcePartyId)})"],
+            ("Id", PartyId(party)),
             ("SourcePartyId", Literal(party.SourcePartyId)),
             ("PersonTitle", Literal(party.PersonTitle)),
             ("GivenName", Literal(party.GivenName)),
@@ -105,6 +148,7 @@ public static class SeedTestDataPart
 
     private static void AppendHolding(StringBuilder builder, TestHolding holding)
         => AppendInsert(builder, "Holding",
+            [$"NOT EXISTS (SELECT 1 FROM target.Holding WHERE Id = {HoldingId(holding.Cph)} OR Cph = {Literal(holding.Cph)})"],
             ("Id", HoldingId(holding.Cph)),
             ("Cph", Literal(holding.Cph)),
             ("FeatureName", Literal(holding.FeatureName)),
@@ -135,6 +179,10 @@ public static class SeedTestDataPart
 
     private static void AppendHerd(StringBuilder builder, TestHolding holding, TestHerd herd)
         => AppendInsert(builder, "Herd",
+            [
+                $"EXISTS (SELECT 1 FROM target.Holding WHERE Id = {HoldingId(holding.Cph)})",
+                $"NOT EXISTS (SELECT 1 FROM target.Herd WHERE Id = {HerdId(herd)} OR (Herdmark = {Literal(herd.Herdmark)} AND Cphh = {Literal(herd.Cphh)}))"
+            ],
             ("Id", HerdId(herd)),
             ("HoldingId", HoldingId(holding.Cph)),
             ("Herdmark", Literal(herd.Herdmark)),
@@ -158,8 +206,14 @@ public static class SeedTestDataPart
             profile.Interval ?? string.Empty,
             profile.IntervalUnitOfTime ?? string.Empty);
 
+        var id = $"source_guid('holding-animal-profile', {Literal(key)})";
+
         AppendInsert(builder, "HoldingAnimalProfile",
-            ("Id", $"source_guid('holding-animal-profile', {Literal(key)})"),
+            [
+                $"EXISTS (SELECT 1 FROM target.Holding WHERE Id = {HoldingId(holding.Cph)})",
+                $"NOT EXISTS (SELECT 1 FROM target.HoldingAnimalProfile WHERE Id = {id})"
+            ],
+            ("Id", id),
             ("HoldingId", HoldingId(holding.Cph)),
             ("AnimalSpeciesCode", Literal(profile.AnimalSpeciesCode)),
             ("AnimalProductionUsageCode", Literal(profile.AnimalProductionUsageCode)),
@@ -172,36 +226,67 @@ public static class SeedTestDataPart
         StringBuilder builder,
         TestParty party,
         TestHolding holding,
-        TestPartyRole role,
-        string partyId)
+        TestPartyRole role)
     {
-        var herdId = role.Cphh is null ? "NULL" : HerdId(Herd(holding, role.Cphh));
+        var herdId = "NULL";
+
+        if (role.Cphh is not null)
+        {
+            var herd = holding.Herds.FirstOrDefault(candidate => candidate.Cphh == role.Cphh);
+
+            // A role naming a herd its holding does not declare is a mistake in the personas, which
+            // their own tests assert against. Here it simply writes nothing.
+            if (herd is null)
+            {
+                return;
+            }
+
+            herdId = HerdId(herd);
+        }
 
         // The read model keys a role on the herd's id rather than its CPHH, so the key is built in
         // SQL from the same expression the id itself came from.
         var key = $"{Literal($"{party.SourcePartyId}|{holding.Cph}|")} || COALESCE({herdId}, '') || {Literal($"|{role.Role}")}";
+        var id = $"source_guid('party-role', {key})";
 
-        AppendInsert(builder, "PartyRole",
-            ("Id", $"source_guid('party-role', {key})"),
-            ("PartyId", partyId),
+        List<string> guards =
+        [
+            $"EXISTS (SELECT 1 FROM target.Party WHERE Id = {PartyId(party)})",
+            $"EXISTS (SELECT 1 FROM target.Holding WHERE Id = {HoldingId(holding.Cph)})"
+        ];
+
+        if (role.Cphh is not null)
+        {
+            guards.Add($"EXISTS (SELECT 1 FROM target.Herd WHERE Id = {herdId})");
+        }
+
+        guards.Add($"NOT EXISTS (SELECT 1 FROM target.PartyRole WHERE Id = {id})");
+
+        AppendInsert(builder, "PartyRole", guards,
+            ("Id", id),
+            ("PartyId", PartyId(party)),
             ("HoldingId", HoldingId(holding.Cph)),
             ("HerdId", herdId),
             ("Role", Literal(role.Role)));
     }
 
-    private static TestHerd Herd(TestHolding holding, string cphh)
-        => holding.Herds.FirstOrDefault(herd => herd.Cphh == cphh)
-            ?? throw new InvalidOperationException(
-                $"Holding '{holding.Cph}' has a role against herd '{cphh}', which it does not declare.");
+    private static string PartyId(TestParty party) => $"source_guid('party', {Literal(party.SourcePartyId)})";
 
     private static string HoldingId(string cph) => $"holding_guid({Literal(cph)})";
 
     private static string HerdId(TestHerd herd) => $"source_guid('herd', {Literal($"{herd.Herdmark}|{herd.Cphh}")})";
 
-    private static void AppendInsert(StringBuilder builder, string table, params (string Column, string Value)[] columns)
+    /// <summary>SELECT rather than VALUES so the row can be made conditional on what the database
+    /// already holds.</summary>
+    private static void AppendInsert(
+        StringBuilder builder,
+        string table,
+        IReadOnlyList<string> guards,
+        params (string Column, string Value)[] columns)
     {
         builder.AppendLine($"INSERT INTO target.{table} ({string.Join(", ", columns.Select(column => column.Column))})");
-        builder.AppendLine($"VALUES ({string.Join(", ", columns.Select(column => column.Value))});");
+        builder.AppendLine($"SELECT {string.Join(", ", columns.Select(column => column.Value))}");
+        builder.AppendLine($"WHERE {string.Join($"{Environment.NewLine}  AND ", guards)};");
     }
 
     private static string Literal(string? value)

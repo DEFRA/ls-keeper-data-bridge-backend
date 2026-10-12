@@ -1,3 +1,4 @@
+using KeeperData.Core.EtlPipeline.Views.TestData;
 using System.CommandLine;
 
 namespace KeeperData.Etl.Tool.Commands;
@@ -21,10 +22,10 @@ internal static class CommonOptions
         Description = "Emit JSON instead of a table."
     };
 
-    /// <summary>Only ever turns seeding on: off is the default, and a flag that could also assert the
-    /// default would make "did I ask for this?" unanswerable from the command line alone.</summary>
-    public static readonly Option<bool> SeedTestData = new("--seed-test-data")
+    /// <summary>Left unspecified the configured policy stands, so a run only overrides what it was
+    /// asked to.</summary>
+    public static readonly Option<TestDataPolicy?> TestData = new("--test-data")
     {
-        Description = "Write the known test keepers into the SQLite read model, replacing any real data sharing their CPHs."
+        Description = "Test data policy for the SQLite read model: None, Additive (adds a keeper to holdings that already exist) or Full (seeded keepers own their CPHs, replacing real data)."
     };
 }

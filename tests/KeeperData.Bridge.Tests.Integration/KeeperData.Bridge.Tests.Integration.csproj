@@ -47,4 +47,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- The CTS sample's files, shared with the in-memory suite so the two harnesses cannot drift
+       apart on what the extract looks like. -->
+  <ItemGroup>
+    <Compile Include="..\SharedFixtures\CtsFixtures.cs" Link="Helpers\CtsFixtures.cs" />
+  </ItemGroup>
+
 </Project>

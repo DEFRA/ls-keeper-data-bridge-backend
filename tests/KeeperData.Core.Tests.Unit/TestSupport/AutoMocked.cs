@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace KeeperData.Core.Tests.Unit.TestSupport;
@@ -28,12 +29,31 @@ public static class AutoMocked
 
     private static object CreateArgument(Type type)
     {
+        // A mocked IOptions<T> hands back a null Value, which a constructor reading its options
+        // dereferences. Real options carrying defaults are what such a type would get in a host.
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IOptions<>))
+        {
+            var optionsType = type.GetGenericArguments()[0];
+
+            return typeof(Options)
+                .GetMethod(nameof(Options.Create))!
+                .MakeGenericMethod(optionsType)
+                .Invoke(null, [Activator.CreateInstance(optionsType)])!;
+        }
+
         if (type.IsInterface || (type.IsClass && !type.IsSealed))
         {
             var mock = (Mock)Activator.CreateInstance(typeof(Mock<>).MakeGenericType(type))!;
             return mock.Object;
         }
 
-        return type.IsValueType ? Activator.CreateInstance(type)! : null!;
+        if (type.IsValueType)
+        {
+            return Activator.CreateInstance(type)!;
+        }
+
+        throw new InvalidOperationException(
+            $"{type.Name} is sealed, so it cannot be mocked. Construct the type under test explicitly "
+            + "and hand it a real one.");
     }
 }

@@ -26,6 +26,15 @@ public interface IBlobStorageServiceReadOnly
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Streams every object under a prefix, paging as the caller consumes it. Unlike
+    /// <see cref="ListAsync"/> there is no page cap, so a caller that only keeps the items it cares
+    /// about allocates in proportion to those rather than to the whole prefix.
+    /// </summary>
+    IAsyncEnumerable<StorageObjectInfo> EnumerateAsync(
+        string? prefix = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Retrieves object metadata (size, ETag, content type, timestamps, URIs, and user metadata).
     /// </summary>
     Task<StorageObjectMetadata> GetMetadataAsync(

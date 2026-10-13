@@ -1,3 +1,5 @@
+using KeeperData.Core.EtlPipeline.Status;
+
 namespace KeeperData.Core.EtlPipeline.Stages;
 
 /// <summary>A source file could not be decrypted.
@@ -14,6 +16,12 @@ public sealed class SourceFileDecryptionException(string objectKey, string datas
     public string ObjectKey { get; } = objectKey;
 
     public string DatasetName { get; } = datasetName;
+
+    public EtlImportErrorDetail ErrorDetail => new()
+    {
+        Dataset = DatasetName,
+        FileKey = ObjectKey
+    };
 
     private static string BuildMessage(string objectKey, string datasetName)
         => $"Could not decrypt '{objectKey}' for dataset '{datasetName}'. " +

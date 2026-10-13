@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using KeeperData.Bridge.Extensions;
+using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Storage;
 using KeeperData.Core.Storage.Dtos;
@@ -7,13 +8,14 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace KeeperData.Bridge.Controllers;
 
-/// <summary>Download access to the DuckDB staging database and SQLite read model produced by the
-/// ETL pipeline.</summary>
+/// <summary>Download access to the DuckDB staging database, SQLite read model and per-dataset
+/// parquet snapshots produced by the ETL pipeline.</summary>
 [ApiController]
 [Route("api/etl/staging")]
 [ExcludeFromCodeCoverage(Justification = "API controller - covered by component/integration tests.")]
 public class EtlStagingController(
     IEtlPipelineStorageProvider storageProvider,
+    IDataSetDefinitions dataSetDefinitions,
     ILogger<EtlStagingController> logger) : ControllerBase
 {
     private static readonly TimeSpan DefaultPresignedUrlExpiry = TimeSpan.FromHours(1);
@@ -56,7 +58,7 @@ public class EtlStagingController(
             logger.LogInformation("Generated presigned URL for {Key} (expires in {ExpiryMinutes} min)",
                 latest.Key, expiry.TotalMinutes);
 
-            return PresignedUrlReady(latest, presignedUrl, expiry);
+            return PresignedUrlReady(EtlPipelineFolders.Staging, latest, presignedUrl, expiry);
         }
         catch (OperationCanceledException ex)
         {
@@ -126,10 +128,83 @@ public class EtlStagingController(
         }
     }
 
-    private OkObjectResult PresignedUrlReady(StorageObjectInfo latest, string presignedUrl, TimeSpan expiry)
+    /// <summary>
+    /// Returns a presigned download URL for the newest parquet snapshot of a dataset.
+    /// Snapshots are per-dataset, so the dataset must be named. The URL is valid for 1 hour by
+    /// default.
+    /// </summary>
+    /// <param name="dataset">Dataset name, e.g. sam_cph_holdings</param>
+    /// <param name="expiresInMinutes">Optional expiry in minutes (default: 60, max: 10080 / 7 days)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    [HttpGet("snapshots/{dataset}/latest")]
+    [ProducesResponseType(typeof(StagingDatabaseLatestResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(StagingDatabaseErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(StagingDatabaseErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(StagingDatabaseErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetLatestSnapshotUrl(
+        [FromRoute] string? dataset,
+        [FromQuery] int? expiresInMinutes = null,
+        CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation(
+            "Received request for latest parquet snapshot presigned URL for dataset {Dataset}", dataset);
+
+        var definition = dataSetDefinitions.All.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, dataset, StringComparison.OrdinalIgnoreCase));
+
+        if (definition is null)
+        {
+            logger.LogWarning("Latest parquet snapshot requested for unrecognised dataset {Dataset}", dataset);
+            return BadRequest(new StagingDatabaseErrorResponse
+            {
+                Message = $"Dataset '{dataset}' is not recognized.",
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        try
+        {
+            var storageService = storageProvider.ForFolder(EtlPipelineFolders.Snapshots);
+            var objects = await storageService.ListAsync(
+                SnapshotFileNaming.DataSetPrefix(definition), cancellationToken);
+
+            // Ordering comes from the timestamp encoded in the key, as it does for the pipeline:
+            // object modified time says nothing about where a snapshot sits in the sequence.
+            var latestKey = SnapshotFileNaming.LatestByTimestamp(
+                definition, objects.Select(o => o.Key));
+            var latest = latestKey is null
+                ? null
+                : objects.FirstOrDefault(o => string.Equals(o.Key, latestKey, StringComparison.Ordinal));
+
+            if (latest is null) return SnapshotNotFound(definition.Name);
+
+            var expiry = expiresInMinutes.HasValue
+                ? TimeSpan.FromMinutes(Math.Clamp(expiresInMinutes.Value, 1, 10080))
+                : DefaultPresignedUrlExpiry;
+
+            var presignedUrl = storageService.GeneratePresignedUrl(latest.Key, expiry);
+
+            logger.LogInformation("Generated presigned URL for {Key} (expires in {ExpiryMinutes} min)",
+                latest.Key, expiry.TotalMinutes);
+
+            return PresignedUrlReady(EtlPipelineFolders.Snapshots, latest, presignedUrl, expiry);
+        }
+        catch (OperationCanceledException ex)
+        {
+            logger.LogWarning(ex, "Get latest parquet snapshot request was cancelled");
+            return RequestCancelled();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error getting latest parquet snapshot presigned URL");
+            return PresignedUrlFailed();
+        }
+    }
+
+    private OkObjectResult PresignedUrlReady(string folder, StorageObjectInfo latest, string presignedUrl, TimeSpan expiry)
         => Ok(new StagingDatabaseLatestResponse
         {
-            ObjectKey = $"{EtlPipelineFolders.Staging}/{latest.Key}",
+            ObjectKey = $"{folder}/{latest.Key}",
             DownloadUrl = presignedUrl,
             Size = latest.Size,
             LastModified = latest.LastModified,
@@ -174,6 +249,17 @@ public class EtlStagingController(
                 Timestamp = DateTime.UtcNow
             });
         }
+    }
+
+    private NotFoundObjectResult SnapshotNotFound(string dataset)
+    {
+        logger.LogWarning("No parquet snapshot found for dataset {Dataset} in {Folder}/",
+            dataset, EtlPipelineFolders.Snapshots);
+        return NotFound(new StagingDatabaseErrorResponse
+        {
+            Message = $"No parquet snapshot found for dataset '{dataset}'. Run the ETL pipeline first.",
+            Timestamp = DateTime.UtcNow
+        });
     }
 }
 

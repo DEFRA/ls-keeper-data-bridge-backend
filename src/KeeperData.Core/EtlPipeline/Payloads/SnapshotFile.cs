@@ -23,8 +23,11 @@ public sealed record SnapshotFile(DataSetDefinition Definition)
 
     public long RowsUpserted { get; init; }
 
-    /// <summary>Rows carrying CHANGE_TYPE = D. Counted for visibility; deletes are not applied.</summary>
+    public long RowsDeleted { get; init; }
+
     public long RowsIgnoredDeletes { get; init; }
+
+    public long RowsRejected { get; init; }
 
     public IReadOnlyList<string> ColumnsNullified { get; init; } = [];
 

@@ -43,13 +43,13 @@ public static class StageRunner
         return results;
     }
 
-    public static EtlPipelineContext Context(string sourceType = "external", int lookbackDays = 0, string? dataset = null) =>
-        new(Guid.NewGuid(), sourceType, lookbackDays, dataset);
+    public static EtlPipelineContext Context(string sourceType = "external", string? dataset = null) =>
+        new(Guid.NewGuid(), sourceType, dataset);
 
     // Shared test-data builders, so every stage test describes inputs the same way.
 
-    public static DataSetDefinition Definition(string name = "SAM_CPH") =>
-        new(name, $"{name}_{{0}}", ["cph"], "CHANGE_TYPE", []);
+    public static DataSetDefinition Definition(string name = "SAM_CPH", PasswordDerivationPolicy passwordDerivation = PasswordDerivationPolicy.FileNameVerbatim) =>
+        new(name, $"{name}_{{0}}", ["cph"], "CHANGE_TYPE", [], PasswordDerivation: passwordDerivation);
 
     public static EtlFile File(string key, DateTimeOffset? timestamp = null) =>
         new(new StorageObjectInfo
@@ -64,6 +64,9 @@ public static class StageRunner
 
     public static DiscoveredFileSet DiscoveredSet(string dataset, params string[] keys) =>
         new(Definition(dataset), [.. keys.Select(k => File(k))]);
+
+    public static DiscoveredFileSet DiscoveredSet(DataSetDefinition definition, params string[] keys) =>
+        new(definition, [.. keys.Select(k => File(k))]);
 
     private static async IAsyncEnumerable<T> ToStream<T>(IReadOnlyList<T> items)
     {

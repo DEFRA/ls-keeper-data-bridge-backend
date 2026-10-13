@@ -17,7 +17,10 @@ public interface IEtlImportStatusStore
 
     Task MarkSucceededAsync(Guid importId, CancellationToken cancellationToken);
 
-    Task MarkFailedAsync(Guid importId, string error, CancellationToken cancellationToken);
+    /// <param name="error">The readable summary, safe to serve to a caller.</param>
+    /// <param name="detail">Structured context - which stage, dataset, file or record the failure
+    /// belongs to - for a caller drilling into why it failed.</param>
+    Task MarkFailedAsync(Guid importId, string error, EtlImportErrorDetail? detail, CancellationToken cancellationToken);
 
     /// <summary>The import, or null if the id is unknown. A run whose lease has lapsed is returned
     /// as failed.</summary>
@@ -30,7 +33,21 @@ public interface IEtlImportStatusStore
     /// <summary>A page of imports, most recently requested first, so a caller that has lost an
     /// import id can still find its run. Runs whose lease has lapsed are returned as failed.</summary>
     Task<EtlImportPage> ListAsync(int skip, int top, CancellationToken cancellationToken);
+
+    /// <summary>Writes a completed purge record into the same history, so a storage wipe is visible
+    /// beside the runs it reset. A purge is recorded after it succeeds; a failed purge is a failed
+    /// request, not history.</summary>
+    Task RecordPurgeAsync(EtlPurgeRecord purge, CancellationToken cancellationToken);
 }
+
+/// <summary>What a storage purge did. Carries the resolved stage list rather than the requested
+/// stage, so the record says what was actually deleted.</summary>
+public sealed record EtlPurgeRecord(
+    Guid PurgeId,
+    string SourceType,
+    string? Dataset,
+    IReadOnlyList<string> Stages,
+    int DeletedCount);
 
 /// <summary>One page of imports, with the total available so a caller can paginate.</summary>
 public sealed record EtlImportPage(IReadOnlyList<EtlImportDocument> Imports, long TotalCount);
@@ -52,11 +69,14 @@ public sealed record EtlImportDatasetProgress(string Dataset)
     public IReadOnlyList<(string Key, long Size)> SourceFiles { get; init; } = [];
     public IReadOnlyList<string> RawKeys { get; init; } = [];
     public IReadOnlyList<string> NormalisedKeys { get; init; } = [];
+    public IReadOnlyList<string> OptimisedKeys { get; init; } = [];
     public string? SnapshotKey { get; init; }
     public DateTimeOffset? SnapshotSourceTimestamp { get; init; }
     public long? RowCount { get; init; }
     public long? RowsUpserted { get; init; }
+    public long? RowsDeleted { get; init; }
     public long? RowsIgnoredDeletes { get; init; }
+    public long? RowsRejected { get; init; }
     public IReadOnlyList<string> ColumnsNullified { get; init; } = [];
     public IReadOnlyList<string> ColumnsAdded { get; init; } = [];
 }

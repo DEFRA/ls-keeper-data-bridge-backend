@@ -415,6 +415,72 @@ public class BlobStorageServiceUnitTests
             Times.AtLeastOnce);
     }
 
+    [Fact]
+    public async Task OpenWriteAsync_WhenNothingIsWritten_ShouldPutAnEmptyObjectInsteadOfCompletingWithNoParts()
+    {
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+
+        _mockS3Client
+            .Setup(x => x.InitiateMultipartUploadAsync(It.IsAny<InitiateMultipartUploadRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new InitiateMultipartUploadResponse { UploadId = "test-upload-id" });
+        _mockS3Client
+            .Setup(x => x.AbortMultipartUploadAsync(It.IsAny<AbortMultipartUploadRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AbortMultipartUploadResponse());
+
+        PutObjectRequest? capturedRequest = null;
+        _mockS3Client
+            .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<PutObjectRequest, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new PutObjectResponse());
+
+        var stream = await service.OpenWriteAsync("test-key", "application/vnd.apache.parquet");
+
+        var act = async () => await stream.DisposeAsync();
+
+        await act.Should().NotThrowAsync();
+
+        _mockS3Client.Verify(
+            x => x.CompleteMultipartUploadAsync(It.IsAny<CompleteMultipartUploadRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _mockS3Client.Verify(
+            x => x.AbortMultipartUploadAsync(It.IsAny<AbortMultipartUploadRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Key.Should().Be("test-key");
+        capturedRequest.ContentType.Should().Be("application/vnd.apache.parquet");
+        capturedRequest.InputStream!.Length.Should().Be(0);
+    }
+
+    /// <summary>The failure that stopped the caller writing is the one worth reporting, so
+    /// disposal must not raise one of its own on the way out of it.</summary>
+    [Fact]
+    public async Task OpenWriteAsync_WhenTheWriterFailsBeforeWritingAnything_ShouldSurfaceTheWritersFailure()
+    {
+        using var service = new S3BlobStorageService(_mockS3Client.Object, _loggerMock.Object, TestContainer);
+
+        _mockS3Client
+            .Setup(x => x.InitiateMultipartUploadAsync(It.IsAny<InitiateMultipartUploadRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new InitiateMultipartUploadResponse { UploadId = "test-upload-id" });
+        _mockS3Client
+            .Setup(x => x.AbortMultipartUploadAsync(It.IsAny<AbortMultipartUploadRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AbortMultipartUploadResponse());
+        _mockS3Client
+            .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PutObjectResponse());
+
+        var writerFailure = new InvalidOperationException("declared record count does not match actual count");
+
+        var act = async () =>
+        {
+            await using var stream = await service.OpenWriteAsync("test-key");
+            throw writerFailure;
+        };
+
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrown.Which.Should().BeSameAs(writerFailure);
+    }
+
     #endregion
 
     #region SetMetadataAsync Tests

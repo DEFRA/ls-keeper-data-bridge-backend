@@ -24,8 +24,6 @@ public class EtlImportStatusResponse
     public Guid ImportId { get; set; }
     public required string Status { get; set; }
     public required string SourceType { get; set; }
-
-    /// <summary>The dataset the run was restricted to, or null for all of them.</summary>
     public string? Dataset { get; set; }
 
     public DateTime RequestedAtUtc { get; set; }
@@ -49,6 +47,37 @@ public class EtlImportStatusResponse
 
     /// <summary>A summary safe to show a caller: never a stack trace or a configuration value.</summary>
     public string? Error { get; set; }
+
+    /// <summary>Structured context about the failure - which stage, dataset, file or record it
+    /// belongs to - so a caller can see where to look rather than parse the message.</summary>
+    public EtlImportErrorDetailResponse? ErrorDetail { get; set; }
+
+    /// <summary>What a purge removed. Only present when Status is Purged.</summary>
+    public EtlImportPurgeResponse? Purge { get; set; }
+}
+
+/// <summary>What a storage purge removed, mirroring what the import document stores.</summary>
+[ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
+public class EtlImportPurgeResponse
+{
+    /// <summary>The stage names the purge resolved to, downstream cascade included.</summary>
+    public List<string> Stages { get; set; } = [];
+
+    /// <summary>Objects deleted across every stage.</summary>
+    public int DeletedCount { get; set; }
+}
+
+/// <summary>Structured failure context, mirroring what the import document stores.</summary>
+[ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
+public class EtlImportErrorDetailResponse
+{
+    public string? Type { get; set; }
+    public string? Stage { get; set; }
+    public string? Dataset { get; set; }
+    public string? FileKey { get; set; }
+    public long? RecordNumber { get; set; }
+    public string? Expected { get; set; }
+    public string? Actual { get; set; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "Response DTO - no logic to test.")]
@@ -74,11 +103,14 @@ public class EtlImportDatasetResponse
     public List<EtlImportSourceFileResponse> SourceFiles { get; set; } = [];
     public List<string> RawPaths { get; set; } = [];
     public List<string> NormalisedPaths { get; set; } = [];
+    public List<string> OptimisedPaths { get; set; } = [];
     public string? SnapshotPath { get; set; }
     public DateTime? SnapshotSourceTimestampUtc { get; set; }
     public long? RowCount { get; set; }
     public long? RowsUpserted { get; set; }
+    public long? RowsDeleted { get; set; }
     public long? RowsIgnoredDeletes { get; set; }
+    public long? RowsRejected { get; set; }
     public List<string> ColumnsNullified { get; set; } = [];
 /// <summary>Columns a file introduced, so they are null for the rows held before it.</summary>
     public List<string> ColumnsAdded { get; set; } = [];
@@ -140,4 +172,9 @@ public class EtlImportSummaryResponse
     public string? SqlitePath { get; set; }
 
     public string? Error { get; set; }
+
+    public EtlImportErrorDetailResponse? ErrorDetail { get; set; }
+
+    /// <summary>What a purge removed. Only present when Status is Purged.</summary>
+    public EtlImportPurgeResponse? Purge { get; set; }
 }

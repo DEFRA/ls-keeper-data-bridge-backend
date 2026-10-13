@@ -171,7 +171,7 @@ public sealed class EtlPipelineEndToEndCiTests
         host.Folders.Folder(EtlPipelineFolders.Staging).Keys.Should().BeEmpty(
             "a filtered run cannot publish a partial database under the shared staging name");
         host.Folders.Folder(EtlPipelineFolders.Views).Keys.Should().BeEmpty(
-            "the read model requires all of its source tables");
+            "there is no staging database to export from");
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public sealed class EtlPipelineEndToEndCiTests
         // Guards the trap the local kickstart script works around: the Crypto tool names its delta
         // file "..._delta.csv", and the timestamp is read from the segment after the LAST underscore.
         await host.PutEncryptedSourceFileAsync(
-            "LITP_SAMPARTY_20251113121333_delta.csv",
+            "litprd/LITP_SAMPARTY_20251113121333_delta.csv",
             EtlFixtures.FilesFor(EtlFixtures.Party)[0].Content);
 
         var run = async () => await host.RunAsync();
@@ -394,8 +394,7 @@ public sealed class EtlPipelineEndToEndCiTests
                 "the read model carries the same source timestamp as the staging database it came from");
 
         var request = viewWriter.OnlyCall;
-        request.Sql.Should().Be(SqliteViewDefinition.Sql, "the embedded transformation is what runs");
-        request.TableNames.Should().BeEquivalentTo(SqliteViewDefinition.TableNames);
+        request.Parts.Should().BeSameAs(SqliteViewDefinition.Parts, "the embedded transformation is what runs");
     }
 
     [Fact]

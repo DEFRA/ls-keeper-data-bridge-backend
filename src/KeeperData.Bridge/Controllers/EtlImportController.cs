@@ -27,14 +27,17 @@ public class EtlImportController(
     /// </summary>
     /// <param name="sourceType">The source type for the import ("internal" or "external")</param>
     /// <param name="dataset">Restricts the run to one dataset, e.g. "sam_cph_holdings". Omit to run all.</param>
+    /// <param name="rebuild">Clears every stage first, so the run rebuilds from the source files.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     [HttpPost]
     [ProducesResponseType(typeof(StartEtlImportResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(EtlImportConflictResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> StartImport(
         [FromQuery] string sourceType = BlobStorageSources.External,
         [FromQuery] string? dataset = null,
+        [FromQuery] bool rebuild = false,
         CancellationToken cancellationToken = default)
     {
         if (sourceType != BlobStorageSources.Internal && sourceType != BlobStorageSources.External)
@@ -55,12 +58,26 @@ public class EtlImportController(
             });
         }
 
-        logger.LogInformation(
-            "Received request to start ETL import (sourceType={sourceType}, dataset={dataset})",
-            sourceType,
-            dataset ?? "all");
+        var requestedDataset = dataset ?? "all";
 
-        var result = await coordinator.StartAsync(sourceType, dataset, cancellationToken);
+        logger.LogInformation(
+            "Received request to start ETL import (sourceType={SourceType}, dataset={Dataset}, rebuild={Rebuild})",
+            sourceType,
+            requestedDataset,
+            rebuild);
+
+        var result = await coordinator.StartAsync(sourceType, dataset, rebuild, cancellationToken);
+
+        if (result.RebuildError is not null)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Message = result.ClearedStages is { Count: > 0 } clearedStages
+                    ? $"{result.RebuildError} No import was started, but {string.Join(", ", clearedStages)} " +
+                      "had already been cleared, so the staging area is now incomplete."
+                    : $"{result.RebuildError} Nothing has been cleared and no import was started."
+            });
+        }
 
         if (!result.Accepted)
         {

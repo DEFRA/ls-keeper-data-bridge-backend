@@ -2,6 +2,7 @@ using DuckDB.NET.Data;
 using KeeperData.Core.EtlPipeline.Views;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 
 namespace KeeperData.Infrastructure.EtlPipeline.Views;
 
@@ -11,12 +12,19 @@ namespace KeeperData.Infrastructure.EtlPipeline.Views;
 /// pipeline downloaded cannot be written to even by accident - DuckDB rewrites a database's header on
 /// open otherwise, and "the source is untouched" would be a convention rather than a guarantee.
 ///
-/// The whole script runs as one command. DuckDB prepares and executes its statements in order, and
-/// the temporary macros and views it defines stay in scope for the statements that follow.</summary>
+/// Each part runs as one command. DuckDB prepares and executes its statements in order, and the
+/// temporary macros and views it defines stay in scope for the statements that follow. A part whose
+/// source system this environment does not load is skipped, so an absent CTS extract costs the read
+/// model its Open Locations table rather than all of it.</summary>
 public sealed class DuckDbSqliteViewWriter(
     IOptions<DuckDbConfiguration> configuration,
     ILogger<DuckDbSqliteViewWriter> logger) : ISqliteViewWriter
 {
+    /// <summary>The variable the transformation reads its as-at date from. Set before the script
+    /// runs rather than written into it, so that the script stays a constant and its fingerprint
+    /// identifies the transformation rather than the run.</summary>
+    private const string QueryDateVariable = "cts_query_date";
+
     private readonly DuckDbConfiguration _configuration = configuration.Value;
 
     public async Task<SqliteViewWriteResult> WriteAsync(
@@ -40,23 +48,115 @@ public sealed class DuckDbSqliteViewWriter(
         await ExecuteAsync(connection, $"ATTACH {Literal(request.TargetDatabasePath)} AS target (TYPE sqlite)", cancellationToken);
         await ExecuteAsync(connection, "USE source", cancellationToken);
 
-        await ExecuteAsync(connection, request.Sql, cancellationToken);
+        await SetQueryDateAsync(connection, request.QueryDate, cancellationToken);
 
-        var tables = new List<SqliteViewTable>(request.TableNames.Count);
+        var staged = await StagedTablesAsync(connection, cancellationToken);
 
-        foreach (var name in request.TableNames)
+        // Keyed by name, because a later part may add rows to a table an earlier one produced. The
+        // export records these as its reconciliation counts, so the last reading has to be the one
+        // that survives - and the table still has to appear once, where it was first produced.
+        var tables = new OrderedDictionary<string, long>(StringComparer.Ordinal);
+
+        foreach (var part in request.Parts)
         {
-            var rowCount = await ScalarAsync(connection, $"SELECT count(*) FROM target.{Identifier(name)}", cancellationToken);
+            if (!ShouldRun(part, staged))
+            {
+                continue;
+            }
 
-            logger.LogInformation("SQLite view table {TableName} holds {RowCount} row(s)", name, rowCount);
+            if (!await TryExecutePartAsync(connection, part, cancellationToken))
+            {
+                continue;
+            }
 
-            tables.Add(new SqliteViewTable(name, rowCount));
+            foreach (var name in part.TableNames)
+            {
+                var rowCount = await ScalarAsync(connection, $"SELECT count(*) FROM target.{Identifier(name)}", cancellationToken);
+
+                logger.LogInformation("SQLite view table {TableName} holds {RowCount} row(s)", name, rowCount);
+
+                tables[name] = rowCount;
+            }
         }
 
         await ExecuteAsync(connection, "CHECKPOINT target", cancellationToken);
         await ExecuteAsync(connection, "DETACH target", cancellationToken);
 
-        return new SqliteViewWriteResult(tables);
+        return new SqliteViewWriteResult([.. tables.Select(table => new SqliteViewTable(table.Key, table.Value))]);
+    }
+
+    /// <summary>Runs a part, honouring its tolerance for its own failure. A tolerated failure may
+    /// leave the part's work half done; that is the trade for a part that must never stop the
+    /// export, and the statements of such a part are written so each stands alone.</summary>
+    private async Task<bool> TryExecutePartAsync(
+        DuckDBConnection connection,
+        SqliteViewPart part,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ExecuteAsync(connection, part.Sql, cancellationToken);
+
+            return true;
+        }
+        catch (Exception exception) when (part.ToleratesFailure && exception is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                exception,
+                "{PartName} failed and was skipped. The read model is complete without it, but will not carry what it writes",
+                part.Name);
+
+            return false;
+        }
+    }
+
+    /// <summary>Whether this environment loaded the source system the part reads. All of its tables
+    /// or none of them: a part that ran against a partial load would silently produce a partial
+    /// answer, which is worse than no answer at all.</summary>
+    private bool ShouldRun(SqliteViewPart part, IReadOnlySet<string> staged)
+    {
+        var missing = part.RequiredSourceTables.Where(table => !staged.Contains(table)).ToArray();
+
+        if (missing.Length == 0)
+        {
+            return true;
+        }
+
+        if (part.Required)
+        {
+            throw new InvalidOperationException(
+                $"The staging database is missing {string.Join(", ", missing)}, which " +
+                $"'{part.Name}' reads. The read model cannot be built without it.");
+        }
+
+        logger.LogWarning(
+            "Skipping {PartName}: the staging database does not hold {MissingTables}. " +
+            "The read model will not carry {TableNames}",
+            part.Name, string.Join(", ", missing), string.Join(", ", part.TableNames));
+
+        return false;
+    }
+
+    /// <summary>The tables the attached staging database actually holds. Compared without case
+    /// because the loader quotes the dataset name when it creates them, so their stored case is
+    /// whatever the dataset definition carries rather than DuckDB's own folding.</summary>
+    private static async Task<IReadOnlySet<string>> StagedTablesAsync(
+        DuckDBConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT table_name FROM duckdb_tables() WHERE database_name = 'source'";
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            tables.Add(reader.GetString(0));
+        }
+
+        return tables;
     }
 
     private async Task LoadSqliteExtensionAsync(DuckDBConnection connection, CancellationToken cancellationToken)
@@ -87,6 +187,10 @@ public sealed class DuckDbSqliteViewWriter(
         string targetDatabasePath,
         CancellationToken cancellationToken)
     {
+        // Physical row order is not part of the read-model contract. Letting DuckDB reorder work
+        // avoids retaining order-tracking buffers that otherwise count against the memory limit.
+        await ExecuteAsync(connection, "SET preserve_insertion_order=false", cancellationToken);
+
         // Spilling belongs beside the output, on the volume the run was sized for, not wherever
         // DuckDB would otherwise choose.
         var workingDirectory = Path.GetDirectoryName(targetDatabasePath);
@@ -103,6 +207,19 @@ public sealed class DuckDbSqliteViewWriter(
         {
             await ExecuteAsync(connection, $"SET memory_limit={Literal(_configuration.MemoryLimit)}", cancellationToken);
         }
+    }
+
+    private static async Task SetQueryDateAsync(
+        DuckDBConnection connection,
+        DateTimeOffset queryDate,
+        CancellationToken cancellationToken)
+    {
+        // The date part alone: the snapshots carry a time of day, but every rule the transformation
+        // applies it to is date-granular, and keeping the time would make an afternoon run of the
+        // same snapshots a different query than a morning one.
+        var value = queryDate.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        await ExecuteAsync(connection, $"SET VARIABLE {QueryDateVariable} = DATE {Literal(value)}", cancellationToken);
     }
 
     private static async Task ExecuteAsync(DuckDBConnection connection, string sql, CancellationToken cancellationToken)

@@ -7,7 +7,9 @@ namespace KeeperData.Core.EtlPipeline.Stages;
 
 /// <summary>Head of the pipeline. Lists the source for the run and yields one DiscoveredFile per
 /// object, matched to its dataset. Does not group and does not open any file.</summary>
-public sealed class S3RawFolderSource(IExternalCatalogueServiceFactory catalogueFactory) : ISourceStage<DiscoveredFile>
+public sealed class S3RawFolderSource(
+    IExternalCatalogueServiceFactory catalogueFactory,
+    IDataSetDefinitions dataSetDefinitions) : ISourceStage<DiscoveredFile>
 {
     public string Name => "source:external";
 
@@ -17,7 +19,7 @@ public sealed class S3RawFolderSource(IExternalCatalogueServiceFactory catalogue
         var etlContext = (EtlPipelineContext)context;
 
         var catalogue = catalogueFactory.Create(etlContext.SourceType);
-        var fileSets = await catalogue.GetFileSetsAsync(etlContext.LookbackDays, cancellationToken);
+        var fileSets = await catalogue.GetAllFileSetsAsync(dataSetDefinitions.All, cancellationToken);
 
         foreach (var fileSet in fileSets)
         {

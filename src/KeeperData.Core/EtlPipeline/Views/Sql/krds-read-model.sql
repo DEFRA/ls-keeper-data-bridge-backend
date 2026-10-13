@@ -32,6 +32,13 @@ CREATE TABLE target.Party (
     Telephone TEXT,
     Mobile TEXT,
     Email TEXT,
+    AddressLine1 TEXT,
+    AddressStreet TEXT,
+    AddressTown TEXT,
+    AddressLocality TEXT,
+    AddressNation TEXT,
+    AddressPostcode TEXT,
+    AddressCountryCode TEXT,
     Roles TEXT
 );
 
@@ -59,9 +66,9 @@ CREATE TABLE target.Holding (
     UkInternalCode TEXT,
     Postcode TEXT,
     CountryCode TEXT,
-    Udprn TEXT,
-    Easting TEXT,
-    Northing TEXT,
+    Udprn INTEGER,
+    Easting INTEGER,
+    Northing INTEGER,
     OsMapReference TEXT
 );
 
@@ -100,6 +107,26 @@ CREATE TABLE target.PartyRole (
     Role TEXT NOT NULL CHECK (Role IN ('owner', 'holder', 'keeper')),
     UNIQUE (PartyId, HoldingId, HerdId, Role)
 );
+
+-- The optimise stage writes typed parquet, so a staging column may arrive as BIGINT, TIMESTAMP or
+-- BOOLEAN rather than VARCHAR - and which type a column lands on is data-dependent. Every staging
+-- table is therefore read through a _txt view that casts all of its columns to VARCHAR, so the
+-- semantics below - string_split, regexp_matches, sentinel handling, the record_order fingerprint -
+-- see the same text whatever type the parquet carried, and one logical snapshot produces one read
+-- model. COLUMNS(*) keeps the views drift-proof: a column added to or dropped from a staging table
+-- passes through without a change here.
+--
+-- Typed output is declared on the target schema instead of inherited from staging: a column the
+-- read model wants as a number (Udprn, Easting, Northing) is INTEGER on the target and crossed via
+-- TRY_CAST at the value boundary, so the output type is fixed even where the staging column is
+-- still VARCHAR.
+--
+-- A dataset joining this read model in future adds its own <table>_txt view here and reads it in
+-- place of the staging table.
+CREATE OR REPLACE TEMP VIEW sam_party_txt AS SELECT COLUMNS(*)::VARCHAR FROM sam_party;
+CREATE OR REPLACE TEMP VIEW sam_cph_holder_txt AS SELECT COLUMNS(*)::VARCHAR FROM sam_cph_holder;
+CREATE OR REPLACE TEMP VIEW sam_herd_txt AS SELECT COLUMNS(*)::VARCHAR FROM sam_herd;
+CREATE OR REPLACE TEMP VIEW sam_cph_holdings_txt AS SELECT COLUMNS(*)::VARCHAR FROM sam_cph_holdings;
 
 -- The source extracts do not carry a database primary key, so IDs are derived
 -- from stable source keys. This is SHA-1 name-derived and UUID-shaped, with
@@ -176,12 +203,12 @@ CREATE OR REPLACE TEMP MACRO valid_cphh(value) AS (
 
 CREATE OR REPLACE TEMP VIEW normalized_role_party_ids AS
 SELECT DISTINCT trim(token) AS PARTY_ID
-FROM sam_herd,
+FROM sam_herd_txt,
      UNNEST(string_split(COALESCE(KEEPER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> ''
 UNION
 SELECT DISTINCT trim(token) AS PARTY_ID
-FROM sam_herd,
+FROM sam_herd_txt,
      UNNEST(string_split(COALESCE(OWNER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> '';
 
@@ -191,25 +218,32 @@ CREATE OR REPLACE TEMP VIEW normalized_party AS
 -- null - losing data that was present. A sentinel means "absent", so it must never win.
 SELECT
     ids.PARTY_ID,
-    p.PERSON_TITLE,
+    COALESCE(null_dash(p.PERSON_TITLE), null_dash(h.PERSON_TITLE)) AS PERSON_TITLE,
     COALESCE(null_dash(p.PERSON_GIVEN_NAME), null_dash(h.PERSON_GIVEN_NAME)) AS PERSON_GIVEN_NAME,
     COALESCE(null_dash(p.PERSON_GIVEN_NAME2), null_dash(h.PERSON_GIVEN_NAME2)) AS PERSON_GIVEN_NAME2,
     COALESCE(null_dash(p.PERSON_INITIALS), null_dash(h.PERSON_INITIALS)) AS PERSON_INITIALS,
     COALESCE(null_dash(p.PERSON_FAMILY_NAME), null_dash(h.PERSON_FAMILY_NAME)) AS PERSON_FAMILY_NAME,
     COALESCE(null_placeholder(p.ORGANISATION_NAME), null_placeholder(h.ORGANISATION_NAME)) AS ORGANISATION_NAME,
-    p.TELEPHONE_NUMBER,
-    p.MOBILE_NUMBER,
-    p.INTERNET_EMAIL_ADDRESS,
+    COALESCE(null_dash(p.TELEPHONE_NUMBER), null_dash(h.TELEPHONE_NUMBER)) AS TELEPHONE_NUMBER,
+    COALESCE(null_dash(p.MOBILE_NUMBER), null_dash(h.MOBILE_NUMBER)) AS MOBILE_NUMBER,
+    COALESCE(null_dash(p.INTERNET_EMAIL_ADDRESS), null_dash(h.INTERNET_EMAIL_ADDRESS)) AS INTERNET_EMAIL_ADDRESS,
+    COALESCE(null_dash(p.PAON_DESCRIPTION), null_dash(h.PAON_DESCRIPTION)) AS PAON_DESCRIPTION,
+    COALESCE(null_dash(p.STREET), null_dash(h.STREET)) AS STREET,
+    COALESCE(null_dash(p.TOWN), null_dash(h.TOWN)) AS TOWN,
+    COALESCE(null_dash(p.LOCALITY), null_dash(h.LOCALITY)) AS LOCALITY,
+    COALESCE(title_case(p.UK_INTERNAL_CODE), title_case(h.UK_INTERNAL_CODE)) AS UK_INTERNAL_CODE,
+    COALESCE(null_dash(p.POSTCODE), null_dash(h.POSTCODE)) AS POSTCODE,
+    COALESCE(null_dash(p.COUNTRY_CODE), null_dash(h.COUNTRY_CODE)) AS COUNTRY_CODE,
     p.ROLES
 FROM (
-    SELECT PARTY_ID FROM sam_party
+    SELECT PARTY_ID FROM sam_party_txt
     UNION
-    SELECT PARTY_ID FROM sam_cph_holder
+    SELECT PARTY_ID FROM sam_cph_holder_txt
     UNION
     SELECT PARTY_ID FROM normalized_role_party_ids
 ) ids
-LEFT JOIN sam_party p USING (PARTY_ID)
-LEFT JOIN sam_cph_holder h USING (PARTY_ID);
+LEFT JOIN sam_party_txt p USING (PARTY_ID)
+LEFT JOIN sam_cph_holder_txt h USING (PARTY_ID);
 
 INSERT INTO target.Party
 SELECT
@@ -224,14 +258,65 @@ SELECT
     null_dash(TELEPHONE_NUMBER),
     null_dash(MOBILE_NUMBER),
     normalized_email(INTERNET_EMAIL_ADDRESS),
+    null_dash(PAON_DESCRIPTION),
+    null_dash(STREET),
+    null_dash(TOWN),
+    null_dash(LOCALITY),
+    null_dash(UK_INTERNAL_CODE),
+    null_dash(POSTCODE),
+    null_dash(COUNTRY_CODE),
     null_dash(ROLES)
 FROM normalized_party;
+
+-- The extract may omit an attribute column entirely rather than carrying it as blanks. The merge
+-- can only nullify a column some earlier file carried: one dropped before the baseline was built -
+-- ADDRESS_PK in production - never reaches the snapshot, so the staging table lacks it and a bare
+-- reference fails to bind. UNION ALL BY NAME against an empty row supplies every attribute column
+-- the read model consumes, NULL where the extract does not carry it. CPH is deliberately not
+-- supplied: an extract with no key is not holdings data, and the run should fail on that rather
+-- than emit an empty population.
+CREATE OR REPLACE TEMP VIEW sam_cph_holdings_attributed AS
+SELECT *
+FROM sam_cph_holdings_txt
+UNION ALL BY NAME
+SELECT
+    NULL AS FEATURE_NAME,
+    NULL AS CPH_TYPE,
+    NULL AS ADDRESS_PK,
+    NULL AS SAON_START_NUMBER,
+    NULL AS SAON_START_NUMBER_SUFFIX,
+    NULL AS SAON_END_NUMBER,
+    NULL AS SAON_END_NUMBER_SUFFIX,
+    NULL AS SAON_DESCRIPTION,
+    NULL AS PAON_START_NUMBER,
+    NULL AS PAON_START_NUMBER_SUFFIX,
+    NULL AS PAON_END_NUMBER,
+    NULL AS PAON_END_NUMBER_SUFFIX,
+    NULL AS PAON_DESCRIPTION,
+    NULL AS STREET,
+    NULL AS TOWN,
+    NULL AS LOCALITY,
+    NULL AS UK_INTERNAL_CODE,
+    NULL AS POSTCODE,
+    NULL AS COUNTRY_CODE,
+    NULL AS UDPRN,
+    NULL AS EASTING,
+    NULL AS NORTHING,
+    NULL AS OS_MAP_REFERENCE,
+    NULL AS ANIMAL_SPECIES_CODE,
+    NULL AS ANIMAL_PRODUCTION_USAGE_CODE,
+    NULL AS DISEASE_TYPE,
+    NULL AS INTERVAL,
+    NULL AS INTERVAL_UNIT_OF_TIME,
+    NULL AS FEATURE_ADDRESS_FROM_DATE,
+    NULL AS FEATURE_ADDRESS_TO_DATE
+WHERE FALSE;
 
 -- sam_cph_holdings is the canonical holding population. Relationship extracts may reference CPHs
 -- absent from this snapshot; those references are intentionally not materialised below.
 CREATE OR REPLACE TEMP VIEW normalized_holding_cph AS
 SELECT DISTINCT null_dash(CPH) AS Cph
-FROM sam_cph_holdings
+FROM sam_cph_holdings_attributed
 WHERE null_dash(CPH) IS NOT NULL;
 
 -- Every source row for a CPH is current: the extract filters out ended records, so a CPH with
@@ -252,7 +337,7 @@ SELECT
         COALESCE(h.FEATURE_ADDRESS_FROM_DATE, ''), '|',
         md5(to_json(h)::VARCHAR)
     ) AS record_order
-FROM sam_cph_holdings h;
+FROM sam_cph_holdings_attributed h;
 
 CREATE OR REPLACE TEMP VIEW holding_attributes AS
 SELECT
@@ -278,9 +363,13 @@ SELECT
     arg_max(title_case(UK_INTERNAL_CODE), record_order) AS UkInternalCode,
     arg_max(null_dash(POSTCODE), record_order) AS Postcode,
     arg_max(null_dash(COUNTRY_CODE), record_order) AS CountryCode,
-    arg_max(null_dash(UDPRN), record_order) AS Udprn,
-    arg_max(null_dash(EASTING), record_order) AS Easting,
-    arg_max(null_dash(NORTHING), record_order) AS Northing,
+    -- The address numbers are INTEGER on the target. The cast goes via DOUBLE because a DOUBLE
+    -- staging column renders '300002.0', which BIGINT's parser rejects; a value that is not numeric
+    -- at all still lands NULL, so the most recent row that actually carries a number wins, as with
+    -- the sentinels.
+    arg_max(TRY_CAST(TRY_CAST(null_dash(UDPRN) AS DOUBLE) AS BIGINT), record_order) AS Udprn,
+    arg_max(TRY_CAST(TRY_CAST(null_dash(EASTING) AS DOUBLE) AS BIGINT), record_order) AS Easting,
+    arg_max(TRY_CAST(TRY_CAST(null_dash(NORTHING) AS DOUBLE) AS BIGINT), record_order) AS Northing,
     arg_max(null_dash(OS_MAP_REFERENCE), record_order) AS OsMapReference
 FROM holding_source
 WHERE null_dash(CPH) IS NOT NULL
@@ -334,7 +423,7 @@ SELECT
     min(null_dash(MOVEMENT_RSTRCTN_RSN_CODE)) AS MovementRestrictionReasonCode,
     min(epoch_seconds(ANIMAL_GROUP_ID_MCH_FRM_DAT)) AS AnimalGroupFromDate,
     max(epoch_seconds(ANIMAL_GROUP_ID_MCH_TO_DAT)) AS AnimalGroupToDate
-FROM sam_herd
+FROM sam_herd_txt
 WHERE CPHH IS NOT NULL
     AND valid_cphh(CPHH)
 GROUP BY HERDMARK, CPHH;
@@ -364,7 +453,7 @@ SELECT DISTINCT
     null_dash(DISEASE_TYPE) AS DiseaseType,
     null_dash(INTERVAL) AS Interval,
     null_dash(INTERVAL_UNIT_OF_TIME) AS IntervalUnitOfTime
-FROM sam_cph_holdings
+FROM sam_cph_holdings_attributed
 WHERE null_dash(CPH) IS NOT NULL
   AND null_dash(ANIMAL_SPECIES_CODE) IS NOT NULL;
 
@@ -390,7 +479,7 @@ SELECT DISTINCT
     trim(token) AS Cph,
     NULL AS HerdId,
     'holder' AS Role
-FROM sam_cph_holder,
+FROM sam_cph_holder_txt,
      UNNEST(string_split(CPHS, ',')) AS split(token)
 WHERE CPHS IS NOT NULL AND trim(token) <> ''
 UNION
@@ -399,7 +488,7 @@ SELECT DISTINCT
     left(CPHH, 11) AS Cph,
     source_guid('herd', HERDMARK || '|' || CPHH) AS HerdId,
     'keeper' AS Role
-FROM sam_herd,
+FROM sam_herd_txt,
      UNNEST(string_split(COALESCE(KEEPER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> ''
     AND valid_cphh(CPHH)
@@ -409,7 +498,7 @@ SELECT DISTINCT
     left(CPHH, 11) AS Cph,
     source_guid('herd', HERDMARK || '|' || CPHH) AS HerdId,
     'owner' AS Role
-FROM sam_herd,
+FROM sam_herd_txt,
      UNNEST(string_split(COALESCE(OWNER_PARTY_IDS, ''), ',')) AS split(token)
 WHERE trim(token) <> ''
     AND valid_cphh(CPHH);

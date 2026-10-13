@@ -51,6 +51,24 @@ public class EtlImportDocument
     /// <summary>Exception message only - never a stack trace, and never anything carrying a salt,
     /// password or presigned URL.</summary>
     public string? Error { get; set; }
+
+    /// <summary>Structured context about the failure - which stage, dataset, file or record it
+    /// belongs to - so a caller can see where to look rather than parse the message.</summary>
+    public EtlImportErrorDetail? ErrorDetail { get; set; }
+
+    /// <summary>What a purge removed. Only set on documents whose status is Purged; a purge is not
+    /// a run, so it has no stages, datasets or output keys.</summary>
+    public EtlImportPurgeDocument? Purge { get; set; }
+}
+
+[ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
+public class EtlImportPurgeDocument
+{
+    /// <summary>The stage names the purge resolved to, downstream cascade included.</summary>
+    public List<string> Stages { get; set; } = [];
+
+    /// <summary>Objects deleted across every stage.</summary>
+    public int DeletedCount { get; set; }
 }
 
 [ExcludeFromCodeCoverage(Justification = "MongoDB document class - no logic to test.")]
@@ -77,6 +95,7 @@ public class EtlImportDatasetDocument
     public List<EtlImportSourceFileDocument> SourceFiles { get; set; } = [];
     public List<string> RawKeys { get; set; } = [];
     public List<string> NormalisedKeys { get; set; } = [];
+    public List<string> OptimisedKeys { get; set; } = [];
 
     public string? SnapshotKey { get; set; }
 
@@ -85,7 +104,11 @@ public class EtlImportDatasetDocument
 
     public long? RowCount { get; set; }
     public long? RowsUpserted { get; set; }
+    public long? RowsDeleted { get; set; }
     public long? RowsIgnoredDeletes { get; set; }
+
+    /// <summary>Rows whose change type was unrecognised, so they were not applied.</summary>
+    public long? RowsRejected { get; set; }
 
     /// <summary>Columns held by the snapshot that a file applied did not carry. Present so schema drift
     /// is visible to whoever is reading the run, rather than only in the logs.</summary>

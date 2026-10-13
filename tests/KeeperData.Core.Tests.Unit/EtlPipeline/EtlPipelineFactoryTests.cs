@@ -1,10 +1,12 @@
 using FluentAssertions;
+using KeeperData.Core.Crypto;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Snapshots;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.Storage;
+using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
 using KeeperData.Core.Tests.Unit.TestSupport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,12 +30,24 @@ public class EtlPipelineFactoryTests
         storageProviderMock.Setup(x => x.ForFolder(It.IsAny<string>())).Returns(dummyBlobStorage.Object);
 
         var normaliseLoggerMock = new Mock<ILogger<NormaliseStage>>();
+        var optimiseLoggerMock = new Mock<ILogger<OptimiseStage>>();
         var snapshotLoggerMock = new Mock<ILogger<SnapshotStage>>();
-        var decryptStage = AutoMocked.Instance<DecryptStage>();
+        var decryptStage = new DecryptStage(
+            Mock.Of<IBlobStorageServiceFactory>(),
+            storageProviderMock.Object,
+            Mock.Of<IAesCryptoTransform>(),
+            Mock.Of<IPasswordSaltService>(),
+            TestConcurrency.Default,
+            NullLogger<DecryptStage>.Instance);
         var normaliseStage = new NormaliseStage(
             storageProviderMock.Object,
             hcdtNormaliserMock.Object,
+            TestConcurrency.Default,
             normaliseLoggerMock.Object);
+        var optimiseStage = new OptimiseStage(
+            storageProviderMock.Object,
+            TestConcurrency.Default,
+            optimiseLoggerMock.Object);
         var snapshotStage = new SnapshotStage(
             storageProviderMock.Object,
             new Mock<IDeltaMergeEngine>().Object,
@@ -43,11 +57,14 @@ public class EtlPipelineFactoryTests
 
         var sut = new EtlPipelineFactory(
             catalogueFactoryMock.Object,
-            decryptStage,
-            normaliseStage,
-            snapshotStage,
-            loadDuckDbStage,
-            exportSqliteStage);
+            Mock.Of<IDataSetDefinitions>(),
+            new EtlStages(
+                decryptStage,
+                normaliseStage,
+                optimiseStage,
+                snapshotStage,
+                loadDuckDbStage,
+                exportSqliteStage));
 
         // Act
         var pipeline = sut.Create();
@@ -63,6 +80,7 @@ public class EtlPipelineFactoryTests
             "discover",
             "decrypt",
             "normalise",
+            "optimise",
             "snapshot",
             "load-duckdb",
             "export-sqlite"

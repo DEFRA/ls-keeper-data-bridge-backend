@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using DuckDB.NET.Data;
 using FluentAssertions;
 using KeeperData.Core.EtlPipeline.Views;
 using KeeperData.Infrastructure.EtlPipeline.Views;
@@ -16,6 +17,12 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         Directory.CreateTempSubdirectory("krds-view-tests-").FullName;
 
     private readonly string _sourcePath;
+
+    /// <summary>The as-at date every run in this class is evaluated for. The CTS fixture's dates sit
+    /// either side of it, so a transformation that ignored it would fail visibly rather than by
+    /// drifting on whatever day the suite happens to run.</summary>
+    private static readonly DateTimeOffset QueryDate =
+        new(2026, 9, 15, 7, 0, 3, TimeSpan.Zero);
 
     public DuckDbSqliteViewWriterTests()
     {
@@ -42,8 +49,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, name);
 
         await Sut().WriteAsync(
-            new SqliteViewWriteRequest(
-                _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+            new SqliteViewWriteRequest(_sourcePath, target, SqliteViewDefinition.Parts, QueryDate));
 
         return target;
     }
@@ -60,15 +66,132 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         }
     }
 
+    /// <summary>The remote environments that load no CTS extracts. Before the parts were gated the
+    /// whole script failed to bind here, and the SAM read model was lost along with the CTS one.</summary>
+    [Fact]
+    public async Task Skips_the_cts_projection_when_the_staging_database_holds_no_cts_tables()
+    {
+        var source = Path.Combine(_workingDirectory, "sam-only.duckdb");
+        SamExtractFixture.Create(source, includeCts: false);
+
+        var target = Path.Combine(_workingDirectory, "sam-only.sqlite");
+
+        var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
+            source, target, SqliteViewDefinition.Parts, QueryDate));
+
+        result.Tables.Select(table => table.Name).Should().Equal(
+            "Party", "Holding", "Herd", "HoldingAnimalProfile", "PartyRole");
+
+        Scalar(target, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='CtsOpenLocation'")
+            .Should().Be(0L, "an absent table tells a reader CTS was never loaded; an empty one would not");
+
+        Scalar(target, "SELECT count(*) FROM Holding").Should().Be(4L, "the SAM half is unaffected");
+    }
+
+    /// <summary>All of a part's tables or none of them: a projection run over half its sources would
+    /// answer confidently and wrongly.</summary>
+    [Fact]
+    public async Task Skips_the_cts_projection_when_only_some_of_its_tables_were_loaded()
+    {
+        var source = Path.Combine(_workingDirectory, "partial-cts.duckdb");
+        SamExtractFixture.Create(source);
+        Drop(source, "cts_counties");
+
+        var target = Path.Combine(_workingDirectory, "partial-cts.sqlite");
+
+        var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
+            source, target, SqliteViewDefinition.Parts, QueryDate));
+
+        result.Tables.Select(table => table.Name).Should().NotContain("CtsOpenLocation");
+    }
+
+    [Fact]
+    public async Task Refuses_to_build_a_read_model_with_no_sam_tables_to_build_it_from()
+    {
+        var source = Path.Combine(_workingDirectory, "cts-only.duckdb");
+        CtsExtractFixture.Create(source);
+
+        var act = async () => await Sut().WriteAsync(new SqliteViewWriteRequest(
+            source, Path.Combine(_workingDirectory, "never-written.sqlite"),
+            SqliteViewDefinition.Parts, QueryDate));
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain("sam_party").And.Contain("krds-read-model",
+                "a required part names what it was missing rather than leaving a binder error to explain it");
+    }
+
+    /// <summary>What keeps the declared lists honest. A script that starts reading a new staging
+    /// table gets it from a fixture, and this fails until it is declared alongside.</summary>
+    [Fact]
+    public void Declares_every_staging_table_its_parts_read()
+    {
+        var samOnly = Path.Combine(_workingDirectory, "declared-sam.duckdb");
+        SamExtractFixture.Create(samOnly, includeCts: false);
+
+        var ctsOnly = Path.Combine(_workingDirectory, "declared-cts.duckdb");
+        CtsExtractFixture.Create(ctsOnly);
+
+        StagedTables(samOnly).Should().BeEquivalentTo(Part("krds-read-model").RequiredSourceTables);
+        StagedTables(ctsOnly).Should().BeEquivalentTo(Part("cts-open-locations").RequiredSourceTables);
+    }
+
+    private static SqliteViewPart Part(string name)
+        => SqliteViewDefinition.Parts.Single(part => part.Name == name);
+
+    private static void Drop(string databasePath, string table)
+    {
+        using var connection = new DuckDBConnection($"Data Source={databasePath}");
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = $"DROP TABLE {table}";
+        command.ExecuteNonQuery();
+    }
+
+    private static List<string> StagedTables(string databasePath)
+    {
+        using var connection = new DuckDBConnection($"Data Source={databasePath}");
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT table_name FROM duckdb_tables()";
+
+        var tables = new List<string>();
+        using var reader = command.ExecuteReader();
+
+        while (reader.Read())
+        {
+            tables.Add(reader.GetString(0));
+        }
+
+        return tables;
+    }
+
     [Fact]
     public async Task Applies_the_configured_memory_limit()
     {
         var target = Path.Combine(_workingDirectory, "memory-limited.sqlite");
 
         var result = await Sut("512MB").WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+            _sourcePath, target, SqliteViewDefinition.Parts, QueryDate));
 
         result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
+    }
+
+    [Fact]
+    public async Task Disables_insertion_order_preservation()
+    {
+        var target = Path.Combine(_workingDirectory, "settings.sqlite");
+        const string sql = """
+            CREATE TABLE target.WriterSettings (PreserveInsertionOrder BOOLEAN);
+            INSERT INTO target.WriterSettings
+            SELECT current_setting('preserve_insertion_order');
+            """;
+
+        await Sut().WriteAsync(new SqliteViewWriteRequest(
+            _sourcePath, target, [new SqliteViewPart("settings", sql, [], ["WriterSettings"], Required: true)], QueryDate));
+
+        Scalar(target, "SELECT PreserveInsertionOrder FROM WriterSettings").Should().Be(0);
     }
 
     [Fact]
@@ -77,7 +200,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = Path.Combine(_workingDirectory, "counted.sqlite");
 
         var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+            _sourcePath, target, SqliteViewDefinition.Parts, QueryDate));
 
         result.Tables.Should().BeEquivalentTo(new[]
         {
@@ -85,7 +208,8 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
             new SqliteViewTable("Holding", 4),
             new SqliteViewTable("Herd", 1),
             new SqliteViewTable("HoldingAnimalProfile", 2),
-            new SqliteViewTable("PartyRole", 5)
+            new SqliteViewTable("PartyRole", 5),
+            new SqliteViewTable("CtsOpenLocation", 9)
         });
     }
 
@@ -110,6 +234,14 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
                         "ifnull(Email,'<null>') || '|' || ifnull(Roles,'<null>') " +
                         "FROM Party WHERE SourcePartyId='P6'")
             .Should().Equal(["<null>|<null>|<null>|<null>|<null>|<null>"]);
+
+        // The same sentinels appear across P6's address columns and must normalise away identically.
+        Strings(target, "SELECT ifnull(AddressLine1,'<null>') || '|' || ifnull(AddressStreet,'<null>') || '|' || " +
+                        "ifnull(AddressTown,'<null>') || '|' || ifnull(AddressLocality,'<null>') || '|' || " +
+                        "ifnull(AddressNation,'<null>') || '|' || ifnull(AddressPostcode,'<null>') || '|' || " +
+                        "ifnull(AddressCountryCode,'<null>') " +
+                        "FROM Party WHERE SourcePartyId='P6'")
+            .Should().Equal(["<null>|<null>|<null>|<null>|<null>|<null>|<null>"]);
     }
 
     [Fact]
@@ -124,6 +256,89 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         // must win rather than being masked and normalised away to null.
         Strings(target, "SELECT GivenName || '|' || FamilyName FROM Party WHERE SourcePartyId='P2'")
             .Should().Equal(["Brenda|Baker"]);
+    }
+
+    /// <summary>Contact details follow the same rule as names: sam_cph_holder carries a title,
+    /// telephone, mobile and email of its own, and a sentinel in sam_party must not mask any of
+    /// them.</summary>
+    [Fact]
+    public async Task Falls_back_to_the_holder_for_contact_details_sam_party_only_sentinels()
+    {
+        var target = await RunAsync();
+
+        // Every one of P2's four contact columns is '-', ',', '' or absent in sam_party.
+        Strings(target, "SELECT PersonTitle || '|' || Telephone || '|' || Mobile || '|' || Email " +
+                        "FROM Party WHERE SourcePartyId='P2'")
+            .Should().Equal(["Mrs|01392 000002|07700 900002|brenda.baker@example.test"],
+                "a sentinel means absent, and the holder-sourced email is folded like any other");
+    }
+
+    /// <summary>The production majority: most parties are named by sam_cph_holder and by nothing
+    /// else, so taking contact details from sam_party alone would discard them.</summary>
+    [Fact]
+    public async Task Takes_contact_details_from_the_holder_when_sam_party_never_names_the_party()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT PersonTitle || '|' || ifnull(Telephone,'<null>') || '|' || Mobile || '|' || Email " +
+                        "FROM Party WHERE SourcePartyId='P4'")
+            .Should().Equal(["Mr|<null>|07700 900004|derek.dunn@example.test"]);
+    }
+
+    [Fact]
+    public async Task Keeps_sam_party_as_the_authority_when_both_extracts_carry_a_real_value()
+    {
+        var target = await RunAsync();
+
+        // P3 is 'Ms' in sam_party and 'Dr' in sam_cph_holder. The fallback fills gaps; it does not
+        // reorder precedence.
+        Strings(target, "SELECT PersonTitle FROM Party WHERE SourcePartyId='P3'")
+            .Should().Equal(["Ms"]);
+    }
+
+    /// <summary>Address follows the same precedence rule as every other contact attribute: sam_party
+    /// is authoritative when it carries a real value, and sam_cph_holder only fills gaps.</summary>
+    [Fact]
+    public async Task Maps_address_from_sam_party_when_present()
+    {
+        var target = await RunAsync();
+
+        // P1's address lives in sam_party alone.
+        Strings(target, "SELECT AddressLine1 || '|' || AddressStreet || '|' || AddressTown || '|' || AddressLocality || '|' || " +
+                        "AddressNation || '|' || AddressPostcode || '|' || AddressCountryCode " +
+                        "FROM Party WHERE SourcePartyId='P1'")
+            .Should().Equal(["Archer Farm|Mill Lane|Exeter|Exeter District|England|EX1 2AA|GB"]);
+
+        // P3 has a real address in sam_party, which a different one in sam_cph_holder must not
+        // displace - the same precedence as its PersonTitle.
+        Strings(target, "SELECT AddressLine1 FROM Party WHERE SourcePartyId='P3'")
+            .Should().Equal(["Cooper House"]);
+    }
+
+    /// <summary>P2's address is a sentinel in sam_party, so the holder's real address must come
+    /// through rather than being masked and normalised away to null.</summary>
+    [Fact]
+    public async Task Falls_back_to_the_holder_for_address_details_sam_party_only_sentinels()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT AddressLine1 || '|' || AddressStreet || '|' || ifnull(AddressTown,'<null>') || '|' || " +
+                        "ifnull(AddressLocality,'<null>') || '|' || AddressNation || '|' || AddressPostcode || '|' || AddressCountryCode " +
+                        "FROM Party WHERE SourcePartyId='P2'")
+            .Should().Equal(["Baker Cottage|Fore Street|Exeter|<null>|England|EX1 3BB|GB"]);
+    }
+
+    /// <summary>P4 is named by sam_cph_holder alone, so its address - like its contact details -
+    /// comes entirely from the holder extract.</summary>
+    [Fact]
+    public async Task Takes_address_from_the_holder_when_sam_party_never_names_the_party()
+    {
+        var target = await RunAsync();
+
+        Strings(target, "SELECT AddressLine1 || '|' || ifnull(AddressStreet,'<null>') || '|' || AddressTown || '|' || " +
+                        "AddressLocality || '|' || AddressNation || '|' || AddressPostcode || '|' || ifnull(AddressCountryCode,'<null>') " +
+                        "FROM Party WHERE SourcePartyId='P4'")
+            .Should().Equal(["Dunn Farm|<null>|Newport|Newport District|Wales|NP1 2CC|<null>"]);
     }
 
     [Fact]
@@ -153,6 +368,33 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         // rule - but the address must still follow the record the name came from.
         Strings(target, "SELECT FeatureName || '|' || Street FROM Holding WHERE Cph='01/234/5678'")
             .Should().Equal(["Main Farm|New Street"]);
+    }
+
+    [Fact]
+    public async Task Stores_the_numeric_address_fields_as_integers()
+    {
+        var target = await RunAsync();
+
+        // The most recent record supplies the numbers, and they land as SQLite integers even
+        // though the staging column is VARCHAR - the target type is declared, not inherited.
+        Strings(target, "SELECT Udprn || '|' || Easting || '|' || Northing || '|' || typeof(Udprn) " +
+                        "FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Equal(["80000002|300002|400002|integer"]);
+
+        // The later '02/345/6789' record carries no numbers, so the earlier real ones win.
+        Strings(target, "SELECT Udprn FROM Holding WHERE Cph='02/345/6789'")
+            .Should().Equal(["80000003"]);
+    }
+
+    [Fact]
+    public async Task The_address_numbers_follow_the_same_record_the_name_came_from()
+    {
+        var target = await RunAsync();
+
+        // The ordering date ties for 04/567/8901; whichever record wins, its numbers come with it.
+        Strings(target, "SELECT FeatureName || '|' || Udprn FROM Holding WHERE Cph='04/567/8901'")
+            .Should().ContainSingle()
+            .Which.Should().BeOneOf("Tied Alpha|80000006", "Tied Beta|80000007");
     }
 
     [Fact]
@@ -341,8 +583,10 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
         foreach (var table in SqliteViewDefinition.TableNames)
         {
-            Strings(first, $"SELECT Id FROM {table} ORDER BY Id")
-                .Should().Equal(Strings(second, $"SELECT Id FROM {table} ORDER BY Id"),
+            var key = KeyColumn(table);
+
+            Strings(first, $"SELECT {key} FROM {table} ORDER BY {key}")
+                .Should().Equal(Strings(second, $"SELECT {key} FROM {table} ORDER BY {key}"),
                     "{0} ids must be stable across runs", table);
         }
     }
@@ -362,6 +606,62 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         }
     }
 
+    /// <summary>The optimise stage types staging columns natively; the read model reads them
+    /// through _txt VARCHAR views and declares its own output types, so a typed source must
+    /// produce byte-identical content to the all-string source it came from.</summary>
+    [Fact]
+    public async Task Produces_the_same_read_model_from_typed_staging_columns()
+    {
+        var typedSource = Path.Combine(_workingDirectory, "staging-typed.duckdb");
+        SamExtractFixture.Create(typedSource,
+            omittedHoldingColumns: [],
+            holdingColumnTypes: new Dictionary<string, string>
+            {
+                ["SAON_START_NUMBER"] = "BIGINT",
+                ["UDPRN"] = "BIGINT",
+                ["EASTING"] = "DOUBLE",
+                ["NORTHING"] = "DOUBLE",
+                ["FEATURE_ADDRESS_FROM_DATE"] = "TIMESTAMP",
+                ["FEATURE_ADDRESS_TO_DATE"] = "TIMESTAMP"
+            },
+            herdColumnTypes: new Dictionary<string, string>
+            {
+                ["ANIMAL_GROUP_ID_MCH_FRM_DAT"] = "TIMESTAMP",
+                ["ANIMAL_GROUP_ID_MCH_TO_DAT"] = "TIMESTAMP"
+            });
+
+        var target = Path.Combine(_workingDirectory, "typed.sqlite");
+
+        var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
+            typedSource, target, SqliteViewDefinition.Parts, QueryDate));
+
+        result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
+
+        var baseline = await RunAsync("baseline.sqlite");
+
+        foreach (var table in SqliteViewDefinition.TableNames.Where(name => name != "Holding"))
+        {
+            Rows(target, table).Should().Equal(Rows(baseline, table),
+                "a typed staging column must read the same through the _txt view as the string it holds");
+        }
+
+        // Every holding but the tied-date one must be identical. The tie is settled on a row
+        // fingerprint, and a DOUBLE column renders '300006.0' where the VARCHAR holds '300006', so
+        // the fingerprint differs and either tied record may win - both are valid, provided the
+        // whole row follows the winner.
+        Rows(target, "Holding").Where(row => !row.Contains("04/567/8901"))
+            .Should().Equal(Rows(baseline, "Holding").Where(row => !row.Contains("04/567/8901")),
+                "only the documented-arbitrary tie-break may differ between staging types");
+
+        foreach (var database in new[] { target, baseline })
+        {
+            Strings(database, "SELECT FeatureName || '|' || Street || '|' || Udprn " +
+                              "FROM Holding WHERE Cph='04/567/8901'")
+                .Should().ContainSingle()
+                .Which.Should().BeOneOf("Tied Alpha|Alpha Street|80000006", "Tied Beta|Beta Street|80000007");
+        }
+    }
+
     [Fact]
     public async Task Settles_every_column_on_one_record_when_the_ordering_date_ties()
     {
@@ -371,6 +671,36 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         Strings(target, "SELECT FeatureName || '|' || Street FROM Holding WHERE Cph='04/567/8901'")
             .Should().ContainSingle()
             .Which.Should().BeOneOf("Tied Alpha|Alpha Street", "Tied Beta|Beta Street");
+    }
+
+    /// <summary>The production case: the extract dropped ADDRESS_PK before the baseline snapshot was
+    /// built, so the staging table has no such column at all - nothing was there for the merge to
+    /// nullify. An attribute the extract does not carry reads as absent, not as a binder error.</summary>
+    [Fact]
+    public async Task Treats_a_column_the_extract_never_carried_as_absent()
+    {
+        var thinSource = Path.Combine(_workingDirectory, "staging-thin.duckdb");
+        SamExtractFixture.Create(thinSource,
+            omittedHoldingColumns: ["ADDRESS_PK", "UDPRN", "EASTING", "NORTHING"]);
+
+        var target = Path.Combine(_workingDirectory, "thin.sqlite");
+
+        var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
+            thinSource, target, SqliteViewDefinition.Parts, QueryDate));
+
+        result.Tables.Should().HaveCount(SqliteViewDefinition.TableNames.Count);
+
+        Strings(target, "SELECT Cph || '|' || ifnull(AddressPk,'<null>') || '|' || ifnull(Udprn,'<null>') " +
+                        "FROM Holding ORDER BY Cph")
+            .Should().Equal(
+                "01/234/5678|<null>|<null>",
+                "02/345/6789|<null>|<null>",
+                "03/456/7890|<null>|<null>",
+                "04/567/8901|<null>|<null>");
+
+        // The columns the extract does carry are unaffected.
+        Strings(target, "SELECT FeatureName FROM Holding WHERE Cph='01/234/5678'")
+            .Should().Equal(["Main Farm"]);
     }
 
     [Fact]
@@ -390,6 +720,9 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
         Strings(target, "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'ix_%' ORDER BY name")
             .Should().Equal(
+                "ix_cts_open_location_cph",
+                "ix_cts_open_location_keeper_email",
+                "ix_cts_open_location_keeper_post_code",
                 "ix_herd_holding",
                 "ix_holding_cph",
                 "ix_party_email",
@@ -412,7 +745,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var target = await RunAsync();
 
         var act = async () => await Sut().WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames));
+            _sourcePath, target, SqliteViewDefinition.Parts, QueryDate));
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already exists*");
     }
@@ -423,8 +756,8 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var act = async () => await Sut().WriteAsync(new SqliteViewWriteRequest(
             _sourcePath,
             Path.Combine(_workingDirectory, "blank-table.sqlite"),
-            SqliteViewDefinition.Sql,
-            [""]));
+            [new SqliteViewPart("blank", "SELECT 1", [], [""], Required: true)],
+            QueryDate));
 
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("Table name is required*");
     }
@@ -442,8 +775,8 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var act = async () => await writer.WriteAsync(new SqliteViewWriteRequest(
             _sourcePath,
             Path.Combine(_workingDirectory, "never-written.sqlite"),
-            SqliteViewDefinition.Sql,
-            SqliteViewDefinition.TableNames));
+            SqliteViewDefinition.Parts,
+            QueryDate));
 
         (await act.Should().ThrowAsync<SqliteViewExtensionException>())
             .Which.Message.Should().NotContain("not-bundled", "the configured path is logged, not served");
@@ -451,6 +784,12 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
     private static bool IsVersion5Shaped(string id)
         => Guid.TryParse(id, out _) && id[14] == '5' && id[19] == '8';
+
+    /// <summary>What uniquely names a row, for the tests that walk every table. The SAM tables carry
+    /// a derived Id because other tables reference them; CtsOpenLocation has no dependants and uses
+    /// its natural key instead.</summary>
+    private static string KeyColumn(string table)
+        => table == "CtsOpenLocation" ? "LocationNumber" : "Id";
 
     private static long Scalar(string databasePath, string sql)
     {
@@ -482,7 +821,7 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     {
         using var connection = Open(databasePath);
         using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT * FROM {table} ORDER BY Id";
+        command.CommandText = $"SELECT * FROM {table} ORDER BY {KeyColumn(table)}";
 
         var rows = new List<string>();
         using var reader = command.ExecuteReader();
@@ -512,3 +851,4 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 }
+

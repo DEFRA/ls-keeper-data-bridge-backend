@@ -11,7 +11,8 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
     public List<(Guid ImportId, string Stage)> StagesStarted { get; } = [];
     public List<(Guid ImportId, EtlImportStageProgress Progress)> Progress { get; } = [];
     public List<Guid> Succeeded { get; } = [];
-    public List<(Guid ImportId, string Error)> Failed { get; } = [];
+    public List<(Guid ImportId, string Error, EtlImportErrorDetail? Detail)> Failed { get; } = [];
+    public List<EtlPurgeRecord> Purges { get; } = [];
 
     public EtlImportDocument? Document { get; set; }
     public EtlImportDocument? InFlight { get; set; }
@@ -48,9 +49,9 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
         return Task.CompletedTask;
     }
 
-    public Task MarkFailedAsync(Guid importId, string error, CancellationToken cancellationToken)
+    public Task MarkFailedAsync(Guid importId, string error, EtlImportErrorDetail? detail, CancellationToken cancellationToken)
     {
-        Failed.Add((importId, error));
+        Failed.Add((importId, error, detail));
         return Task.CompletedTask;
     }
 
@@ -64,5 +65,11 @@ public sealed class RecordingEtlImportStatusStore : IEtlImportStatusStore
     {
         ListRequests.Add((skip, top));
         return Task.FromResult(new EtlImportPage([.. Listed.Skip(skip).Take(top)], Listed.Count));
+    }
+
+    public Task RecordPurgeAsync(EtlPurgeRecord purge, CancellationToken cancellationToken)
+    {
+        Purges.Add(purge);
+        return Task.CompletedTask;
     }
 }

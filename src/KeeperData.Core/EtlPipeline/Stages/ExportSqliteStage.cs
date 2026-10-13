@@ -3,9 +3,11 @@ using System.Globalization;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.EtlPipeline.Views;
+using KeeperData.Core.EtlPipeline.Views.TestData;
 using KeeperData.Core.Pipeline;
 using KeeperData.Core.Storage;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace KeeperData.Core.EtlPipeline.Stages;
 
@@ -20,9 +22,34 @@ namespace KeeperData.Core.EtlPipeline.Stages;
 public sealed class ExportSqliteStage(
     IEtlPipelineStorageProvider storageProvider,
     ISqliteViewWriter viewWriter,
+    IOptions<EtlFeatureFlags> featureFlags,
     ILogger<ExportSqliteStage> logger) : IStage<StagingDatabase, SqliteExportFile>
 {
+    /// <summary>What this host runs, and what that identifies itself as. Settled once, so every run
+    /// of the process exports the same thing.</summary>
+    private readonly (IReadOnlyList<SqliteViewPart> Parts, string Version) _transformation =
+        Compose(featureFlags.Value.TestDataPolicy);
+
     public string Name => "export-sqlite";
+
+    /// <summary>Seeding changes what the export holds, so it has to change what the export is
+    /// fingerprinted as: an already-exported timestamp is skipped on the strength of that
+    /// fingerprint, and changing the policy would otherwise do nothing until new source data
+    /// arrived.</summary>
+    private static (IReadOnlyList<SqliteViewPart>, string) Compose(TestDataPolicy policy)
+    {
+        var personas = SeedTestData.For(policy);
+
+        if (personas.Count == 0)
+        {
+            return (SqliteViewDefinition.Parts, SqliteViewDefinition.Version);
+        }
+
+        IReadOnlyList<SqliteViewPart> parts =
+            [.. SqliteViewDefinition.Parts, SeedTestDataPart.Create(personas)];
+
+        return (parts, SqliteViewDefinition.VersionOf(parts));
+    }
 
     public async IAsyncEnumerable<SqliteExportFile> RunAsync(
         IAsyncEnumerable<StagingDatabase> input,
@@ -56,7 +83,7 @@ public sealed class ExportSqliteStage(
         {
             logger.LogInformation(
                 "SQLite view {ViewKey} already exists for transformation {Version}; reusing it",
-                outputKey, SqliteViewDefinition.Version);
+                outputKey, _transformation.Version);
 
             return new SqliteExportFile
             {
@@ -79,7 +106,7 @@ public sealed class ExportSqliteStage(
 
             var result = await viewWriter.WriteAsync(
                 new SqliteViewWriteRequest(
-                    sourcePath, targetPath, SqliteViewDefinition.Sql, SqliteViewDefinition.TableNames),
+                    sourcePath, targetPath, _transformation.Parts, database.SourceTimestamp),
                 cancellationToken);
 
             await EtlArtefactWrite.RunAsync(
@@ -123,18 +150,32 @@ public sealed class ExportSqliteStage(
         var metadata = await viewsStorage.GetMetadataAsync(outputKey, cancellationToken);
         var version = MetadataValue(metadata.UserMetadata, ViewsFileNaming.VersionMetadataKey);
 
-        if (version != SqliteViewDefinition.Version)
+        if (version != _transformation.Version)
         {
             logger.LogInformation(
                 "SQLite view {ViewKey} was built by transformation {ExistingVersion}, not {Version}; rebuilding it",
-                outputKey, version ?? "(unrecorded)", SqliteViewDefinition.Version);
+                outputKey, version ?? "(unrecorded)", _transformation.Version);
 
             return null;
         }
 
-        var tables = new List<SqliteViewTable>(SqliteViewDefinition.TableNames.Count);
+        // What the object carries, not what the transformation can produce: an environment that
+        // loads no CTS extracts exports without Open Locations, and demanding a count for it would
+        // rebuild the same database on every run.
+        var recorded = MetadataValue(metadata.UserMetadata, ViewsFileNaming.TablesMetadataKey);
 
-        foreach (var tableName in SqliteViewDefinition.TableNames)
+        if (string.IsNullOrWhiteSpace(recorded))
+        {
+            logger.LogInformation(
+                "SQLite view {ViewKey} does not record which tables it holds; rebuilding it", outputKey);
+
+            return null;
+        }
+
+        var tableNames = recorded.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var tables = new List<SqliteViewTable>(tableNames.Length);
+
+        foreach (var tableName in tableNames)
         {
             var count = MetadataValue(
                 metadata.UserMetadata,
@@ -164,7 +205,7 @@ public sealed class ExportSqliteStage(
             .FirstOrDefault(entry => entry.Key.EndsWith(key, StringComparison.OrdinalIgnoreCase))
             .Value;
 
-    private static async Task PublishAsync(
+    private async Task PublishAsync(
         IBlobStorageService viewsStorage,
         string outputKey,
         string localPath,
@@ -173,7 +214,8 @@ public sealed class ExportSqliteStage(
     {
         var metadata = new Dictionary<string, string>
         {
-            [ViewsFileNaming.VersionMetadataKey] = SqliteViewDefinition.Version
+            [ViewsFileNaming.VersionMetadataKey] = _transformation.Version,
+            [ViewsFileNaming.TablesMetadataKey] = string.Join(',', tables.Select(table => table.Name))
         };
 
         foreach (var table in tables)

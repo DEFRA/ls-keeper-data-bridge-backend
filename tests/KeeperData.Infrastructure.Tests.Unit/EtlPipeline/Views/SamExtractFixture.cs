@@ -4,35 +4,73 @@ namespace KeeperData.Infrastructure.Tests.Unit.EtlPipeline.Views;
 
 /// <summary>A small SAM extract shaped to exercise the transformation's rules: missing-value
 /// sentinels, comma-delimited relationship tokens, duplicate source rows, an invalid CPHH, and
-/// relationships pointing at holdings and herds that are not in the canonical population.</summary>
+/// relationships pointing at holdings and herds that are not in the canonical population.
+///
+/// The CTS tables are created alongside it by default, by <see cref="CtsExtractFixture"/>, because
+/// most callers want a staging database a full run would have produced. Pass includeCts: false for
+/// the environment that loads no CTS extracts at all.</summary>
 public static class SamExtractFixture
 {
-    public static void Create(string databasePath)
+    /// <summary>Every column the read model reads from sam_cph_holdings, in the order the fixture
+    /// has always declared them. A column the extract never carried can be left out of the staging
+    /// table entirely, so tests may withhold any of them.</summary>
+    private static readonly string[] HoldingColumns =
+    [
+        "CPH", "FEATURE_NAME", "CPH_TYPE", "ADDRESS_PK",
+        "SAON_START_NUMBER", "SAON_START_NUMBER_SUFFIX", "SAON_END_NUMBER",
+        "SAON_END_NUMBER_SUFFIX", "SAON_DESCRIPTION", "PAON_START_NUMBER",
+        "PAON_START_NUMBER_SUFFIX", "PAON_END_NUMBER", "PAON_END_NUMBER_SUFFIX",
+        "PAON_DESCRIPTION", "STREET", "TOWN", "LOCALITY",
+        "UK_INTERNAL_CODE", "POSTCODE", "COUNTRY_CODE", "UDPRN",
+        "EASTING", "NORTHING", "OS_MAP_REFERENCE", "DISEASE_TYPE",
+        "INTERVAL", "INTERVAL_UNIT_OF_TIME", "ANIMAL_SPECIES_CODE",
+        "ANIMAL_PRODUCTION_USAGE_CODE", "FEATURE_ADDRESS_FROM_DATE",
+        "FEATURE_ADDRESS_TO_DATE"
+    ];
+
+    public static void Create(string databasePath, bool includeCts = true) => Create(databasePath, omittedHoldingColumns: Array.Empty<string>(), holdingColumnTypes: null, herdColumnTypes: null, includeCts: includeCts);
+
+    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns, IReadOnlyDictionary<string,string>? holdingColumnTypes = null, IReadOnlyDictionary<string,string>? herdColumnTypes = null, bool includeCts = true)
     {
+        var holdingColumns = string.Join(", ",
+            HoldingColumns.Where(column => !omittedHoldingColumns.Contains(column))
+                          .Select(column =>
+                          {
+                              var type = holdingColumnTypes != null && holdingColumnTypes.TryGetValue(column, out var t) ? t : "VARCHAR";
+                              return $"{column} {type}";
+                          }));
+
+        var herdColumnDefs = string.Join(", ", new[]
+        {
+            "HERDMARK VARCHAR",
+            "CPHH VARCHAR",
+            "KEEPER_PARTY_IDS VARCHAR",
+            "OWNER_PARTY_IDS VARCHAR",
+            "ANIMAL_SPECIES_CODE VARCHAR",
+            "ANIMAL_PURPOSE_CODE VARCHAR",
+            $"ANIMAL_GROUP_ID_MCH_FRM_DAT {(herdColumnTypes != null && herdColumnTypes.TryGetValue("ANIMAL_GROUP_ID_MCH_FRM_DAT", out var h1) ? h1 : "VARCHAR")}",
+            $"ANIMAL_GROUP_ID_MCH_TO_DAT {(herdColumnTypes != null && herdColumnTypes.TryGetValue("ANIMAL_GROUP_ID_MCH_TO_DAT", out var h2) ? h2 : "VARCHAR")}" 
+        });
+
         using var connection = new DuckDBConnection($"Data Source={databasePath}");
         connection.Open();
 
-        Execute(connection, """
-            CREATE TABLE sam_cph_holdings (
-                CPH VARCHAR, FEATURE_NAME VARCHAR, CPH_TYPE VARCHAR, ADDRESS_PK VARCHAR,
-                SAON_START_NUMBER VARCHAR, SAON_START_NUMBER_SUFFIX VARCHAR, SAON_END_NUMBER VARCHAR,
-                SAON_END_NUMBER_SUFFIX VARCHAR, SAON_DESCRIPTION VARCHAR, PAON_START_NUMBER VARCHAR,
-                PAON_START_NUMBER_SUFFIX VARCHAR, PAON_END_NUMBER VARCHAR, PAON_END_NUMBER_SUFFIX VARCHAR,
-                PAON_DESCRIPTION VARCHAR, STREET VARCHAR, TOWN VARCHAR, LOCALITY VARCHAR,
-                UK_INTERNAL_CODE VARCHAR, POSTCODE VARCHAR, COUNTRY_CODE VARCHAR, UDPRN VARCHAR,
-                EASTING VARCHAR, NORTHING VARCHAR, OS_MAP_REFERENCE VARCHAR, DISEASE_TYPE VARCHAR,
-                INTERVAL VARCHAR, INTERVAL_UNIT_OF_TIME VARCHAR, ANIMAL_SPECIES_CODE VARCHAR,
-                ANIMAL_PRODUCTION_USAGE_CODE VARCHAR, FEATURE_ADDRESS_FROM_DATE VARCHAR,
-                FEATURE_ADDRESS_TO_DATE VARCHAR);
+        Execute(connection, $"""
+            CREATE TABLE sam_cph_holdings ({holdingColumns});
 
             CREATE TABLE sam_party (
                 PARTY_ID VARCHAR, PERSON_TITLE VARCHAR, PERSON_GIVEN_NAME VARCHAR, PERSON_GIVEN_NAME2 VARCHAR,
                 PERSON_INITIALS VARCHAR, PERSON_FAMILY_NAME VARCHAR, ORGANISATION_NAME VARCHAR,
-                TELEPHONE_NUMBER VARCHAR, MOBILE_NUMBER VARCHAR, INTERNET_EMAIL_ADDRESS VARCHAR, ROLES VARCHAR);
+                TELEPHONE_NUMBER VARCHAR, MOBILE_NUMBER VARCHAR, INTERNET_EMAIL_ADDRESS VARCHAR,
+                PAON_DESCRIPTION VARCHAR, STREET VARCHAR, TOWN VARCHAR, LOCALITY VARCHAR,
+                UK_INTERNAL_CODE VARCHAR, POSTCODE VARCHAR, COUNTRY_CODE VARCHAR, ROLES VARCHAR);
 
             CREATE TABLE sam_cph_holder (
-                PARTY_ID VARCHAR, PERSON_GIVEN_NAME VARCHAR, PERSON_GIVEN_NAME2 VARCHAR, PERSON_INITIALS VARCHAR,
-                PERSON_FAMILY_NAME VARCHAR, ORGANISATION_NAME VARCHAR, CPHS VARCHAR);
+                PARTY_ID VARCHAR, PERSON_TITLE VARCHAR, PERSON_GIVEN_NAME VARCHAR, PERSON_GIVEN_NAME2 VARCHAR,
+                PERSON_INITIALS VARCHAR, PERSON_FAMILY_NAME VARCHAR, ORGANISATION_NAME VARCHAR,
+                TELEPHONE_NUMBER VARCHAR, MOBILE_NUMBER VARCHAR, INTERNET_EMAIL_ADDRESS VARCHAR,
+                PAON_DESCRIPTION VARCHAR, STREET VARCHAR, TOWN VARCHAR, LOCALITY VARCHAR,
+                UK_INTERNAL_CODE VARCHAR, POSTCODE VARCHAR, COUNTRY_CODE VARCHAR, CPHS VARCHAR);
 
             CREATE TABLE sam_herd (
                 HERDMARK VARCHAR, CPHH VARCHAR, KEEPER_PARTY_IDS VARCHAR, OWNER_PARTY_IDS VARCHAR,
@@ -69,21 +107,39 @@ public static class SamExtractFixture
                  NULL, NULL, NULL, NULL, NULL, NULL, '2025-01-01 00:00:00');
 
             INSERT INTO sam_party (PARTY_ID, PERSON_TITLE, PERSON_GIVEN_NAME, PERSON_FAMILY_NAME,
-                ORGANISATION_NAME, TELEPHONE_NUMBER, INTERNET_EMAIL_ADDRESS, ROLES)
+                ORGANISATION_NAME, TELEPHONE_NUMBER, INTERNET_EMAIL_ADDRESS,
+                PAON_DESCRIPTION, STREET, TOWN, LOCALITY, UK_INTERNAL_CODE, POSTCODE, COUNTRY_CODE, ROLES)
             VALUES
-                ('P1', 'Mr', 'Alan', 'Archer', NULL, '01392 000001', 'Alan.Archer@Example.TEST', 'keeper,owner'),
-                -- P2 is also a holder, so its sentinels must give way to the holder's real names.
-                ('P2', '-', '-', '-', NULL, ',', '', ''),
+                -- P1's address lives in sam_party alone, so it must come through untouched.
+                ('P1', 'Mr', 'Alan', 'Archer', NULL, '01392 000001', 'Alan.Archer@Example.TEST',
+                 'Archer Farm', 'Mill Lane', 'Exeter', 'Exeter District', 'ENGLAND', 'EX1 2AA', 'GB', 'keeper,owner'),
+                -- P2 is also a holder, so its sentinels - address included - must give way to the
+                -- holder's real values.
+                ('P2', '-', '-', '-', NULL, ',', '', '-', '', NULL, NULL, NULL, '-', NULL, ''),
                 -- P3 carries the organisation placeholder, which must not make it an organisation.
-                ('P3', 'Ms', 'Carol', 'Cooper', 'No Organisation Name', NULL, NULL, NULL),
+                ('P3', 'Ms', 'Carol', 'Cooper', 'No Organisation Name', NULL, NULL,
+                 NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
                 -- P6 exists nowhere else, so nothing can fill in what its sentinels stand for.
-                ('P6', '-', '', ',', NULL, '-', '   ', '-');
+                ('P6', '-', '', ',', NULL, '-', '   ', '-', ',', '', NULL, '-', '-', NULL, '-');
 
-            INSERT INTO sam_cph_holder (PARTY_ID, PERSON_GIVEN_NAME, PERSON_FAMILY_NAME, CPHS)
+            INSERT INTO sam_cph_holder (PARTY_ID, PERSON_TITLE, PERSON_GIVEN_NAME, PERSON_FAMILY_NAME,
+                TELEPHONE_NUMBER, MOBILE_NUMBER, INTERNET_EMAIL_ADDRESS,
+                PAON_DESCRIPTION, STREET, TOWN, LOCALITY, UK_INTERNAL_CODE, POSTCODE, COUNTRY_CODE, CPHS)
             VALUES
-                ('P2', 'Brenda', 'Baker', '01/234/5678, 02/345/6789'),
-                ('P3', 'Carol', 'Cooper', '99/999/9999'),
-                ('P4', 'Derek', 'Dunn', NULL);
+                -- Every one of P2's contact columns, including address, is a sentinel in sam_party,
+                -- so the holder's real values must come through. The email is mixed case to prove it
+                -- is still folded.
+                ('P2', 'Mrs', 'Brenda', 'Baker', '01392 000002', '07700 900002',
+                 'Brenda.Baker@Example.TEST', 'Baker Cottage', 'Fore Street', 'Exeter', NULL, 'ENGLAND',
+                 'EX1 3BB', 'GB', '01/234/5678, 02/345/6789'),
+                -- P3 has a real title - and address - in sam_party, which different ones here must
+                -- not displace.
+                ('P3', 'Dr', 'Carol', 'Cooper', NULL, NULL, NULL,
+                 'Cooper House', 'Other Street', 'Truro', NULL, 'ENGLAND', 'TR1 1AA', 'GB', '99/999/9999'),
+                -- P4 is in no other extract, so the holder is the only thing that can name it - and
+                -- site it - at all.
+                ('P4', 'Mr', 'Derek', 'Dunn', NULL, '07700 900004', 'derek.dunn@example.test',
+                 'Dunn Farm', NULL, 'Newport', 'Newport District', 'WALES', 'NP1 2CC', NULL, NULL);
 
             INSERT INTO sam_herd (HERDMARK, CPHH, KEEPER_PARTY_IDS, OWNER_PARTY_IDS, ANIMAL_SPECIES_CODE,
                 ANIMAL_PURPOSE_CODE, ANIMAL_GROUP_ID_MCH_FRM_DAT, ANIMAL_GROUP_ID_MCH_TO_DAT)
@@ -92,7 +148,44 @@ public static class SamExtractFixture
                 ('CD5678', 'NOT-A-CPHH', 'P1', 'P1', '01', 'BEEF', '2010-01-01 00:00:00', NULL),
                 ('EF9012', '77/777/7777/01', 'P1', 'P1', '01', 'BEEF', '2011-01-01 00:00:00', NULL);
             """);
+
+        // The address numbers go in by UPDATE rather than the INSERT above: a test may withhold the
+        // columns entirely (the extract-never-carried-them case), and an UPDATE of a missing column
+        // would not compile. Only columns present are set, per row.
+        var addressNumbers = new (string Feature, string? Udprn, string? Easting, string? Northing)[]
+        {
+            ("Superseded Farm", "80000001", "300001", "400001"),
+            ("Main Farm", "80000002", "300002", "400002"),
+            ("Known Farm", "80000003", "300003", "400003"),
+            ("Notknown", null, null, null),
+            ("Spaced Farm", "80000005", "300005", "400005"),
+            ("Tied Alpha", "80000006", "300006", "400006"),
+            ("Tied Beta", "80000007", "300007", "400007"),
+            ("Sentinel Only", null, null, null)
+        };
+
+        foreach (var (feature, udprn, easting, northing) in addressNumbers)
+        {
+            var assignments = new List<string>();
+
+            if (!omittedHoldingColumns.Contains("UDPRN")) assignments.Add($"UDPRN = {Literal(udprn)}");
+            if (!omittedHoldingColumns.Contains("EASTING")) assignments.Add($"EASTING = {Literal(easting)}");
+            if (!omittedHoldingColumns.Contains("NORTHING")) assignments.Add($"NORTHING = {Literal(northing)}");
+
+            if (assignments.Count > 0)
+            {
+                Execute(connection,
+                    $"UPDATE sam_cph_holdings SET {string.Join(", ", assignments)} WHERE FEATURE_NAME = '{feature}'");
+            }
+        }
+
+        if (includeCts)
+        {
+            CtsExtractFixture.Create(connection);
+        }
     }
+
+    private static string Literal(string? value) => value is null ? "NULL" : $"'{value}'";
 
     private static void Execute(DuckDBConnection connection, string sql)
     {

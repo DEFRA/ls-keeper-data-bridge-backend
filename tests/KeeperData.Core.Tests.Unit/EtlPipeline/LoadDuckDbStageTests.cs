@@ -48,6 +48,44 @@ public class LoadDuckDbStageTests
         };
     }
 
+    /// <summary>A CTS snapshot, carrying the baseline hash and the dashed timestamp its definition
+    /// names, rather than the litprd shape.</summary>
+    private SnapshotFile CtsSnapshot(string timestamp, long rowCount)
+    {
+        var definition = StandardDataSetDefinitionsBuilder.Build().CtsLocationIdentifiers!;
+        var sourceTimestamp = DateTimeOffset.ParseExact(
+            timestamp,
+            definition.DateTimePattern,
+            null,
+            System.Globalization.DateTimeStyles.AssumeUniversal);
+
+        var key = SnapshotFileNaming.SnapshotKey(definition, sourceTimestamp, "b1c2d3e4");
+        Snapshots.Put(key, "parquet");
+
+        return new SnapshotFile(definition)
+        {
+            Key = key,
+            SourceTimestamp = sourceTimestamp,
+            RowCount = rowCount
+        };
+    }
+
+    [Fact]
+    public async Task Stages_the_cts_dataset_as_a_table_of_its_own_name()
+    {
+        _writer.RowCount = 6369;
+
+        var output = await RunAsync(
+            Snapshot("sam_cph_holdings", "20251115121333"),
+            CtsSnapshot("2026-08-22-072824", rowCount: 6369));
+
+        _writer.Sources.Select(source => source.TableName)
+            .Should().Equal("sam_cph_holdings", "cts_location_identifiers");
+
+        output.Single().Tables.Should().Contain(table =>
+            table.Name == "cts_location_identifiers" && table.RowCount == 6369);
+    }
+
     [Fact]
     public async Task Collapses_all_snapshots_into_a_single_database()
     {

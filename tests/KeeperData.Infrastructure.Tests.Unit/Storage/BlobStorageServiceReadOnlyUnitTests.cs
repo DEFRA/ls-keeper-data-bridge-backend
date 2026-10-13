@@ -345,6 +345,141 @@ public class BlobStorageServiceReadOnlyUnitTests
         capturedRequest!.MaxKeys.Should().Be(1000); // Should be capped at 1000
     }
 
+    /// <summary>The external source service is configured at the bucket root, so the folder a
+    /// dataset lives in comes from its own key prefix. An empty top level folder must therefore
+    /// leave the caller's prefix exactly as it is - a stray "/" matches nothing in S3.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public async Task ListPageAsync_WithoutATopLevelFolder_ListsTheCallersPrefixUnchanged(string? topLevelFolder)
+    {
+        ListObjectsV2Request? capturedRequest = null;
+        _mockS3Client.Setup(x => x.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ListObjectsV2Request, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new ListObjectsV2Response
+            {
+                S3Objects = [new S3Object { Key = "litprd/LITP_SAMCPHHOLDING_20260822120000.csv", Size = 10 }],
+                IsTruncated = false
+            });
+
+        _mockS3Client.Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
+            .Returns("https://test-url.com/object");
+
+        using var service = new S3BlobStorageServiceReadOnly(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer,
+            topLevelFolder);
+
+        var result = await service.ListPageAsync(prefix: "litprd/LITP_SAMCPHHOLDING_");
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Prefix.Should().Be("litprd/LITP_SAMCPHHOLDING_");
+
+        result.Items.Should().ContainSingle()
+            .Which.Key.Should().Be("litprd/LITP_SAMCPHHOLDING_20260822120000.csv",
+                "with nothing to strip, a key is returned as the folder it was found in");
+    }
+
+    [Fact]
+    public async Task GetMetadataAsync_WithoutATopLevelFolder_ReadsTheKeyUnchanged()
+    {
+        GetObjectMetadataRequest? capturedRequest = null;
+        _mockS3Client.Setup(x => x.GetObjectMetadataAsync(
+                It.IsAny<GetObjectMetadataRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<GetObjectMetadataRequest, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new GetObjectMetadataResponse { ContentLength = 100 });
+
+        _mockS3Client.Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
+            .Returns("https://test-url.com/object");
+
+        using var service = new S3BlobStorageServiceReadOnly(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer,
+            string.Empty);
+
+        await service.GetMetadataAsync("cads/cts/bulk/CT_LOCATION_IDENTIFIERS_2026-08-22-072826.csv");
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Key.Should().Be("cads/cts/bulk/CT_LOCATION_IDENTIFIERS_2026-08-22-072826.csv");
+    }
+
+    #endregion
+
+    #region EnumerateAsync Tests
+
+    /// <summary>Enumeration pages until S3 stops handing back a continuation token, and unlike
+    /// <c>ListAsync</c> it has no page cap: 25 pages of a thousand is 25,000 objects, past the cap.</summary>
+    [Fact]
+    public async Task EnumerateAsync_PagesPastTheListingCap()
+    {
+        const int Pages = 25;
+        var page = 0;
+
+        _mockS3Client.Setup(x => x.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                page++;
+
+                return new ListObjectsV2Response
+                {
+                    S3Objects = [.. Enumerable.Range(0, 1000).Select(index => new S3Object
+                    {
+                        Key = $"page{page:00}/file{index:0000}.txt",
+                        Size = 1,
+                        ETag = "\"etag\"",
+                        LastModified = DateTime.UtcNow
+                    })],
+                    IsTruncated = page < Pages,
+                    NextContinuationToken = page < Pages ? $"token-{page}" : null
+                };
+            });
+
+        _mockS3Client.Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
+            .Returns("https://test-url.com/object");
+
+        using var service = new S3BlobStorageServiceReadOnly(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer);
+
+        var count = 0;
+        await foreach (var _ in service.EnumerateAsync())
+            count++;
+
+        count.Should().Be(Pages * 1000);
+    }
+
+    [Fact]
+    public async Task EnumerateAsync_WithAnEmptyPrefix_Terminates()
+    {
+        _mockS3Client.Setup(x => x.ListObjectsV2Async(
+                It.IsAny<ListObjectsV2Request>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListObjectsV2Response { S3Objects = [], IsTruncated = false });
+
+        _mockS3Client.Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
+            .Returns("https://test-url.com/object");
+
+        using var service = new S3BlobStorageServiceReadOnly(
+            _mockS3Client.Object,
+            _loggerMock.Object,
+            TestContainer);
+
+        var items = new List<string>();
+        await foreach (var item in service.EnumerateAsync("nothing-here/"))
+            items.Add(item.Key);
+
+        items.Should().BeEmpty();
+    }
+
     #endregion
 
     #region GetMetadataAsync Tests

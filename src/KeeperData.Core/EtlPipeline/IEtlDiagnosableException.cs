@@ -1,3 +1,5 @@
+using KeeperData.Core.EtlPipeline.Status;
+
 namespace KeeperData.Core.EtlPipeline;
 
 /// <summary>Marks an exception whose message was written for whoever reads an import's status,
@@ -13,4 +15,8 @@ namespace KeeperData.Core.EtlPipeline;
 /// a presigned URL or a configuration value.</summary>
 public interface IEtlDiagnosableException
 {
+    /// <summary>Structured context persisted on the import document for a caller to read - which
+    /// dataset, file or record the failure belongs to. Null when the exception carries nothing
+    /// beyond its message. The same serving rules apply: no salts, passwords or presigned URLs.</summary>
+    EtlImportErrorDetail? ErrorDetail => null;
 }

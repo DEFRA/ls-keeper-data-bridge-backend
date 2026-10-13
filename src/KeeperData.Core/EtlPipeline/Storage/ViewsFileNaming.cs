@@ -20,6 +20,11 @@ public static class ViewsFileNaming
     /// rebuilds rather than being skipped as already present.</summary>
     public const string VersionMetadataKey = "krds-view-version";
 
+    /// <summary>The tables an object actually carries. Narrower than the transformation can produce
+    /// whenever an environment does not load every source system, so the object has to say which it
+    /// got rather than the reader assuming all of them.</summary>
+    public const string TablesMetadataKey = "krds-view-tables";
+
     public const string TableCountMetadataPrefix = "krds-view-count-";
 
     /// <summary>The key of the SQLite read model built from the staging database for a given source

@@ -147,7 +147,7 @@ public sealed class EtlPipelineMultiDataSetTests(ITestOutputHelper output, Local
         (await host.ListFolderAsync(EtlPipelineFolders.Staging)).Should().BeEmpty(
             "a filtered run cannot publish a partial database under the shared staging name");
         (await host.ListFolderAsync(EtlPipelineFolders.Views)).Should().BeEmpty(
-            "the read model requires all of its source tables");
+            "there is no staging database to export from");
     }
 
     [Fact]

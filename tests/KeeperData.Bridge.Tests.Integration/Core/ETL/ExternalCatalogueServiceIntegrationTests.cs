@@ -163,7 +163,7 @@ public class ExternalCatalogueServiceIntegrationTests : IAsyncLifetime
         // Arrange - TimeProvider is set to 2024-12-15
 
         // Act
-        var result = await _ExternalCatalogueService.GetFileSetsAsync(CancellationToken.None);
+        var result = await _ExternalCatalogueService.GetFileSetsAsync(new DateOnly(2024, 12, 15), CancellationToken.None);
 
         // Assert
         result.Should().HaveCount(3); // Three test definitions

@@ -13,5 +13,9 @@ public enum EtlImportStatus
     Failed,
 
     /// <summary>The request was refused before any work began.</summary>
-    Rejected
+    Rejected,
+
+    /// <summary>Not a run: the record marks an admin purge of stage storage, so a wipe shows in
+    /// the same history the runs do.</summary>
+    Purged
 }

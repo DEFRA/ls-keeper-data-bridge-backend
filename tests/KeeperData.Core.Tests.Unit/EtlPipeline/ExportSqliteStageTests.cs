@@ -1,10 +1,13 @@
 using FluentAssertions;
+using KeeperData.Core.EtlPipeline;
 using KeeperData.Core.EtlPipeline.Payloads;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Storage;
 using KeeperData.Core.EtlPipeline.Views;
+using KeeperData.Core.EtlPipeline.Views.TestData;
 using KeeperData.Core.Tests.Unit.EtlPipeline.Harness;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace KeeperData.Core.Tests.Unit.EtlPipeline;
 
@@ -26,8 +29,16 @@ public class ExportSqliteStageTests
     public ExportSqliteStageTests() => Staging.Put(StagingKey, "a staging database");
 
     private Task<List<SqliteExportFile>> RunAsync(params StagingDatabase[] inputs)
+        => RunAsync(TestDataPolicy.None, inputs);
+
+    private Task<List<SqliteExportFile>> RunAsync(TestDataPolicy policy, params StagingDatabase[] inputs)
         => StageRunner.RunAsync(
-            new ExportSqliteStage(_storage, _writer, NullLogger<ExportSqliteStage>.Instance), inputs);
+            new ExportSqliteStage(
+                _storage,
+                _writer,
+                Options.Create(new EtlFeatureFlags { TestDataPolicy = policy }),
+                NullLogger<ExportSqliteStage>.Instance),
+            inputs);
 
     private static StagingDatabase Database(bool created = true) => new()
     {
@@ -131,13 +142,46 @@ public class ExportSqliteStageTests
     {
         Views.Put(ExpectedKey, "missing reconciliation metadata", new Dictionary<string, string>
         {
-            [ViewsFileNaming.VersionMetadataKey] = SqliteViewDefinition.Version
+            [ViewsFileNaming.VersionMetadataKey] = SqliteViewDefinition.Version,
+            [ViewsFileNaming.TablesMetadataKey] = "Party,Holding"
         });
 
         var output = await RunAsync(Database());
 
         output.Single().Created.Should().BeTrue();
         _writer.Calls.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Rebuilds_a_current_export_that_does_not_say_which_tables_it_holds()
+    {
+        Views.Put(ExpectedKey, "written before the table list was recorded", new Dictionary<string, string>
+        {
+            [ViewsFileNaming.VersionMetadataKey] = SqliteViewDefinition.Version
+        });
+
+        var output = await RunAsync(Database());
+
+        output.Single().Created.Should().BeTrue();
+        _writer.Calls.Should().ContainSingle(
+            "an export that cannot say what it holds cannot be reconciled against");
+    }
+
+    [Fact]
+    public async Task Reuses_an_export_that_holds_fewer_tables_than_the_transformation_can_produce()
+    {
+        // An environment that loads no CTS extracts exports without Open Locations. Judging that
+        // against every table the transformation declares would rebuild it on every run.
+        _writer.Tables = [new SqliteViewTable("Party", 6), new SqliteViewTable("Holding", 4)];
+
+        await RunAsync(Database());
+        _writer.Calls.Clear();
+
+        var output = await RunAsync(Database());
+
+        output.Single().Created.Should().BeFalse();
+        output.Single().Tables.Should().BeEquivalentTo(_writer.Tables);
+        _writer.Calls.Should().BeEmpty();
     }
 
     [Fact]
@@ -157,10 +201,66 @@ public class ExportSqliteStageTests
         await RunAsync(Database());
 
         var request = _writer.Calls.Single();
-        request.Sql.Should().Be(SqliteViewDefinition.Sql);
-        request.TableNames.Should().BeEquivalentTo(SqliteViewDefinition.TableNames);
+        request.Parts.Should().BeSameAs(SqliteViewDefinition.Parts);
         request.SourceDatabasePath.Should().EndWith(".duckdb");
         request.TargetDatabasePath.Should().EndWith(".sqlite");
+    }
+
+    [Theory]
+    [InlineData(TestDataPolicy.Additive)]
+    [InlineData(TestDataPolicy.Full)]
+    public async Task Appends_the_test_keepers_to_the_transformation_when_a_policy_seeds(TestDataPolicy policy)
+    {
+        await RunAsync(policy, Database());
+
+        var parts = _writer.Calls.Single().Parts;
+
+        parts.Should().HaveCount(SqliteViewDefinition.Parts.Count + 1);
+        parts[^1].Name.Should().Be(SeedTestDataPart.PartName, "the keepers are written into a read model that already exists");
+        parts[^1].ToleratesFailure.Should().BeTrue("test data must never stop an export");
+    }
+
+    /// <summary>The export is skipped on the strength of its recorded version, so a run that seeds
+    /// has to record a different one - otherwise changing the policy would leave an already-exported
+    /// timestamp alone and look like it had done nothing.</summary>
+    [Fact]
+    public async Task Rebuilds_an_export_that_was_built_without_the_test_keepers()
+    {
+        await RunAsync(Database());
+        _writer.Calls.Clear();
+
+        var output = await RunAsync(TestDataPolicy.Full, Database());
+
+        output.Single().Created.Should().BeTrue();
+        _writer.Calls.Should().ContainSingle();
+        Views.MetadataOf(ExpectedKey)[ViewsFileNaming.VersionMetadataKey]
+            .Should().NotBe(SqliteViewDefinition.Version);
+    }
+
+    /// <summary>Two policies seed different keepers, so one cannot be mistaken for the other's
+    /// output and left in place.</summary>
+    [Fact]
+    public async Task Rebuilds_an_export_that_was_built_under_a_different_policy()
+    {
+        await RunAsync(TestDataPolicy.Additive, Database());
+        _writer.Calls.Clear();
+
+        var output = await RunAsync(TestDataPolicy.Full, Database());
+
+        output.Single().Created.Should().BeTrue();
+        _writer.Calls.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Reuses_a_seeded_export_rather_than_seeding_it_again()
+    {
+        await RunAsync(TestDataPolicy.Full, Database());
+        _writer.Calls.Clear();
+
+        var output = await RunAsync(TestDataPolicy.Full, Database());
+
+        output.Single().Created.Should().BeFalse();
+        _writer.Calls.Should().BeEmpty();
     }
 
     [Fact]

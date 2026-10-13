@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using KeeperData.Core.Storage;
@@ -40,6 +41,32 @@ public class FileSystemBlobStorageService : IBlobStorageService
             .ToList();
 
         return Task.FromResult<IReadOnlyList<StorageObjectInfo>>(files);
+    }
+
+    public async IAsyncEnumerable<StorageObjectInfo> EnumerateAsync(
+        string? prefix = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await Task.CompletedTask; // the file system is synchronous; the interface is not.
+
+        var rootDir = GetRootDirectory();
+
+        if (!Directory.Exists(rootDir))
+            yield break;
+
+        var files = Directory.EnumerateFiles(rootDir, "*", SearchOption.AllDirectories)
+            .Where(file => !IsMetadataFile(file))
+            .OrderBy(file => file, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var info = CreateStorageObjectInfo(file);
+
+            if (string.IsNullOrEmpty(prefix) || info.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                yield return info;
+        }
     }
 
     public Task<StorageListPage> ListPageAsync(

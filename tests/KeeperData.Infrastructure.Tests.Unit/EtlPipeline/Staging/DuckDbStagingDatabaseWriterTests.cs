@@ -71,6 +71,26 @@ public class DuckDbStagingDatabaseWriterTests : IDisposable
         Query("SELECT count(*)::VARCHAR FROM sam_cph_holdings").Should().Equal("500");
     }
 
+    /// <summary>The CTS table needs no schema of its own: it is inferred from the snapshot, whose audit
+    /// and control columns the merge has already dropped.</summary>
+    [Fact]
+    public async Task Infers_the_cts_table_from_its_snapshot()
+    {
+        var source = Parquet(
+            "cts_location_identifiers",
+            "LID_ID|LID_FULL_IDENTIFIER|LID_CURRENT_STATUS",
+            "287594|UK123456700001|2",
+            "287595|UK123456700002|2");
+
+        var result = await _sut.WriteAsync([source], DatabasePath);
+
+        result.Tables.Single().RowCount.Should().Be(2);
+        Query("SELECT column_name FROM duckdb_columns() WHERE table_name = 'cts_location_identifiers' ORDER BY column_index")
+            .Should().Equal("LID_ID", "LID_FULL_IDENTIFIER", "LID_CURRENT_STATUS");
+        Query("SELECT LID_FULL_IDENTIFIER FROM cts_location_identifiers ORDER BY LID_ID")
+            .Should().Equal("UK123456700001", "UK123456700002");
+    }
+
     [Fact]
     public async Task Loads_a_snapshot_holding_no_rows()
     {

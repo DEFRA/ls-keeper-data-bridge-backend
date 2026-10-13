@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="EtlPipeline\Views\Sql\krds-read-model.sql" LogicalName="KeeperData.Core.EtlPipeline.Views.Sql.krds-read-model.sql" />
+    <EmbeddedResource Include="EtlPipeline\Views\Sql\cts-open-locations.sql" LogicalName="KeeperData.Core.EtlPipeline.Views.Sql.cts-open-locations.sql" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,7 +29,7 @@
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.11" />
     <PackageReference Include="Parquet.Net" Version="6.1.0" />
     <PackageReference Include="Polly.Core" Version="8.7.0" />
-    <PackageReference Include="XsvHcdtHelper" Version="0.2.0" />
+    <PackageReference Include="XsvHcdtHelper" Version="0.3.0" />
   </ItemGroup>
   
 </Project>

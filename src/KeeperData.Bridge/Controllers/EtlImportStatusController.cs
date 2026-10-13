@@ -86,7 +86,9 @@ public class EtlImportStatusController(
             : null,
         DuckDbPath = Qualify(EtlPipelineFolders.Staging, document.DuckDbKey),
         SqlitePath = Qualify(EtlPipelineFolders.Views, document.SqliteKey),
-        Error = document.Error
+        Error = document.Error,
+        ErrorDetail = MapDetail(document.ErrorDetail),
+        Purge = MapPurge(document.Purge)
     };
 
     private static EtlImportStatusResponse Map(EtlImportDocument document) => new()
@@ -107,6 +109,7 @@ public class EtlImportStatusController(
             RowCount = t.RowCount
         })],
         Error = document.Error,
+        ErrorDetail = MapDetail(document.ErrorDetail),
         Stages = [.. document.Stages.Select(s => new EtlImportStageResponse
         {
             Name = s.Name,
@@ -120,18 +123,41 @@ public class EtlImportStatusController(
             SourceFiles = [.. d.SourceFiles.Select(f => new EtlImportSourceFileResponse { Key = f.Key, Size = f.Size })],
             RawPaths = [.. d.RawKeys.Select(k => Qualify(EtlPipelineFolders.Raw, k)!)],
             NormalisedPaths = [.. d.NormalisedKeys.Select(k => Qualify(EtlPipelineFolders.Normalised, k)!)],
+            OptimisedPaths = [.. d.OptimisedKeys],
             SnapshotPath = Qualify(EtlPipelineFolders.Snapshots, d.SnapshotKey),
             SnapshotSourceTimestampUtc = d.SnapshotSourceTimestampUtc,
             RowCount = d.RowCount,
             RowsUpserted = d.RowsUpserted,
+            RowsDeleted = d.RowsDeleted,
             RowsIgnoredDeletes = d.RowsIgnoredDeletes,
+            RowsRejected = d.RowsRejected,
             ColumnsNullified = [.. d.ColumnsNullified],
             ColumnsAdded = [.. d.ColumnsAdded]
-        })]
+        })],
+        Purge = MapPurge(document.Purge)
     };
 
     /// <summary>Stages record keys relative to their folder; callers want the whole path, the same
     /// as the staging endpoint reports.</summary>
     private static string? Qualify(string folder, string? key)
         => key is null ? null : $"{folder}/{key}";
+
+    private static EtlImportPurgeResponse? MapPurge(EtlImportPurgeDocument? purge)
+        => purge is null ? null : new EtlImportPurgeResponse
+        {
+            Stages = [.. purge.Stages],
+            DeletedCount = purge.DeletedCount
+        };
+
+    private static EtlImportErrorDetailResponse? MapDetail(EtlImportErrorDetail? detail)
+        => detail is null ? null : new EtlImportErrorDetailResponse
+        {
+            Type = detail.Type,
+            Stage = detail.Stage,
+            Dataset = detail.Dataset,
+            FileKey = detail.FileKey,
+            RecordNumber = detail.RecordNumber,
+            Expected = detail.Expected,
+            Actual = detail.Actual
+        };
 }

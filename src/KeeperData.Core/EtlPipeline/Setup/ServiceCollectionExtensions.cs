@@ -1,3 +1,4 @@
+using KeeperData.Core.EtlPipeline.Concurrency;
 using KeeperData.Core.EtlPipeline.Snapshots;
 using KeeperData.Core.EtlPipeline.Stages;
 using KeeperData.Core.EtlPipeline.Status;
@@ -14,6 +15,14 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddSingleton(TimeProvider.System);
 
+        // The budget is a property of the host, not of a run: one instance so the limit still holds
+        // when several stages are fanning out at once.
+        services.AddOptions<EtlConcurrencyOptions>();
+        services.TryAddSingleton<EtlConcurrency>();
+
+        // Unbound here so a host that never configures them still resolves them, off.
+        services.AddOptions<EtlFeatureFlags>();
+
         services.AddScoped<IPipelineExecutor, PipelineExecutor>();
         services.AddScoped<IEtlPipelineFactory, EtlPipelineFactory>();
 
@@ -21,12 +30,21 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<DecryptStage>();
         services.AddScoped<NormaliseStage>();
+        services.AddScoped<OptimiseStage>();
         services.AddScoped<SnapshotStage>();
         services.AddScoped<LoadDuckDbStage>();
         services.AddScoped<ExportSqliteStage>();
+        services.AddScoped<EtlStages>();
 
-        
-        services.AddXsvHcdtHelper();
+        services.AddXsvHcdtHelper(x =>
+        {
+            x.InputQuoting = QuoteHandling.None;
+            x.ValidateHeaderTrailerMatch = false;
+            x.ValidateTrailerCount = false;
+            x.RequireTrailer = false;
+            x.OutputFormat = OutputFormat.Parquet;
+            x.StrictFieldCount = false;
+        });
 
         return services;
     }

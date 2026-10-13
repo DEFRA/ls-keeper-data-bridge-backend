@@ -2,6 +2,7 @@ using FluentAssertions;
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.ETL.Impl;
 using KeeperData.Core.Storage;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace KeeperData.Core.Tests.Unit.ETL;
@@ -19,7 +20,8 @@ public class ExternalCatalogueServiceFactoryTests
             .Setup(f => f.GetSource(It.IsAny<string>()))
             .Returns(Mock.Of<IBlobStorageServiceReadOnly>());
 
-        _factory = new ExternalCatalogueServiceFactory(TimeProvider.System, Mock.Of<IDataSetDefinitions>(), _blobStorageFactory.Object);
+        _factory = new ExternalCatalogueServiceFactory(
+            TimeProvider.System, Mock.Of<IDataSetDefinitions>(), _blobStorageFactory.Object, NullLoggerFactory.Instance);
     }
 
     [Fact]

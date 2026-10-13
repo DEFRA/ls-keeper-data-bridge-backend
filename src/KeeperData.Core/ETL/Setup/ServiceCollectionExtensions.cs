@@ -7,6 +7,8 @@ using KeeperData.Core.Reporting.Setup;
 using KeeperData.Core.Telemetry;
 using KeeperData.Core.Throttling.Setup;
 using Microsoft.Extensions.Configuration;
+using KeeperData.Core.EtlPipeline;
+using KeeperData.Core.EtlPipeline.Concurrency;
 using KeeperData.Core.EtlPipeline.Setup;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics.CodeAnalysis;
@@ -21,9 +23,13 @@ public static class ServiceCollectionExtensions
         var resilenceSection = configuration.GetSection("MongoResilience");
         services.Configure<MongoResilienceConfig>(resilenceSection);
 
+        services.Configure<EtlConcurrencyOptions>(configuration.GetSection(EtlConcurrencyOptions.SectionName));
+        services.Configure<EtlFeatureFlags>(configuration.GetSection(EtlFeatureFlags.SectionName));
+
         services.AddSingleton<ResilientMongoOperations>();
 
-        services.AddSingleton<IDataSetDefinitions>(_ => StandardDataSetDefinitionsBuilder.Build());
+        var dataSetFolder = configuration["StorageConfiguration:SourceExternalDataSetFolder"];
+        services.AddSingleton<IDataSetDefinitions>(_ => StandardDataSetDefinitionsBuilder.Build(dataSetFolder));
         services.AddTransient<CsvRowCounter>();
         services.AddTransient<IExternalCatalogueServiceFactory, ExternalCatalogueServiceFactory>();
         services.AddTransient<IIngestionPipeline, IngestionPipeline>();

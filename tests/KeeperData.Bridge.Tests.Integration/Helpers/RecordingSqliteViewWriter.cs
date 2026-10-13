@@ -13,6 +13,6 @@ public sealed class RecordingSqliteViewWriter : ISqliteViewWriter
         await File.WriteAllTextAsync(request.TargetDatabasePath, "recorded sqlite view", cancellationToken);
 
         return new SqliteViewWriteResult(
-            [.. request.TableNames.Select(name => new SqliteViewTable(name, 0))]);
+            [.. request.Parts.SelectMany(part => part.TableNames).Select(name => new SqliteViewTable(name, 0))]);
     }
 }

@@ -8,7 +8,8 @@ namespace KeeperData.Core.EtlPipeline.Views.TestData;
 /// Shaped as source data rather than as rows: every id the read model is keyed by is derived from
 /// the source key - the party's source id, the holding's CPH, the herd's mark and CPHH - so a
 /// persona naming a CPH the real extracts also carry lands on that holding's row rather than beside
-/// it. Which is the point: the seed replaces real data where the two meet.
+/// it. Whether it then replaces that holding or merely attaches itself to it is
+/// <see cref="TestHolding.Claimed"/>.
 ///
 /// One party holding many holdings, because the personas differ in how much they hold.</summary>
 [ExcludeFromCodeCoverage(Justification = "Test data definition - no logic to test.")]
@@ -51,13 +52,20 @@ public sealed record TestParty
     public string? Roles { get; init; }
 }
 
-/// <summary>A holding the persona is attached to, with everything hanging off it. The herds, profiles
-/// and roles here are the whole of what the seeded holding carries - a persona owns its CPH
-/// outright.</summary>
+/// <summary>A holding the persona is attached to.</summary>
 [ExcludeFromCodeCoverage(Justification = "Test data definition - no logic to test.")]
 public sealed record TestHolding
 {
     public required string Cph { get; init; }
+
+    /// <summary>Whether the persona owns this CPH. Claiming it replaces the holding's own row and
+    /// clears every herd, animal profile and party role the extract gave it, so what remains is
+    /// exactly what the persona declares. Left false, the holding must already exist and is
+    /// untouched: only the persona's roles are added, and nothing happens at all if it is absent.
+    ///
+    /// Off by default because claiming destroys real data, which should be opted into at the point
+    /// the data says so rather than inherited.</summary>
+    public bool Claimed { get; init; }
 
     public string? FeatureName { get; init; }
     public string? CphType { get; init; }

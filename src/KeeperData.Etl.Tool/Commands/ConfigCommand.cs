@@ -1,5 +1,6 @@
 using KeeperData.Core.ETL.Abstract;
 using KeeperData.Core.EtlPipeline;
+using KeeperData.Core.EtlPipeline.Views.TestData;
 using KeeperData.Core.Storage;
 using KeeperData.Etl.Tool.Configuration;
 using KeeperData.Infrastructure.EtlPipeline.Views;
@@ -25,7 +26,7 @@ internal static class ConfigCommand
         {
             CommonOptions.Environment,
             CommonOptions.Staging,
-            CommonOptions.SeedTestData,
+            CommonOptions.TestData,
             check
         };
 
@@ -50,9 +51,9 @@ internal static class ConfigCommand
 
             Console.WriteLine($"SQLite ext    : {Describe(extension, isFile: true)}");
 
-            var seedTestData = host.Services.GetRequiredService<IOptions<EtlFeatureFlags>>().Value.SeedTestDataEnabled;
+            var policy = host.Services.GetRequiredService<IOptions<EtlFeatureFlags>>().Value.TestDataPolicy;
 
-            Console.WriteLine($"Test data     : {(seedTestData ? "seeded into the read model" : "not seeded")}");
+            Console.WriteLine($"Test data     : {Describe(policy)}");
 
             Console.WriteLine();
             Console.WriteLine("Datasets");
@@ -99,6 +100,13 @@ internal static class ConfigCommand
 
         return $"{path} {(exists ? "" : "(does not exist)")}".TrimEnd();
     }
+
+    private static string Describe(TestDataPolicy policy) => policy switch
+    {
+        TestDataPolicy.Additive => "Additive - seeded keepers attach to holdings that already exist",
+        TestDataPolicy.Full => "Full - seeded keepers own their CPHs, replacing real data",
+        _ => "None - not seeded"
+    };
 
     private static string Value(string variable)
         => Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value

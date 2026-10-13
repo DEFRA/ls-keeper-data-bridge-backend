@@ -60,9 +60,9 @@ internal static class EtlToolHost
         Set(Commands.CommonOptions.Environment, nameof(EtlToolOptions.Environment));
         Set(Commands.CommonOptions.Staging, nameof(EtlToolOptions.StagingPath));
 
-        if (parseResult.GetValue(Commands.CommonOptions.SeedTestData))
+        if (parseResult.GetValue(Commands.CommonOptions.TestData) is { } policy)
         {
-            overrides[$"{EtlFeatureFlags.SectionName}:{nameof(EtlFeatureFlags.SeedTestDataEnabled)}"] = "true";
+            overrides[$"{EtlFeatureFlags.SectionName}:{nameof(EtlFeatureFlags.TestDataPolicy)}"] = policy.ToString();
         }
 
         if (string.IsNullOrWhiteSpace(configuration["AesSalt"])

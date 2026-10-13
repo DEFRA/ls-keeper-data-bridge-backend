@@ -35,7 +35,7 @@ public sealed class SeedTestDataPartTests : IDisposable
     [Fact]
     public async Task Finds_the_seeded_keeper_by_email_and_role()
     {
-        var target = await SeedAsync(SeedTestData.Personas);
+        var target = await SeedAsync(FullPersonas);
 
         Strings(target, """
             SELECT h.Cph
@@ -50,7 +50,7 @@ public sealed class SeedTestDataPartTests : IDisposable
     [Fact]
     public async Task Writes_everything_the_persona_describes()
     {
-        var target = await SeedAsync(SeedTestData.Personas);
+        var target = await SeedAsync(FullPersonas);
 
         Strings(target, """
             SELECT p.PersonTitle || '|' || p.GivenName || '|' || p.FamilyName || '|' || p.Telephone || '|' ||
@@ -83,7 +83,7 @@ public sealed class SeedTestDataPartTests : IDisposable
     [Fact]
     public async Task Resolves_every_reference_the_seeded_rows_make()
     {
-        var target = await SeedAsync(SeedTestData.Personas);
+        var target = await SeedAsync(FullPersonas);
 
         Strings(target, """
             SELECT r.Role || '|' || ifnull(d.Herdmark, '<holding>')
@@ -175,7 +175,7 @@ public sealed class SeedTestDataPartTests : IDisposable
         var target = Path.Combine(_workingDirectory, "counted.sqlite");
 
         var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
-            _sourcePath, target, Parts(SeedTestData.Personas), QueryDate));
+            _sourcePath, target, Parts(FullPersonas), QueryDate));
 
         result.Tables.Select(table => table.Name).Should().OnlyHaveUniqueItems();
 
@@ -191,9 +191,149 @@ public sealed class SeedTestDataPartTests : IDisposable
 
     [Fact]
     public async Task Identifies_a_seeded_transformation_as_a_different_one()
-        => SqliteViewDefinition.VersionOf(Parts(SeedTestData.Personas))
+        => SqliteViewDefinition.VersionOf(Parts(FullPersonas))
             .Should().NotBe(SqliteViewDefinition.Version,
                 "an export already built without the test data has to be rebuilt with it");
+
+    /// <summary>The promise the additive policy makes to production: it adds a party and its roles
+    /// and changes nothing else. Compared against the same extract exported without it.</summary>
+    [Fact]
+    public async Task Adds_to_a_holding_without_altering_anything_the_extract_supplied()
+    {
+        var seeded = await SeedAsync([AdditivePersona("CT35TP4RTY", "01/234/5678", "02/345/6789")]);
+        var unseeded = await RunAsync("unseeded.sqlite", SqliteViewDefinition.Parts);
+
+        foreach (var sql in new[]
+        {
+            "SELECT group_concat(Id, '|') FROM (SELECT Id FROM Holding ORDER BY Id)",
+            "SELECT group_concat(Id, '|') FROM (SELECT Id FROM Herd ORDER BY Id)",
+            "SELECT group_concat(Id, '|') FROM (SELECT Id FROM HoldingAnimalProfile ORDER BY Id)"
+        })
+        {
+            Strings(seeded, sql).Should().Equal(Strings(unseeded, sql),
+                "the additive policy writes to Party and PartyRole only");
+        }
+
+        const string existing = "SELECT group_concat(Id, '|') FROM (SELECT Id FROM PartyRole ORDER BY Id)";
+
+        Strings(unseeded, existing).Single().Split('|')
+            .Should().BeSubsetOf(Strings(seeded, existing).Single().Split('|'),
+                "every role the extract produced survives; the persona's are added alongside");
+    }
+
+    [Fact]
+    public async Task Finds_the_additive_keeper_on_every_cph_it_holds()
+    {
+        var target = await SeedAsync([AdditivePersona("CT35TP4RTY", "01/234/5678", "02/345/6789")]);
+
+        Strings(target, """
+            SELECT h.Cph
+            FROM Holding h
+            INNER JOIN PartyRole r ON r.HoldingId = h.Id
+            INNER JOIN Party p ON p.Id = r.PartyId
+            WHERE p.Email = 'ct35tp4rty@example.test' AND r.Role = 'holder'
+            ORDER BY h.Cph
+            """)
+            .Should().Equal("01/234/5678", "02/345/6789");
+    }
+
+    [Fact]
+    public async Task Costs_the_read_model_one_party_and_one_role_per_holding()
+    {
+        var seeded = await SeedAsync([AdditivePersona("CT35TP4RTY", "01/234/5678", "02/345/6789")]);
+        var unseeded = await RunAsync("unseeded-counts.sqlite", SqliteViewDefinition.Parts);
+
+        foreach (var (table, growth) in new[]
+        {
+            ("Party", 1L), ("PartyRole", 2L), ("Holding", 0L), ("Herd", 0L), ("HoldingAnimalProfile", 0L)
+        })
+        {
+            var sql = $"SELECT count(*) FROM {table}";
+
+            Scalar(seeded, sql).Should().Be(Scalar(unseeded, sql) + growth,
+                "{0} should grow by {1}", table, growth);
+        }
+    }
+
+    /// <summary>A CPH the extract stopped carrying must cost the run nothing. 99/999/9999 is named by
+    /// the fixture's holder extract but never reaches the holding population, which is exactly the
+    /// shape of a retired CPH.</summary>
+    [Fact]
+    public async Task Stays_inert_where_the_holding_never_arrived()
+    {
+        var target = await SeedAsync([AdditivePersona("CT35TP4RTY", "99/999/9999", "02/345/6789")]);
+
+        Scalar(target, "SELECT count(*) FROM Party WHERE SourcePartyId = 'CT35TP4RTY'")
+            .Should().Be(1L, "the party still lands, so a seed that found nothing is diagnosable");
+
+        Strings(target, """
+            SELECT h.Cph FROM PartyRole r
+            JOIN Party p ON p.Id = r.PartyId
+            JOIN Holding h ON h.Id = r.HoldingId
+            WHERE p.SourcePartyId = 'CT35TP4RTY'
+            """)
+            .Should().Equal(["02/345/6789"], "the holding that exists is attached, the one that does not is skipped");
+
+        Scalar(target, "SELECT count(*) FROM PartyRole WHERE HoldingId NOT IN (SELECT Id FROM Holding)")
+            .Should().Be(0L, "a role pointing at no holding is worse than no role");
+    }
+
+    [Fact]
+    public async Task Writes_a_row_once_however_many_times_it_is_asked_for()
+    {
+        var persona = AdditivePersona("CT35TP4RTY", "01/234/5678");
+
+        var target = await SeedAsync([persona, persona with { Name = "duplicate" }]);
+
+        Scalar(target, "SELECT count(*) FROM Party WHERE SourcePartyId = 'CT35TP4RTY'").Should().Be(1L);
+        Scalar(target, """
+            SELECT count(*) FROM PartyRole r JOIN Party p ON p.Id = r.PartyId
+            WHERE p.SourcePartyId = 'CT35TP4RTY'
+            """).Should().Be(1L);
+    }
+
+    [Fact]
+    public void Declares_only_the_tables_the_policy_writes()
+    {
+        SeedTestDataPart.Create(SeedTestData.For(TestDataPolicy.Additive)).TableNames
+            .Should().Equal("Party", "PartyRole");
+
+        SeedTestDataPart.Create(FullPersonas).TableNames
+            .Should().Contain(["Party", "Holding", "Herd", "HoldingAnimalProfile", "PartyRole"]);
+    }
+
+    /// <summary>Test data must never take a run down, whatever is wrong with it.</summary>
+    [Fact]
+    public async Task Publishes_the_export_when_a_tolerated_part_fails()
+    {
+        var broken = new SqliteViewPart(
+            "krds-test-data", "INSERT INTO target.NoSuchTable VALUES (1);", [], ["Party"],
+            Required: false, ToleratesFailure: true);
+
+        var target = await RunAsync("tolerated.sqlite", [.. SqliteViewDefinition.Parts, broken]);
+
+        Scalar(target, "SELECT count(*) FROM Holding").Should().BeGreaterThan(0L,
+            "the read model is published even though the seed could not run");
+    }
+
+    private static IReadOnlyList<TestPersona> FullPersonas => SeedTestData.For(TestDataPolicy.Full);
+
+    /// <summary>A persona that attaches to holdings the extract owns, as the additive policy does.</summary>
+    private static TestPersona AdditivePersona(string sourcePartyId, params string[] cphs) => new()
+    {
+        Name = sourcePartyId,
+        Party = new TestParty
+        {
+            SourcePartyId = sourcePartyId,
+            Email = $"{sourcePartyId.ToLowerInvariant()}@example.test",
+            GivenName = "Test",
+            FamilyName = "Holder"
+        },
+        Holdings =
+        [
+            .. cphs.Select(cph => new TestHolding { Cph = cph, Roles = [new TestPartyRole("holder")] })
+        ]
+    };
 
     private static TestPersona Persona(string sourcePartyId, string cph, string herdmark) => new()
     {
@@ -210,6 +350,7 @@ public sealed class SeedTestDataPartTests : IDisposable
             new TestHolding
             {
                 Cph = cph,
+                Claimed = true,
                 FeatureName = "Seeded Farm",
                 Roles = [new TestPartyRole("holder")]
             }

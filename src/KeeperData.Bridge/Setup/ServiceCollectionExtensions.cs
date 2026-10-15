@@ -36,6 +36,8 @@ namespace KeeperData.Bridge.Setup
     [ExcludeFromCodeCoverage(Justification = "DI configuration code - tested through integration tests.")]
     public static class ServiceCollectionExtensions
     {
+        private const string NoAuthScheme = "NoAuth";
+
         public static void ConfigureOpenApiDocumentGeneration(this IServiceCollection services)
         {
             services.AddControllers().AddJsonOptions(ConfigureJsonOptions);
@@ -199,7 +201,7 @@ namespace KeeperData.Bridge.Setup
             services.TryAddSingleton<IStsIdentityVerifier, StsIdentityVerifier>();
 
             services.AddAuthentication()
-                .AddScheme<AuthenticationSchemeOptions, NoAuthenticationHandler>("NoAuth", _ => { })
+                .AddScheme<AuthenticationSchemeOptions, NoAuthenticationHandler>(NoAuthScheme, _ => { })
                 .AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
                     ApiKeyAuthenticationSchemeOptions.DefaultScheme,
                     _ => { })
@@ -213,8 +215,8 @@ namespace KeeperData.Bridge.Setup
                     var featureFlags = currentConfig.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
                     if (!featureFlags.AuthenticationEnabled)
                     {
-                        options.DefaultAuthenticateScheme = "NoAuth";
-                        options.DefaultChallengeScheme = "NoAuth";
+                        options.DefaultAuthenticateScheme = NoAuthScheme;
+                        options.DefaultChallengeScheme = NoAuthScheme;
                         return;
                     }
 
@@ -241,7 +243,7 @@ namespace KeeperData.Bridge.Setup
                     var featureFlags = currentConfig.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
                     if (!featureFlags.AuthenticationEnabled)
                     {
-                        options.DefaultPolicy = new AuthorizationPolicyBuilder("NoAuth")
+                        options.DefaultPolicy = new AuthorizationPolicyBuilder(NoAuthScheme)
                             .RequireAssertion(_ => true)
                             .Build();
                         return;

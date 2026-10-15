@@ -7,5 +7,4 @@ namespace KeeperData.Bridge.Authentication;
 public class StsAuthenticationSchemeOptions : AuthenticationSchemeOptions
 {
     public const string DefaultScheme = "AwsSts";
-    public string Scheme => DefaultScheme;
 }

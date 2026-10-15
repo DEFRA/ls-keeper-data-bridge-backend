@@ -41,7 +41,7 @@ public class StsAuthenticationHandlerTests
 
         if (authorizationHeader != null)
         {
-            httpContext.Request.Headers["Authorization"] = authorizationHeader;
+            httpContext.Request.Headers.Authorization = authorizationHeader;
         }
 
         var options = serviceProvider.GetRequiredService<IOptionsMonitor<StsAuthenticationSchemeOptions>>();

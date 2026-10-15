@@ -21,6 +21,8 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
     private const string ExpectedTerminator = "aws4_request";
     private const string AmzDateFormat = "yyyyMMdd'T'HHmmss'Z'";
 
+    private static readonly TimeSpan GlobMatchTimeout = TimeSpan.FromMilliseconds(100);
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<ApiAuthenticationOptions> _optionsMonitor;
     private readonly TimeProvider _timeProvider;
@@ -43,8 +45,7 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
     {
         var stsOptions = _optionsMonitor.CurrentValue.Sts;
 
-        if (!Uri.TryCreate(stsOptions.Endpoint, UriKind.Absolute, out var endpointUri)
-            || (endpointUri.Scheme != Uri.UriSchemeHttps && endpointUri.Scheme != Uri.UriSchemeHttp))
+        if (!TryGetEndpoint(stsOptions, out var endpointUri))
         {
             _logger.LogError("Invalid STS endpoint configuration '{Endpoint}'", stsOptions.Endpoint);
             return StsVerificationResult.Fail("STS endpoint is not validly configured");
@@ -67,12 +68,37 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
         var cacheKey = ComputeCacheKey(presignedUrl);
         if (_cache.TryGetValue(cacheKey, out var cached) && now < cached.ExpiresAt)
         {
-            return IsAllowed(cached.Identity, stsOptions.AllowedCallers)
-                ? StsVerificationResult.Success(cached.Identity)
-                : StsVerificationResult.Fail("Caller identity is not on the allowlist");
+            return CheckAllowlist(cached.Identity, stsOptions.AllowedCallers);
         }
 
-        StsCallerIdentity identity;
+        var (identity, failure) = await GetCallerIdentityAsync(targetUri, cancellationToken);
+        if (identity is null)
+        {
+            return failure!;
+        }
+
+        var result = CheckAllowlist(identity, stsOptions.AllowedCallers);
+        if (!result.Succeeded)
+        {
+            _logger.LogWarning("STS caller '{Arn}' (account '{Account}', role '{RoleName}') is not on the allowlist",
+                identity.Arn, identity.Account, identity.RoleName);
+            return result;
+        }
+
+        CacheIdentity(cacheKey, identity, stsOptions.CacheTtlSeconds, signedExpiresAt, now);
+        return result;
+    }
+
+    private static bool TryGetEndpoint(StsAuthenticationOptions options, out Uri endpointUri)
+    {
+        return Uri.TryCreate(options.Endpoint, UriKind.Absolute, out endpointUri!)
+            && (endpointUri.Scheme == Uri.UriSchemeHttps || endpointUri.Scheme == Uri.UriSchemeHttp);
+    }
+
+    private async Task<(StsCallerIdentity? Identity, StsVerificationResult? Failure)> GetCallerIdentityAsync(
+        Uri targetUri,
+        CancellationToken cancellationToken)
+    {
         try
         {
             var client = _httpClientFactory.CreateClient(HttpClientName);
@@ -80,18 +106,18 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("STS GetCallerIdentity failed with HTTP {StatusCode}", (int)response.StatusCode);
-                return StsVerificationResult.Fail($"STS rejected request with status {(int)response.StatusCode}");
+                return (null, StsVerificationResult.Fail($"STS rejected request with status {(int)response.StatusCode}"));
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            var parsed = await ParseCallerIdentityAsync(stream, cancellationToken);
-            if (parsed == null)
+            var identity = await ParseCallerIdentityAsync(stream, cancellationToken);
+            if (identity == null)
             {
                 _logger.LogWarning("STS response did not contain valid GetCallerIdentity fields");
-                return StsVerificationResult.Fail("Invalid STS GetCallerIdentity response");
+                return (null, StsVerificationResult.Fail("Invalid STS GetCallerIdentity response"));
             }
 
-            identity = parsed;
+            return (identity, null);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -100,28 +126,36 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error calling STS to verify caller identity");
-            return StsVerificationResult.Fail("Failed to verify identity with STS");
+            return (null, StsVerificationResult.Fail("Failed to verify identity with STS"));
         }
+    }
 
-        if (!IsAllowed(identity, stsOptions.AllowedCallers))
+    private static StsVerificationResult CheckAllowlist(StsCallerIdentity identity, List<AllowedStsCaller> allowedCallers)
+    {
+        return IsAllowed(identity, allowedCallers)
+            ? StsVerificationResult.Success(identity)
+            : StsVerificationResult.Fail("Caller identity is not on the allowlist");
+    }
+
+    private void CacheIdentity(
+        string cacheKey,
+        StsCallerIdentity identity,
+        int cacheTtlSeconds,
+        DateTimeOffset signedExpiresAt,
+        DateTimeOffset now)
+    {
+        if (cacheTtlSeconds <= 0)
         {
-            _logger.LogWarning("STS caller '{Arn}' (account '{Account}', role '{RoleName}') is not on the allowlist",
-                identity.Arn, identity.Account, identity.RoleName);
-            return StsVerificationResult.Fail("Caller identity is not on the allowlist");
+            return;
         }
 
-        if (stsOptions.CacheTtlSeconds > 0)
+        var maxCacheUntil = now.AddSeconds(cacheTtlSeconds);
+        var cacheUntil = signedExpiresAt < maxCacheUntil ? signedExpiresAt : maxCacheUntil;
+        if (cacheUntil > now)
         {
-            var maxCacheUntil = now.AddSeconds(stsOptions.CacheTtlSeconds);
-            var cacheUntil = signedExpiresAt < maxCacheUntil ? signedExpiresAt : maxCacheUntil;
-            if (cacheUntil > now)
-            {
-                PruneExpiredEntries(now);
-                _cache[cacheKey] = new CachedIdentity(identity, cacheUntil);
-            }
+            PruneExpiredEntries(now);
+            _cache[cacheKey] = new CachedIdentity(identity, cacheUntil);
         }
-
-        return StsVerificationResult.Success(identity);
     }
 
     private static string? ValidatePresignedUrl(
@@ -140,6 +174,22 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
             return "Malformed presigned URL";
         }
 
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        var error = ValidateTarget(uri, endpointUri)
+            ?? ValidateSigningParameters(query)
+            ?? ValidateTiming(query, options, now, out signedExpiresAt);
+        if (error != null)
+        {
+            return error;
+        }
+
+        targetUri = uri;
+        return null;
+    }
+
+    private static string? ValidateTarget(Uri uri, Uri endpointUri)
+    {
         if (!string.Equals(uri.Scheme, endpointUri.Scheme, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(uri.Host, endpointUri.Host, StringComparison.OrdinalIgnoreCase)
             || uri.Port != endpointUri.Port)
@@ -154,8 +204,11 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
             return "Presigned URL must target the root path with no userinfo or fragment";
         }
 
-        var query = QueryHelpers.ParseQuery(uri.Query);
+        return null;
+    }
 
+    private static string? ValidateSigningParameters(Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query)
+    {
         if (!TryGetSingle(query, "Action", out var action) || !string.Equals(action, ExpectedAction, StringComparison.Ordinal))
         {
             return "Presigned URL must have Action=GetCallerIdentity";
@@ -170,6 +223,29 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
         {
             return "Presigned URL has an invalid X-Amz-Credential scope";
         }
+
+        if (!TryGetSingle(query, "X-Amz-SignedHeaders", out var signedHeaders)
+            || !signedHeaders.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .Contains("host", StringComparer.OrdinalIgnoreCase))
+        {
+            return "Presigned URL must sign the host header";
+        }
+
+        if (!TryGetSingle(query, "X-Amz-Signature", out _))
+        {
+            return "Presigned URL is missing X-Amz-Signature";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateTiming(
+        Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query,
+        StsAuthenticationOptions options,
+        DateTimeOffset now,
+        out DateTimeOffset signedExpiresAt)
+    {
+        signedExpiresAt = default;
 
         if (!TryGetSingle(query, "X-Amz-Date", out var amzDate)
             || !DateTimeOffset.TryParseExact(
@@ -202,19 +278,6 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
             return "Presigned URL has expired";
         }
 
-        if (!TryGetSingle(query, "X-Amz-SignedHeaders", out var signedHeaders)
-            || !signedHeaders.Split(';', StringSplitOptions.RemoveEmptyEntries)
-                .Contains("host", StringComparer.OrdinalIgnoreCase))
-        {
-            return "Presigned URL must sign the host header";
-        }
-
-        if (!TryGetSingle(query, "X-Amz-Signature", out var signature) || string.IsNullOrWhiteSpace(signature))
-        {
-            return "Presigned URL is missing X-Amz-Signature";
-        }
-
-        targetUri = uri;
         return null;
     }
 
@@ -322,7 +385,7 @@ public sealed class StsIdentityVerifier : IStsIdentityVerifier
     {
         if (pattern == "*") return true;
         var regexPattern = "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$";
-        return Regex.IsMatch(value, regexPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return Regex.IsMatch(value, regexPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, GlobMatchTimeout);
     }
 
     private static string ComputeCacheKey(string presignedUrl)

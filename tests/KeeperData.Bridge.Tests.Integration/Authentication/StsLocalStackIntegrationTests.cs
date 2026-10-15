@@ -1,8 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using Amazon.SecurityToken;
-using Amazon.SecurityToken.Model;
 using FluentAssertions;
 using KeeperData.Bridge.Authentication;
 using KeeperData.Bridge.Config;
@@ -19,42 +17,26 @@ public class StsLocalStackIntegrationTests(LocalStackFixture localStack)
 {
     private readonly LocalStackFixture _localStack = localStack;
 
+    // LocalStack ignores the credentials in a presigned query string and always answers GetCallerIdentity
+    // as the account root, so assumed-role ARN parsing is covered by the unit tests instead.
     [Fact]
-    public async Task VerifyAsync_AgainstLocalStackSts_WithAssumedRole_ShouldSucceedWhenAllowlisted()
+    public async Task VerifyAsync_AgainstLocalStackSts_WhenAllowlisted_ShouldSucceed()
     {
         var endpoint = _localStack.Container.GetConnectionString().TrimEnd('/');
 
-        using var stsClient = new AmazonSecurityTokenServiceClient(
-            "test",
-            "test",
-            new AmazonSecurityTokenServiceConfig
-            {
-                ServiceURL = endpoint,
-                UseHttp = true,
-                AuthenticationRegion = "us-east-1"
-            });
-
-        var assumeResponse = await stsClient.AssumeRoleAsync(new AssumeRoleRequest
-        {
-            RoleArn = "arn:aws:iam::000000000000:role/ls-keeper-data-api",
-            RoleSessionName = "integration-test-session",
-            DurationSeconds = 900
-        });
-
-        var creds = assumeResponse.Credentials;
         var presignedUrl = PresignGetCallerIdentity(
             endpointUri: new Uri(endpoint),
             region: "us-east-1",
-            accessKeyId: creds.AccessKeyId,
-            secretAccessKey: creds.SecretAccessKey,
-            sessionToken: creds.SessionToken,
+            accessKeyId: "test",
+            secretAccessKey: "test",
+            sessionToken: null,
             utcNow: DateTimeOffset.UtcNow,
             expiresSeconds: 60);
 
         var verifier = CreateVerifier(endpoint, new AllowedStsCaller
         {
             AccountId = "000000000000",
-            RolePattern = "ls-keeper-*"
+            RolePattern = "root"
         });
 
         var result = await verifier.VerifyAsync(presignedUrl);
@@ -62,8 +44,8 @@ public class StsLocalStackIntegrationTests(LocalStackFixture localStack)
         result.Succeeded.Should().BeTrue(result.FailureReason);
         result.Identity.Should().NotBeNull();
         result.Identity!.Account.Should().Be("000000000000");
-        result.Identity.RoleName.Should().Be("ls-keeper-data-api");
-        result.Identity.Arn.Should().Contain("assumed-role/ls-keeper-data-api/integration-test-session");
+        result.Identity.Arn.Should().Be("arn:aws:iam::000000000000:root");
+        result.Identity.RoleName.Should().Be("root");
     }
 
     [Fact]

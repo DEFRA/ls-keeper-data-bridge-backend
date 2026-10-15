@@ -49,7 +49,8 @@ public class StsIdentityVerifierTests
 
     private static (StsIdentityVerifier Verifier, RecordingHttpMessageHandler Handler, FakeTimeProvider Clock) CreateVerifier(
         Action<StsAuthenticationOptions>? configure = null,
-        Func<HttpRequestMessage, HttpResponseMessage>? responder = null)
+        Func<HttpRequestMessage, HttpResponseMessage>? responder = null,
+        TimeProvider? timeProvider = null)
     {
         var options = new ApiAuthenticationOptions();
         options.Sts.AllowedCallers.Add(new AllowedStsCaller
@@ -72,7 +73,7 @@ public class StsIdentityVerifierTests
             .Returns(() => new HttpClient(handler, disposeHandler: false));
 
         var clock = new FakeTimeProvider(FixedNow);
-        var verifier = new StsIdentityVerifier(factory.Object, monitor.Object, NullLogger<StsIdentityVerifier>.Instance, clock);
+        var verifier = new StsIdentityVerifier(factory.Object, monitor.Object, NullLogger<StsIdentityVerifier>.Instance, timeProvider ?? clock);
         return (verifier, handler, clock);
     }
 
@@ -256,6 +257,161 @@ public class StsIdentityVerifierTests
     }
 
     [Theory]
+    [InlineData("not-a-url")]
+    [InlineData("ftp://sts.eu-west-2.amazonaws.com")]
+    public async Task VerifyAsync_WithInvalidEndpointConfiguration_ShouldRejectBeforeCallingNetwork(string endpoint)
+    {
+        var (verifier, handler, _) = CreateVerifier(sts => sts.Endpoint = endpoint);
+
+        var result = await verifier.VerifyAsync(BuildPresignedUrl());
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureReason.Should().Be("STS endpoint is not validly configured");
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WithWrongAlgorithm_ShouldRejectBeforeCallingNetwork()
+    {
+        var (verifier, handler, _) = CreateVerifier();
+
+        var result = await verifier.VerifyAsync(BuildPresignedUrl(algorithm: "AWS4-HMAC-SHA1"));
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureReason.Should().Contain("AWS4-HMAC-SHA256");
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WithInvalidAmzDate_ShouldRejectBeforeCallingNetwork()
+    {
+        var (verifier, handler, _) = CreateVerifier();
+
+        var result = await verifier.VerifyAsync(BuildPresignedUrl(amzDate: "2026-10-14"));
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureReason.Should().Be("Presigned URL has an invalid X-Amz-Date");
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WithoutSignature_ShouldRejectBeforeCallingNetwork()
+    {
+        var (verifier, handler, _) = CreateVerifier();
+
+        var result = await verifier.VerifyAsync(BuildPresignedUrl(signature: ""));
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureReason.Should().Be("Presigned URL is missing X-Amz-Signature");
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenStsResponseMissingFields_ShouldFail()
+    {
+        var (verifier, _, _) = CreateVerifier(
+            responder: _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(BuildStsXml(userId: ""), Encoding.UTF8, "text/xml")
+            });
+
+        var result = await verifier.VerifyAsync(BuildPresignedUrl());
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureReason.Should().Be("Invalid STS GetCallerIdentity response");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenStsResponseHasNoResultElement_ShouldFail()
+    {
+        var (verifier, _, _) = CreateVerifier(
+            responder: _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<ErrorResponse />", Encoding.UTF8, "text/xml")
+            });
+
+        var result = await verifier.VerifyAsync(BuildPresignedUrl());
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureReason.Should().Be("Invalid STS GetCallerIdentity response");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenStsCallThrows_ShouldFail()
+    {
+        var (verifier, _, _) = CreateVerifier(
+            responder: _ => throw new HttpRequestException("connection refused"));
+
+        var result = await verifier.VerifyAsync(BuildPresignedUrl());
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureReason.Should().Be("Failed to verify identity with STS");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenCancelled_ShouldThrow()
+    {
+        using var cts = new CancellationTokenSource();
+        var (verifier, _, _) = CreateVerifier(
+            responder: _ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        var act = () => verifier.VerifyAsync(BuildPresignedUrl(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WithIncompleteAllowlistEntry_ShouldSkipItAndMatchTheNext()
+    {
+        var (verifier, _, _) = CreateVerifier(sts => sts.AllowedCallers.Insert(0, new AllowedStsCaller
+        {
+            AccountId = DefaultAccount,
+            RolePattern = ""
+        }));
+
+        var result = await verifier.VerifyAsync(BuildPresignedUrl());
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WithCachingDisabled_ShouldCallStsEveryTime()
+    {
+        var (verifier, handler, _) = CreateVerifier(sts => sts.CacheTtlSeconds = 0);
+        var url = BuildPresignedUrl();
+
+        await verifier.VerifyAsync(url);
+        await verifier.VerifyAsync(url);
+
+        handler.CallCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenCacheIsFull_ShouldPruneExpiredEntries()
+    {
+        var clock = new MutableTimeProvider(FixedNow);
+        var (verifier, handler, _) = CreateVerifier(timeProvider: clock);
+
+        for (var i = 0; i < 256; i++)
+        {
+            (await verifier.VerifyAsync(BuildPresignedUrl(signature: $"sig{i}"))).Succeeded.Should().BeTrue();
+        }
+
+        clock.Advance(TimeSpan.FromSeconds(61));
+        var fresh = BuildPresignedUrl(amzDate: "20261014T120100Z", signature: "fresh");
+        (await verifier.VerifyAsync(fresh)).Succeeded.Should().BeTrue();
+
+        clock.Advance(TimeSpan.FromSeconds(-61));
+        (await verifier.VerifyAsync(BuildPresignedUrl(signature: "sig0"))).Succeeded.Should().BeTrue();
+
+        handler.CallCount.Should().Be(258, "expired entries are pruned, so sig0 is fetched again");
+    }
+
+    [Theory]
     [InlineData("arn:aws:sts::332499610595:assumed-role/ls-keeper-data-api/task-1", "ls-keeper-data-api")]
     [InlineData("arn:aws:iam::332499610595:role/service-role/my-role", "my-role")]
     [InlineData("arn:aws:iam::332499610595:user/dev-user", "dev-user")]
@@ -279,5 +435,14 @@ public class StsIdentityVerifierTests
     private sealed class FakeTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = utcNow;
+
+        public void Advance(TimeSpan by) => _utcNow += by;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
     }
 }

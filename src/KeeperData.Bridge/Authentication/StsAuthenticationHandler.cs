@@ -74,7 +74,10 @@ public class StsAuthenticationHandler : AuthenticationHandler<StsAuthenticationS
         var principal = new ClaimsPrincipal(claimsIdentity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
-        Logger.LogDebug("STS authentication successful for {Arn}", identity.Arn);
+        if (Logger.IsEnabled(LogLevel.Debug))
+        {
+            Logger.LogDebug("STS authentication successful for {Arn}", identity.Arn);
+        }
         return AuthenticateResult.Success(ticket);
     }
 

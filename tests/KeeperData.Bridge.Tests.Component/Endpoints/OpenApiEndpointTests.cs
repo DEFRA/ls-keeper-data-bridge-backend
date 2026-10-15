@@ -77,13 +77,21 @@ public class OpenApiEndpointTests(AppWebApplicationFactory factory) : IClassFixt
 
         var root = await GetDocumentAsync(client);
 
-        var scheme = root.GetProperty("components").GetProperty("securitySchemes").GetProperty("ApiKey");
-        scheme.GetProperty("type").GetString().Should().Be("http");
-        scheme.GetProperty("scheme").GetString().Should()
+        var schemes = root.GetProperty("components").GetProperty("securitySchemes");
+
+        var apiKeyScheme = schemes.GetProperty("ApiKey");
+        apiKeyScheme.GetProperty("type").GetString().Should().Be("http");
+        apiKeyScheme.GetProperty("scheme").GetString().Should()
             .Be("ApiKey", "ApiKeyAuthenticationHandler requires 'Authorization: ApiKey <key>'");
 
-        root.GetProperty("security").EnumerateArray()
-            .Should().ContainSingle().Which.TryGetProperty("ApiKey", out _).Should().BeTrue();
+        var stsScheme = schemes.GetProperty("AwsSts");
+        stsScheme.GetProperty("type").GetString().Should().Be("http");
+        stsScheme.GetProperty("scheme").GetString().Should()
+            .Be("AwsSts", "StsAuthenticationHandler requires 'Authorization: AwsSts <token>'");
+
+        var security = root.GetProperty("security").EnumerateArray().ToArray();
+        security.Any(e => e.TryGetProperty("ApiKey", out _)).Should().BeTrue();
+        security.Any(e => e.TryGetProperty("AwsSts", out _)).Should().BeTrue();
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using KeeperData.Application.Setup;
 using KeeperData.Bridge.Authentication;
 using KeeperData.Bridge.Config;
 using KeeperData.Bridge.Filters;
+using KeeperData.Bridge.Utils;
 using KeeperData.Bridge.Worker.Setup;
 using KeeperData.Core.ETL.Setup;
 using KeeperData.Core.EtlPipeline.Setup;
@@ -22,6 +23,7 @@ using KeeperData.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi;
 using System.Diagnostics.CodeAnalysis;
@@ -34,6 +36,8 @@ namespace KeeperData.Bridge.Setup
     [ExcludeFromCodeCoverage(Justification = "DI configuration code - tested through integration tests.")]
     public static class ServiceCollectionExtensions
     {
+        private const string NoAuthScheme = "NoAuth";
+
         public static void ConfigureOpenApiDocumentGeneration(this IServiceCollection services)
         {
             services.AddControllers().AddJsonOptions(ConfigureJsonOptions);
@@ -66,27 +70,46 @@ namespace KeeperData.Bridge.Setup
 
                 if (featureFlags.AuthenticationEnabled)
                 {
+                    var apiAuth = configuration.GetSection(ApiAuthenticationOptions.SectionName).Get<ApiAuthenticationOptions>()
+                        ?? new ApiAuthenticationOptions();
+
                     document.Components ??= new OpenApiComponents();
-                    document.Components.SecuritySchemes = new Dictionary<string, IOpenApiSecurityScheme>
+                    document.Components.SecuritySchemes = new Dictionary<string, IOpenApiSecurityScheme>();
+                    document.Security = [];
+
+                    if (apiAuth.ApiKeyEnabled)
                     {
                         // Must match ApiKeyAuthenticationHandler, which reads the Authorization header
                         // and requires the "ApiKey" scheme prefix.
-                        ["ApiKey"] = new OpenApiSecurityScheme
+                        document.Components.SecuritySchemes[ApiKeyAuthenticationSchemeOptions.DefaultScheme] = new OpenApiSecurityScheme
                         {
                             Description = "API key authentication, for example "
                                 + $"`Authorization: {ApiKeyAuthenticationSchemeOptions.DefaultScheme} <your-key>`.",
                             Type = SecuritySchemeType.Http,
                             Scheme = ApiKeyAuthenticationSchemeOptions.DefaultScheme
-                        }
-                    };
+                        };
 
-                    document.Security =
-                    [
-                        new OpenApiSecurityRequirement
+                        document.Security.Add(new OpenApiSecurityRequirement
                         {
-                            [new OpenApiSecuritySchemeReference("ApiKey", document)] = []
-                        }
-                    ];
+                            [new OpenApiSecuritySchemeReference(ApiKeyAuthenticationSchemeOptions.DefaultScheme, document)] = []
+                        });
+                    }
+
+                    if (apiAuth.Sts.Enabled)
+                    {
+                        document.Components.SecuritySchemes[StsAuthenticationSchemeOptions.DefaultScheme] = new OpenApiSecurityScheme
+                        {
+                            Description = "AWS STS presigned GetCallerIdentity authentication, for example "
+                                + $"`Authorization: {StsAuthenticationSchemeOptions.DefaultScheme} <base64url-presigned-url>`.",
+                            Type = SecuritySchemeType.Http,
+                            Scheme = StsAuthenticationSchemeOptions.DefaultScheme
+                        };
+
+                        document.Security.Add(new OpenApiSecurityRequirement
+                        {
+                            [new OpenApiSecuritySchemeReference(StsAuthenticationSchemeOptions.DefaultScheme, document)] = []
+                        });
+                    }
                 }
 
                 return Task.CompletedTask;
@@ -154,91 +177,115 @@ namespace KeeperData.Bridge.Setup
 
         private static void ConfigureFeatureFlags(this IServiceCollection services, IConfiguration configuration)
         {
-            services.Configure<FeatureFlags>(configuration.GetSection(FeatureFlags.SectionName));
+            services.AddOptions<FeatureFlags>().BindConfiguration(FeatureFlags.SectionName);
         }
 
         private static void ConfigureAuthentication(this IServiceCollection services, IConfiguration configuration)
         {
-            // Read feature flag configuration
-            var featureFlags = configuration.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
-
-            if (!featureFlags.AuthenticationEnabled)
-            {
-                // Authentication is disabled - configure a no-op authentication scheme
-                services.AddAuthentication(options =>
-                {
-                    options.DefaultAuthenticateScheme = "NoAuth";
-                    options.DefaultChallengeScheme = "NoAuth";
-                })
-                .AddScheme<AuthenticationSchemeOptions, NoAuthenticationHandler>("NoAuth", options => { });
-
-                return;
-            }
+            services.AddOptions<ApiAuthenticationOptions>().BindConfiguration(ApiAuthenticationOptions.SectionName);
 
             // UrlEncoder is required for authentication handlers
             services.AddSingleton<UrlEncoder>(_ => UrlEncoder.Default);
 
-            services.AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = ApiKeyAuthenticationSchemeOptions.DefaultScheme;
-                options.DefaultChallengeScheme = ApiKeyAuthenticationSchemeOptions.DefaultScheme;
-            })
-            .AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
-                ApiKeyAuthenticationSchemeOptions.DefaultScheme,
-                options => { });
+            services.TryAddTransient<ProxyHttpMessageHandler>();
+            services.AddHttpClient(StsIdentityVerifier.HttpClientName)
+                .ConfigureHttpClient((sp, client) =>
+                {
+                    var apiAuth = sp.GetRequiredService<IConfiguration>()
+                        .GetSection(ApiAuthenticationOptions.SectionName)
+                        .Get<ApiAuthenticationOptions>() ?? new ApiAuthenticationOptions();
+                    client.Timeout = TimeSpan.FromSeconds(Math.Max(1, apiAuth.Sts.VerifyTimeoutSeconds));
+                })
+                .ConfigurePrimaryHttpMessageHandler<ProxyHttpMessageHandler>();
+
+            services.TryAddSingleton<IStsIdentityVerifier, StsIdentityVerifier>();
+
+            services.AddAuthentication()
+                .AddScheme<AuthenticationSchemeOptions, NoAuthenticationHandler>(NoAuthScheme, _ => { })
+                .AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+                    ApiKeyAuthenticationSchemeOptions.DefaultScheme,
+                    _ => { })
+                .AddScheme<StsAuthenticationSchemeOptions, StsAuthenticationHandler>(
+                    StsAuthenticationSchemeOptions.DefaultScheme,
+                    _ => { });
+
+            services.AddOptions<AuthenticationOptions>()
+                .Configure<IConfiguration>((options, currentConfig) =>
+                {
+                    var featureFlags = currentConfig.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
+                    if (!featureFlags.AuthenticationEnabled)
+                    {
+                        options.DefaultAuthenticateScheme = NoAuthScheme;
+                        options.DefaultChallengeScheme = NoAuthScheme;
+                        return;
+                    }
+
+                    var apiAuth = currentConfig.GetSection(ApiAuthenticationOptions.SectionName).Get<ApiAuthenticationOptions>()
+                        ?? new ApiAuthenticationOptions();
+                    var defaultScheme = GetEnabledAuthenticationSchemes(apiAuth)[0];
+                    options.DefaultAuthenticateScheme = defaultScheme;
+                    options.DefaultChallengeScheme = defaultScheme;
+                });
         }
 
         private static void ConfigureAuthorization(this IServiceCollection services, IConfiguration configuration)
         {
-            // Read feature flag configuration
-            var featureFlags = configuration.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
+            services.AddAuthorization();
 
-            if (!featureFlags.AuthenticationEnabled)
-            {
-                // Authentication is disabled - configure authorization to allow all requests
-                services.AddAuthorization(options =>
+            services.AddOptions<AuthorizationOptions>()
+                .Configure<IConfiguration>((options, currentConfig) =>
                 {
+                    options.AddPolicy("AllowAnonymous", policy =>
+                    {
+                        policy.RequireAssertion(_ => true);
+                    });
+
+                    var featureFlags = currentConfig.GetSection(FeatureFlags.SectionName).Get<FeatureFlags>() ?? new FeatureFlags();
+                    if (!featureFlags.AuthenticationEnabled)
+                    {
+                        options.DefaultPolicy = new AuthorizationPolicyBuilder(NoAuthScheme)
+                            .RequireAssertion(_ => true)
+                            .Build();
+                        return;
+                    }
+
+                    var apiAuth = currentConfig.GetSection(ApiAuthenticationOptions.SectionName).Get<ApiAuthenticationOptions>()
+                        ?? new ApiAuthenticationOptions();
+                    var enabledSchemes = GetEnabledAuthenticationSchemes(apiAuth);
+
                     options.DefaultPolicy = new AuthorizationPolicyBuilder()
-                        .RequireAssertion(_ => true) // Allow all requests
+                        .RequireAuthenticatedUser()
+                        .AddAuthenticationSchemes(enabledSchemes)
                         .Build();
                 });
 
-                services.AddControllers(options =>
-                    {
-                        options.Filters.Add<OperationCancelledExceptionFilter>();
-                    })
-                    .AddJsonOptions(ConfigureJsonOptions);
-
-                return;
-            }
-
-            // Authentication is enabled - configure standard authorization
-            services.AddAuthorization(options =>
-            {
-                // Create a default policy that requires API key authentication
-                options.DefaultPolicy = new AuthorizationPolicyBuilder()
-                    .RequireAuthenticatedUser()
-                    .AddAuthenticationSchemes(ApiKeyAuthenticationSchemeOptions.DefaultScheme)
-                    .Build();
-
-                // Create a policy for endpoints that should allow anonymous access
-                options.AddPolicy("AllowAnonymous", policy =>
-                {
-                    policy.RequireAssertion(_ => true); // Always allow
-                });
-            });
-
-            // Apply authorization globally to all controllers
             services.AddControllers(options =>
             {
-                var policy = new AuthorizationPolicyBuilder()
-                    .RequireAuthenticatedUser()
-                    .AddAuthenticationSchemes(ApiKeyAuthenticationSchemeOptions.DefaultScheme)
-                    .Build();
-                options.Filters.Add(new AuthorizeFilter(policy));
+                options.Filters.Add(new AuthorizeFilter());
                 options.Filters.Add<OperationCancelledExceptionFilter>();
             })
             .AddJsonOptions(ConfigureJsonOptions);
+        }
+
+        private static string[] GetEnabledAuthenticationSchemes(ApiAuthenticationOptions options)
+        {
+            var schemes = new List<string>(2);
+            if (options.ApiKeyEnabled)
+            {
+                schemes.Add(ApiKeyAuthenticationSchemeOptions.DefaultScheme);
+            }
+
+            if (options.Sts.Enabled)
+            {
+                schemes.Add(StsAuthenticationSchemeOptions.DefaultScheme);
+            }
+
+            if (schemes.Count == 0)
+            {
+                schemes.Add(ApiKeyAuthenticationSchemeOptions.DefaultScheme);
+            }
+
+            return [.. schemes];
         }
 
         /// <summary>Shared so the generated OpenAPI schemas describe the JSON the API actually emits.</summary>

@@ -62,9 +62,9 @@ public class EtlStagingControllerSqliteTests
     }
 
     [Fact]
-    public async Task Ignores_the_legacy_cph_export_sharing_the_folder()
+    public async Task Ignores_non_read_model_files_in_the_folder()
     {
-        Listing(Object("cphs_20260822T120000Z.sqlite"), Object("krds-db_20260821070003.sqlite"));
+        Listing(Object("unrelated_20260822T120000Z.sqlite"), Object("krds-db_20260821070003.sqlite"));
         Presigns();
 
         var result = await _controller.GetLatestSqliteUrl();
@@ -72,7 +72,7 @@ public class EtlStagingControllerSqliteTests
         result.Should().BeOfType<OkObjectResult>()
             .Which.Value.Should().BeOfType<StagingDatabaseLatestResponse>()
             .Which.ObjectKey.Should().Be("views/krds-db_20260821070003.sqlite",
-                "cphs_ sorts later but belongs to a different producer");
+                "unrelated_ sorts later but does not match the read model naming pattern");
     }
 
     [Fact]

@@ -9,7 +9,7 @@ namespace KeeperData.Core.EtlPipeline.Storage;
 public static class ViewsFileNaming
 {
     /// <summary>Deliberately generic: this database is expected to carry more than the SAM read model
-    /// over time. Also distinct from the legacy <c>cphs_</c> export, which shares this folder.</summary>
+    /// over time.</summary>
     public const string DatabasePrefix = "krds-db_";
 
     public const string DatabaseExtension = ".sqlite";

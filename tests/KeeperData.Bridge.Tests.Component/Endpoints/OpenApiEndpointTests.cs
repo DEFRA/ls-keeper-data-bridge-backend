@@ -39,6 +39,9 @@ public class OpenApiEndpointTests(AppWebApplicationFactory factory) : IClassFixt
         var paths = (await GetDocumentAsync()).GetProperty("paths");
 
         paths.TryGetProperty("/api/etl/imports", out _).Should().BeTrue();
+        paths.TryGetProperty("/api/etl/staging/sqlite/latest", out _).Should().BeTrue();
+        paths.TryGetProperty("/api/etl/sqlite/cphs/latest", out _).Should().BeFalse();
+        paths.TryGetProperty("/api/etl/exports/cphs", out _).Should().BeFalse();
         paths.TryGetProperty("/api/Import", out _).Should().BeTrue();
         paths.TryGetProperty("/api/Benchmark/report", out _).Should().BeTrue("Mongo BsonDocument responses must still be describable");
     }

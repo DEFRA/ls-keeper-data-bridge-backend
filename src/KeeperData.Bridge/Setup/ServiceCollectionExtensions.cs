@@ -12,7 +12,6 @@ using KeeperData.Infrastructure.Benchmarking.Setup;
 using KeeperData.Infrastructure.Config;
 using KeeperData.Infrastructure.Crypto;
 using KeeperData.Infrastructure.Database.Setup;
-using KeeperData.Infrastructure.ETL.Setup;
 using KeeperData.Infrastructure.EtlPipeline.Setup;
 using KeeperData.Infrastructure.Extensions;
 using KeeperData.Infrastructure.Json;
@@ -142,8 +141,6 @@ namespace KeeperData.Bridge.Setup
             services.AddEtlPipelineStorageProvider(configuration);
 
             services.AddEtlDependencies(configuration);
-
-            services.AddEtlServices();
 
             services.AddEtlImportStatus();
 

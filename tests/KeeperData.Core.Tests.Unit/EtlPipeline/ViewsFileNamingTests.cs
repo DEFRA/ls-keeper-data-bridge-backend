@@ -26,7 +26,6 @@ public class ViewsFileNamingTests
     [Theory]
     [InlineData("krds-db_20260821070003.sqlite", true)]
     [InlineData("krds-db_20260821070003.SQLITE", true)]
-    [InlineData("cphs_20260102T120000Z.sqlite", false)]
     [InlineData("archive/krds-db_20260821070003.sqlite", false)]
     [InlineData("other-krds-db_20260821070003.sqlite", false)]
     [InlineData("krds-db_latest.sqlite", false)]

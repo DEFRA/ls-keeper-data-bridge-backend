@@ -36,6 +36,11 @@ public static class SqliteViewDefinition
             ["cts_locations", "cts_location_identifiers", "cts_location_party_rels",
              "cts_parties", "cts_addresses", "cts_counties"],
             ["CtsOpenLocation"],
+            required: false),
+        Part(
+            "common-land",
+            ["amls2_common_land"],
+            ["CommonLand", "CommonLandHolding"],
             required: false)
     ];
 

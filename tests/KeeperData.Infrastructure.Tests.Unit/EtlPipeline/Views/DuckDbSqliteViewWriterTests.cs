@@ -79,8 +79,10 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
         var result = await Sut().WriteAsync(new SqliteViewWriteRequest(
             source, target, SqliteViewDefinition.Parts, QueryDate));
 
+        // The CTS part is skipped; the common land part is not CTS and still runs.
         result.Tables.Select(table => table.Name).Should().Equal(
-            "Party", "Holding", "Herd", "HoldingAnimalProfile", "PartyRole");
+            "Party", "Holding", "Herd", "HoldingAnimalProfile", "PartyRole",
+            "CommonLand", "CommonLandHolding");
 
         Scalar(target, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='CtsOpenLocation'")
             .Should().Be(0L, "an absent table tells a reader CTS was never loaded; an empty one would not");
@@ -126,13 +128,17 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
     public void Declares_every_staging_table_its_parts_read()
     {
         var samOnly = Path.Combine(_workingDirectory, "declared-sam.duckdb");
-        SamExtractFixture.Create(samOnly, includeCts: false);
+        SamExtractFixture.Create(samOnly, includeCts: false, includeCommonLand: false);
 
         var ctsOnly = Path.Combine(_workingDirectory, "declared-cts.duckdb");
         CtsExtractFixture.Create(ctsOnly);
 
+        var commonLandOnly = Path.Combine(_workingDirectory, "declared-amls2.duckdb");
+        CommonLandExtractFixture.Create(commonLandOnly);
+
         StagedTables(samOnly).Should().BeEquivalentTo(Part("krds-read-model").RequiredSourceTables);
         StagedTables(ctsOnly).Should().BeEquivalentTo(Part("cts-open-locations").RequiredSourceTables);
+        StagedTables(commonLandOnly).Should().BeEquivalentTo(Part("common-land").RequiredSourceTables);
     }
 
     private static SqliteViewPart Part(string name)
@@ -209,7 +215,9 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
             new SqliteViewTable("Herd", 1),
             new SqliteViewTable("HoldingAnimalProfile", 2),
             new SqliteViewTable("PartyRole", 5),
-            new SqliteViewTable("CtsOpenLocation", 9)
+            new SqliteViewTable("CtsOpenLocation", 9),
+            new SqliteViewTable("CommonLand", CommonLandExtractFixture.ExpectedCommonCount),
+            new SqliteViewTable("CommonLandHolding", CommonLandExtractFixture.ExpectedLinkCount)
         });
     }
 
@@ -720,6 +728,9 @@ public sealed class DuckDbSqliteViewWriterTests : IDisposable
 
         Strings(target, "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'ix_%' ORDER BY name")
             .Should().Equal(
+                "ix_common_land_holding_common_cph",
+                "ix_common_land_holding_common_land_id",
+                "ix_common_land_holding_main_cph",
                 "ix_cts_open_location_cph",
                 "ix_cts_open_location_keeper_email",
                 "ix_cts_open_location_keeper_post_code",

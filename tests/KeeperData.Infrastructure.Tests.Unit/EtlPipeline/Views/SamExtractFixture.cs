@@ -8,7 +8,8 @@ namespace KeeperData.Infrastructure.Tests.Unit.EtlPipeline.Views;
 ///
 /// The CTS tables are created alongside it by default, by <see cref="CtsExtractFixture"/>, because
 /// most callers want a staging database a full run would have produced. Pass includeCts: false for
-/// the environment that loads no CTS extracts at all.</summary>
+/// the environment that loads no CTS extracts at all. The same goes for the AMLS2 common land
+/// table, created by <see cref="CommonLandExtractFixture"/> unless includeCommonLand is false.</summary>
 public static class SamExtractFixture
 {
     /// <summary>Every column the read model reads from sam_cph_holdings, in the order the fixture
@@ -28,9 +29,9 @@ public static class SamExtractFixture
         "FEATURE_ADDRESS_TO_DATE"
     ];
 
-    public static void Create(string databasePath, bool includeCts = true) => Create(databasePath, omittedHoldingColumns: Array.Empty<string>(), holdingColumnTypes: null, herdColumnTypes: null, includeCts: includeCts);
+    public static void Create(string databasePath, bool includeCts = true, bool includeCommonLand = true) => Create(databasePath, omittedHoldingColumns: Array.Empty<string>(), holdingColumnTypes: null, herdColumnTypes: null, includeCts: includeCts, includeCommonLand: includeCommonLand);
 
-    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns, IReadOnlyDictionary<string,string>? holdingColumnTypes = null, IReadOnlyDictionary<string,string>? herdColumnTypes = null, bool includeCts = true)
+    public static void Create(string databasePath, IReadOnlyList<string> omittedHoldingColumns, IReadOnlyDictionary<string,string>? holdingColumnTypes = null, IReadOnlyDictionary<string,string>? herdColumnTypes = null, bool includeCts = true, bool includeCommonLand = true)
     {
         var holdingColumns = string.Join(", ",
             HoldingColumns.Where(column => !omittedHoldingColumns.Contains(column))
@@ -182,6 +183,11 @@ public static class SamExtractFixture
         if (includeCts)
         {
             CtsExtractFixture.Create(connection);
+        }
+
+        if (includeCommonLand)
+        {
+            CommonLandExtractFixture.Create(connection);
         }
     }
 

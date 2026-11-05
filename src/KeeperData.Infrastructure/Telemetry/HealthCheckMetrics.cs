@@ -10,7 +10,7 @@ public class HealthCheckMetrics
     private readonly Counter<long> _healthCheckTotal;
     private readonly Counter<long> _healthCheckFailures;
     private readonly Histogram<double> _healthCheckDuration;
-    private readonly UpDownCounter<int> _healthCheckStatus;
+    private readonly Gauge<int> _healthCheckStatus;
 
     public HealthCheckMetrics(IMeterFactory meterFactory)
     {
@@ -31,10 +31,11 @@ public class HealthCheckMetrics
             "ms",
             "Health check execution duration in milliseconds");
 
-        _healthCheckStatus = meter.CreateUpDownCounter<int>(
+        _healthCheckStatus = meter.CreateGauge<int>(
             "keeperdata.health.status",
-            "status",
-            "Current health check status (2=Healthy, 1=Degraded, 0=Unhealthy)");
+            "ea",
+            "Current health check status (2=Healthy, 1=Degraded, 0=Unhealthy). Recorded every "
+            + "check cycle on a stable tag set so the latest value always reflects live state.");
     }
 
     public void RecordHealthCheck(string healthCheckName, HealthStatus status, double durationMs)
@@ -54,7 +55,10 @@ public class HealthCheckMetrics
             _healthCheckFailures.Add(1, tagList);
         }
 
-        // Record current health status as numeric value
+        // Record current health status as numeric value on a stable tag set. The status
+        // dimension is deliberately omitted: tagging by current status splits the metric
+        // into per-status series that only receive points while that status holds, so a
+        // recovered check leaves a stale last value and last()-based alerts keep firing.
         var statusValue = status switch
         {
             HealthStatus.Healthy => 2,
@@ -62,6 +66,11 @@ public class HealthCheckMetrics
             HealthStatus.Unhealthy => 0,
             _ => -1 // Unknown status
         };
-        _healthCheckStatus.Add(statusValue, tagList);
+        var statusTagList = new TagList
+        {
+            { MetricNames.CommonTags.Service, Process.GetCurrentProcess().ProcessName },
+            { MetricNames.CommonTags.HealthCheck, healthCheckName }
+        };
+        _healthCheckStatus.Record(statusValue, statusTagList);
     }
 }

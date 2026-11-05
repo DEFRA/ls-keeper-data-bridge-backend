@@ -139,6 +139,24 @@ public class HealthCheckMetricsTests : IDisposable
         measurement!.Value.Should().Be(expectedValue);
     }
 
+    [Theory]
+    [InlineData(HealthStatus.Healthy)]
+    [InlineData(HealthStatus.Degraded)]
+    [InlineData(HealthStatus.Unhealthy)]
+    public void RecordHealthCheck_StatusMetricUsesStableTagSet(HealthStatus status)
+    {
+        // Act
+        _sut.RecordHealthCheck("mongodb", status, 50.0);
+
+        // Assert - the status series must not be tagged by current status, otherwise it
+        // only receives data while that status holds and last()-based alerts go stale
+        var measurement = _measurements.FirstOrDefault(m => m.InstrumentName == "keeperdata.health.status");
+        measurement.Should().NotBeNull();
+        measurement!.Tags.Should().NotContain(t => t.Key == StatusTagName);
+        measurement.GetTagValue(HealthCheckTagName).Should().Be("mongodb");
+        measurement.Tags.Should().Contain(t => t.Key == ServiceTagName);
+    }
+
     [Fact]
     public void RecordHealthCheck_IncludesServiceTag()
     {
